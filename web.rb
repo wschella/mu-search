@@ -72,104 +72,116 @@ class Elastic
   end
 end
 
-
-# test
-get "/test" do
-  content_type 'application/json'
-
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
-
-  # client.create_index 'user', { title: { type: "text" }, name: { type: "text" } }
-  # client.put_document('user', 1, { name: "John Doe" }).body
-  # client.get_document('people', 1).body
-  client.search index: 'peopl*,user', query: { query: { match: { name: "John" } } }
+before do
+  log.info "Header test:"
+  log.info request.env["HTTP_ACCEPT"]
 end
 
-
-# index documents
-get "/index" do
-  content_type 'application/json'
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
-
+# indexes a single document in Elasticsearch
+# properties need to be made configurable
+def index_document client, uuid
+  log.info "Indexing #{uuid}"
   query_result = query <<SPARQL
-    SELECT ?id ?title ?desc WHERE {
-      ?doc <http://mu.semte.ch/vocabularies/core/uuid> ?id; 
+    SELECT ?title ?desc WHERE {
+      ?doc <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
            <http://mu.semte.ch/vocabularies/core/title> ?title; 
            <http://mu.semte.ch/vocabularies/core/description> ?desc
     }
 SPARQL
 
-  query_result.each do |result|
-    id = result[:id].to_s
+  result = query_result.first
 
-    groups_query_result = query <<SPARQL
+  groups_query_result = query <<SPARQL
       SELECT ?gid WHERE {
-        ?doc <http://mu.semte.ch/vocabularies/core/uuid> "#{result.id.to_s}";
+        ?doc <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
              <http://mu.semte.ch/vocabularies/authorization/inGroup> ?group.
         ?group <http://mu.semte.ch/vocabularies/core/uuid> ?gid
       }
 SPARQL
-    groups = []
-    groups_query_result.each do |group|
-      groups.push(group[:gid].to_s)
-    end
 
-    document = {
-      title: result[:title].to_s,
-      description: result[:description].to_s,
-      groups: groups,
-      required_matches: 1
-    }
-    log.info document
-    client.put_document('document', id, document.to_json)
+  groups = []
+  groups_query_result.each do |group|
+    groups.push(group[:gid].to_s)
   end
 
-
-  "all ok"
+  document = {
+    title: result[:title].to_s,
+    description: result[:description].to_s,
+    groups: groups,
+    required_matches: 1
+  }
+  log.info document
+  client.put_document('document', uuid, document.to_json)
 end
 
-
-
-# search
-get "/search" do
+# indexes all documents (or all authorized documents,
+# if queries are routed through an authorization service)
+# * needs pagination
+get "/index" do
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
-  # test query
   query_result = query <<SPARQL
     SELECT ?id WHERE {
-      ?doc <http://mu.semte.ch/vocabularies/core/uuid> ?id
-    } LIMIT 1
+      ?doc a <http://mu.semte.ch/vocabularies/core/Document>;
+           <http://mu.semte.ch/vocabularies/core/uuid> ?id
+    }
 SPARQL
+
+  query_result.each do |result|
+    index_document client, result[:id].to_s 
+  end
+
+  { message: "all ok" }.to_json
+end
+
+
+get "/index/:uuid" do |uuid|
+  content_type 'application/json'
+  client = Elastic.new(host: 'elasticsearch', port: 9200)
+
+  index_document client, uuid
+  
+  { message: "all ok" }.to_json
+end
+
+
+def run_authorized_search query
+  allowed_groups_s = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
+  allowed_groups = allowed_groups_s ? JSON.parse(allowed_groups_s).map { |e| e["value"] } : nil
+
+  used_groups_s = request.env["HTTP_MU_AUTH_USED_GROUPS"]
+  used_groups = used_groups_s ? JSON.parse(used_groups_s).map { |e| e["value"] } : nil
 
   search_query = 
     {
       query: {
         bool: {
           must: [
-            {
-              match: {
-                title: "document"
-              }
-            },
-            {
-              terms_set: {
-                groups: {
-                  terms: [
-                    "g02"
-                  ],
-                  minimum_should_match_field: "required_matches"
-                }
-              }
-            }
+            query,
+            { terms_set: { groups: { terms: allowed_groups, minimum_should_match_field: "required_matches" } } }
           ]
         }
       }
     } 
 
   results = client.search index: 'document', query: search_query 
-  # log.info JSON.parse(results)
-  # JSON.parse(results)["hits"]["hits"]
   results
-  
 end
+
+
+post "/search" do
+  content_type 'application/json'
+  client = Elastic.new(host: 'elasticsearch', port: 9200)
+  run_authorized_search @json_body["query"]
+end
+
+
+# * title is hard-coded
+get "/search" do
+  content_type 'application/json'
+  client = Elastic.new(host: 'elasticsearch', port: 9200)
+  run_authorized_search { match: { title: params["q"] } }
+end
+
+
