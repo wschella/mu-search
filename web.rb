@@ -1,5 +1,14 @@
 require 'net/http'
 
+# fake configuration
+configure do
+  set :properties, { 
+        "title" => "<http://mu.semte.ch/vocabularies/core/title>",
+        "description" => "<http://mu.semte.ch/vocabularies/core/description>" 
+      }
+end
+
+
 class Elastic
   def initialize(host: 'localhost', port: 9200)
     @host = host
@@ -72,23 +81,28 @@ class Elastic
   end
 end
 
-before do
-  log.info "Header test:"
-  log.info request.env["HTTP_ACCEPT"]
+
+def make_property_query uuid
+  select_variables = ""
+  property_predicates = ""
+
+  settings.properties.each do |key, predicate|
+    select_variables += " ?#{key} " 
+    property_predicates += "; #{predicate} ?#{key} "
+  end
+
+  <<SPARQL
+    SELECT #{select_variables} WHERE { 
+     ?doc  <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}" #{property_predicates}
+    }
+SPARQL
 end
+
 
 # indexes a single document in Elasticsearch
 # properties need to be made configurable
 def index_document client, uuid
-  log.info "Indexing #{uuid}"
-  query_result = query <<SPARQL
-    SELECT ?title ?desc WHERE {
-      ?doc <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
-           <http://mu.semte.ch/vocabularies/core/title> ?title; 
-           <http://mu.semte.ch/vocabularies/core/description> ?desc
-    }
-SPARQL
-
+  query_result = query make_property_query uuid
   result = query_result.first
 
   groups_query_result = query <<SPARQL
@@ -181,7 +195,7 @@ end
 get "/search" do
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  run_authorized_search { match: { title: params["q"] } }
+  run_authorized_search( { match: { title: params["q"] } } )
 end
 
 
