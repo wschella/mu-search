@@ -1,14 +1,19 @@
 require 'net/http'
 
-# fake configuration
+# sample configuration
 configure do
+  set :step, 100
   set :properties, { 
-        "title" => "<http://mu.semte.ch/vocabularies/core/title>",
-        "description" => "<http://mu.semte.ch/vocabularies/core/description>" 
+        "<http://mu.semte.ch/vocabularies/core/Document>" => {
+          "title" => "<http://mu.semte.ch/vocabularies/core/title>",
+          "description" => "<http://mu.semte.ch/vocabularies/core/description>" 
+        }
       }
 end
 
-
+# quick and as-needed Elastic api, for use until
+# the conflict with Sinatra::Utils is resolved
+# https://github.com/mu-semtech/mu-ruby-template/issues/16
 class Elastic
   def initialize(host: 'localhost', port: 9200)
     @host = host
@@ -82,11 +87,11 @@ class Elastic
 end
 
 
-def make_property_query uuid
+def make_property_query uuid, property_map
   select_variables = ""
   property_predicates = ""
 
-  settings.properties.each do |key, predicate|
+  property_map.each do |key, predicate|
     select_variables += " ?#{key} " 
     property_predicates += "; #{predicate} ?#{key} "
   end
@@ -99,64 +104,118 @@ SPARQL
 end
 
 
-# indexes a single document in Elasticsearch
-# properties need to be made configurable
-def index_document client, uuid
-  query_result = query make_property_query uuid
-  result = query_result.first
-
-  groups_query_result = query <<SPARQL
-      SELECT ?gid WHERE {
-        ?doc <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
-             <http://mu.semte.ch/vocabularies/authorization/inGroup> ?group.
-        ?group <http://mu.semte.ch/vocabularies/core/uuid> ?gid
+def query_count type
+  query_result = query <<SPARQL
+      SELECT (COUNT(?doc) AS ?count) WHERE {
+        ?doc a #{type}
       }
 SPARQL
 
-  groups = []
-  groups_query_result.each do |group|
-    groups.push(group[:gid].to_s)
-  end
-
-  document = {
-    title: result[:title].to_s,
-    description: result[:description].to_s,
-    groups: groups,
-    required_matches: 1
-  }
-  log.info document
-  client.put_document('document', uuid, document.to_json)
+  query_result.first["count"].to_i
 end
+
 
 # indexes all documents (or all authorized documents,
 # if queries are routed through an authorization service)
-# * needs pagination
 get "/index" do
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
-  query_result = query <<SPARQL
+  count_list = [] # for reporting
+
+  settings.properties.each do |type, property_map|
+    count = query_count type
+    count_list.push( { type: type, count: count } )
+
+    (0..(count/10)).each do |i|
+      offset = i*settings.step
+      query_result = query <<SPARQL
     SELECT ?id WHERE {
-      ?doc a <http://mu.semte.ch/vocabularies/core/Document>;
+      ?doc a #{type};
            <http://mu.semte.ch/vocabularies/core/uuid> ?id
-    }
+    } LIMIT 100 OFFSET #{offset}
 SPARQL
 
-  query_result.each do |result|
-    index_document client, result[:id].to_s 
+      query_result.each do |result|
+        uuid = result[:id].to_s
+        query_result = query make_property_query uuid, property_map
+        result = query_result.first
+
+        document = {
+          title: result[:title].to_s,
+          description: result[:description].to_s,
+        }
+        client.put_document('document', uuid, document.to_json)
+      end
+
+    end
   end
 
-  { message: "all ok" }.to_json
+  { "document_types" => count_list }.to_json
 end
 
 
-get "/index/:uuid" do |uuid|
-  content_type 'application/json'
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
-
-  index_document client, uuid
+def get_all_access_rights
+  query_result = query <<SPARQL
+  SELECT ?allowedGroups ?usedGroups ?index WHERE {
+    GRAPH <http://mu.semte.ch/authorization> {
+     ?rights a <accessRights>;
+             <hasAllowedGroups> ?allowedGroups;
+             <hasUsedGroups> ?usedGroups;
+             <hasEsIndex> ?index
+    }
+  }
+SPARQL
   
-  { message: "all ok" }.to_json
+  query_result.map do |result|
+    {
+      allowed: result["allowedGroups"].to_s.split(","), 
+      used: result["usedGroups"].to_s.split(","), 
+      index: result["index"] 
+    }
+  end
+end
+
+
+def put_access_rights uri, allowed_groups, used_groups, index
+  query_result = query <<SPARQL
+  INSERT DATA {
+    GRAPH <http://mu.semte.ch/authorization> {
+        #{uri} a <accessRights>;
+            <hasAllowedGroups> "#{allowed_groups}";
+            <hasUsedGroups> "#{used_groups}";
+             <hasEsIndex> "#{index}"
+    }
+  }
+SPARQL
+end
+
+
+# seems overly complicated... what am I missing?
+# at this level, could probably be done directly in the triplestore
+def has_same_access_rights allowed_one, used_one, allowed_two
+  diff = allowed_one - allowed_two
+  log.info "diffs: #{diff} / #{used_one - used_one}"
+  diff == [] or (used_one - diff) == used_one
+end
+
+
+# seems overly complicated... what am I missing?
+def find_matching_rights allowed_groups
+  allowed_groups = allowed_groups.sort
+  get_all_access_rights.each do |ar|
+    return ar[:index] if has_same_access_rights ar[:allowed], ar[:used], allowed_groups
+  end
+
+  nil
+end
+
+
+get "/test" do
+  put_access_rights "<rights1>", "a,b,c", "a,b", "abc"
+  ar = get_all_access_rights
+  log.info ar
+  find_matching_rights(["a","b","c"]).to_json
 end
 
 
