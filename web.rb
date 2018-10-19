@@ -1,19 +1,28 @@
 require 'net/http'
 
-# sample configuration
 configure do
-  set :step, 100
-  set :properties, { 
-        "<http://mu.semte.ch/vocabularies/core/Document>" => {
-          "title" => "<http://mu.semte.ch/vocabularies/core/title>",
-          "description" => "<http://mu.semte.ch/vocabularies/core/description>" 
-        }
-      }
+  # determines batch size for indexing documents (SPARQL OFFSET)
+  set :offset, 100
+
+  set :types, [{ 
+                 type: "document",
+                 rdf_type: "<http://mu.semte.ch/vocabularies/core/Document>",
+                 properties: {
+                   "title" => "<http://mu.semte.ch/vocabularies/core/title>",
+                   "description" => "<http://mu.semte.ch/vocabularies/core/description>" 
+                 }
+               }]
+
+  # assumes all types are in the same index
+  # * see deprecation of ES mapping types: 
+  #   https://www.elastic.co/guide/en/elasticsearch/reference/current/removal-of-types.html
+  set :mappings, nil
 end
 
-# quick and as-needed Elastic api, for use until
+# a quick as-needed Elastic API, for use until
 # the conflict with Sinatra::Utils is resolved
-# https://github.com/mu-semtech/mu-ruby-template/issues/16
+# * does not follow the standard API
+# * see: https://github.com/mu-semtech/mu-ruby-template/issues/16
 class Elastic
   def initialize(host: 'localhost', port: 9200)
     @host = host
@@ -93,24 +102,27 @@ class Elastic
 end
 
 
-def make_property_query uuid, property_map
+def make_property_query uuid, properties
   select_variables = ""
   property_predicates = ""
 
-  property_map.each do |key, predicate|
-    select_variables += " ?#{key} " 
-    property_predicates += "; #{predicate} ?#{key} "
+  properties.each do |key, predicate|
+    select_variables_s += " ?#{key} " 
+    property_predicates.push "#{predicate} ?#{key}"
   end
+
+  property_predicates_s = property_predicates.join("; ")
 
   <<SPARQL
     SELECT #{select_variables} WHERE { 
-     ?doc  <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}" #{property_predicates}
+     ?doc  <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
+           #{property_predicates_s}.
     }
 SPARQL
 end
 
 
-def query_count type
+def count_documents type
   query_result = query <<SPARQL
       SELECT (COUNT(?doc) AS ?count) WHERE {
         ?doc a #{type}
@@ -121,124 +133,104 @@ SPARQL
 end
 
 
-def get_all_access_rights
+# * to do: implement real matching scheme
+def find_matching_access_rights allowed_groups, used_groups
+  allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
+  used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
+
   query_result = query <<SPARQL
-  SELECT ?allowedGroups ?usedGroups ?index WHERE {
+  SELECT ?index WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
-     ?rights a <accessRights>;
-             <hasAllowedGroups> ?allowedGroups;
-             <hasUsedGroups> ?usedGroups;
-             <hasEsIndex> ?index
+        ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
+               <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{used_group_set};
+               <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> ?index
     }
   }
 SPARQL
   
-  query_result.map do |result|
-    {
-      allowed: result["allowedGroups"].to_s.split(","), 
-      used: result["usedGroups"].to_s.split(","), 
-      index: result["index"] 
-    }
-  end
+  # placeholder
+  result = query_result.first
+  query_result.first ? query_result.first["index"] : nil
 end
 
 
-# * make real URI and mu:uuid!
 def put_access_rights index, allowed_groups, used_groups
-  uri = "<#{index}>"
+  uuid = generate_uuid()
+  uri = "<http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}>"
+  
+
+  allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
+  used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
 
   query_result = query <<SPARQL
   INSERT DATA {
     GRAPH <http://mu.semte.ch/authorization> {
-        #{uri} a <accessRights>;
-            <hasAllowedGroups> "#{allowed_groups}";
-            <hasUsedGroups> "#{used_groups}";
-             <hasEsIndex> "#{index}"
+        #{uri} a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
+               <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
+               <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> #{allowed_group_set};
+               <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{used_group_set};
+               <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> "#{index}"
     }
   }
 SPARQL
 end
 
 
-# seems overly complicated... what am I missing?
-# at this level, could probably be done directly in the triplestore
-def has_same_access_rights allowed_one, used_one, allowed_two
-  diff = allowed_one - allowed_two
-  log.info "diffs: #{diff} // #{used_one} == #{used_one - diff} ?"
-  diff == [] or (used_one - diff) == used_one
+def current_index
+  allowed_groups, used_groups = current_groups
+  index = find_matching_access_rights allowed_groups, used_groups
 end
 
 
-# seems overly complicated... what am I missing?
-def find_matching_rights allowed_groups
-  if allowed_groups
-    get_all_access_rights.each do |ar|
-      return ar[:index] if has_same_access_rights ar[:allowed], ar[:used], allowed_groups
-    end
-
-    nil
-  end
+# * to do: check if index exists before creating it
+# * to do: how to name indexes?
+def create_current_index client
+  allowed_groups, used_groups = current_groups
+  index = allowed_groups.join("-") # placeholder
+  put_access_rights index, allowed_groups, used_groups
+  client.create_index index, settings.mappings
+  make_index client, index 
+  index
 end
 
 
 def current_groups
   allowed_groups_s = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
-  allowed_groups = allowed_groups_s ? JSON.parse(allowed_groups_s).map { |e| e["value"] } : nil
+  allowed_groups = allowed_groups_s ? JSON.parse(allowed_groups_s).map { |e| e["value"] } : []
 
   used_groups_s = request.env["HTTP_MU_AUTH_USED_GROUPS"]
-  used_groups = used_groups_s ? JSON.parse(used_groups_s).map { |e| e["value"] } : nil
+  used_groups = used_groups_s ? JSON.parse(used_groups_s).map { |e| e["value"] } : []
 
   return allowed_groups.sort, used_groups.sort
 end
 
 
-def current_matching_access_rights
-  allowed_groups, used_groups = current_groups
-  find_matching_rights allowed_groups
-end
-
-
-def current_index client
-  allowed_groups, used_groups = current_groups
-  used_groups = used_groups or []
-  allowed_groups = allowed_groups or []
-  index = find_matching_rights allowed_groups
-  new = nil
-
-  unless index
-    new = true
-    index = allowed_groups.join("-")
-    put_access_rights index, allowed_groups.join(","), used_groups.join(",")
-    client.create_index index
-    make_index client, index 
-  end
-
-  return index, new
-end
-
-
 # indexes all documents (or all authorized documents,
 # if queries are routed through an authorization service)
-# * should do batch updates
+# * to do: should do batch updates
 def make_index client, index
   count_list = [] # for reporting
 
-  settings.properties.each do |type, property_map|
-    count = query_count type
+  settings.types.each do |type_def|
+    type = type_def[:type]
+    rdf_type = type_def[:rdf_type]
+    properties = type_def[:properties]
+
+    count = count_documents rdf_type
     count_list.push( { type: type, count: count } )
 
     (0..(count/10)).each do |i|
-      offset = i*settings.step
+      offset = i*settings.offset
       query_result = query <<SPARQL
     SELECT ?id WHERE {
-      ?doc a #{type};
+      ?doc a #{rdf_type};
            <http://mu.semte.ch/vocabularies/core/uuid> ?id
     } LIMIT 100 OFFSET #{offset}
 SPARQL
 
       query_result.each do |result|
         uuid = result[:id].to_s
-        query_result = query make_property_query uuid, property_map
+        query_result = query make_property_query uuid, properties
         result = query_result.first
 
         document = {
@@ -258,32 +250,22 @@ end
 get "/index" do
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  make_index client, current_index(client)
+  index = current_index
+  create_current_index client unless index
+  make_index client, index
 end
 
 
 post "/search" do
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  index, new = current_index(client)
-  if new
+
+  index = current_index
+  unless index 
+    index = create_current_index client
     make_index client, index
     client.refresh_index index
   end
+
   client.search index: index, query: @json_body
 end
-
-
-get "/search" do
-  content_type 'application/json'
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
-  index, new = current_index(client)
-  log.info "Using index: #{index}"
-  if new
-    make_index client, index
-    client.refresh_index index
-  end
-  client.search index: index, query: @json_body
-end
-
-
