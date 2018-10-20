@@ -4,19 +4,28 @@ configure do
   # determines batch size for indexing documents (SPARQL OFFSET)
   set :offset, 100
 
-  set :types, [{ 
-                 type: "document",
-                 rdf_type: "<http://mu.semte.ch/vocabularies/core/Document>",
-                 properties: {
-                   "title" => "<http://mu.semte.ch/vocabularies/core/title>",
-                   "description" => "<http://mu.semte.ch/vocabularies/core/description>" 
-                 }
-               }]
+  # sample configuration (will be read from file)
+  configuration = { "types" => [ 
+                      {
+                        "type" => "document",
+                        "on_path" => "documents",
+                        "rdf_type" => "<http://mu.semte.ch/vocabularies/core/Document>",
+                        "properties" => {
+                          "title" => "<http://mu.semte.ch/vocabularies/core/title>",
+                          "description" => "<http://mu.semte.ch/vocabularies/core/description>" 
+                        },
+                        "mappings" => nil
+                      }
+                    ]
+                  }
 
-  # assumes all types are in the same index
-  # * see deprecation of ES mapping types: 
-  #   https://www.elastic.co/guide/en/elasticsearch/reference/current/removal-of-types.html
-  set :mappings, nil
+  types = {}
+
+  configuration["types"].each do |type_def|
+    types[type_def["on_path"]] = type_def
+  end
+
+  set :types, types
 end
 
 # a quick as-needed Elastic API, for use until
@@ -103,8 +112,8 @@ end
 
 
 def make_property_query uuid, properties
-  select_variables = ""
-  property_predicates = ""
+  select_variables_s = ""
+  property_predicates = []
 
   properties.each do |key, predicate|
     select_variables_s += " ?#{key} " 
@@ -114,7 +123,7 @@ def make_property_query uuid, properties
   property_predicates_s = property_predicates.join("; ")
 
   <<SPARQL
-    SELECT #{select_variables} WHERE { 
+    SELECT #{select_variables_s} WHERE { 
      ?doc  <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
            #{property_predicates_s}.
     }
@@ -134,7 +143,7 @@ end
 
 
 # * to do: implement real matching scheme
-def find_matching_access_rights allowed_groups, used_groups
+def find_matching_access_rights type, allowed_groups, used_groups
   allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
   used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
 
@@ -142,7 +151,8 @@ def find_matching_access_rights allowed_groups, used_groups
   SELECT ?index WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
-               <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{used_group_set};
+               <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type}";
+               <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{allowed_group_set};
                <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> ?index
     }
   }
@@ -154,11 +164,10 @@ SPARQL
 end
 
 
-def put_access_rights index, allowed_groups, used_groups
+def put_access_rights type, index, allowed_groups, used_groups
   uuid = generate_uuid()
   uri = "<http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}>"
   
-
   allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
   used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
 
@@ -167,6 +176,7 @@ def put_access_rights index, allowed_groups, used_groups
     GRAPH <http://mu.semte.ch/authorization> {
         #{uri} a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
                <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
+               <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type}";
                <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> #{allowed_group_set};
                <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{used_group_set};
                <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> "#{index}"
@@ -176,20 +186,22 @@ SPARQL
 end
 
 
-def current_index
+def current_index type_path
   allowed_groups, used_groups = current_groups
-  index = find_matching_access_rights allowed_groups, used_groups
+  type = settings.types[type_path]["type"]
+  index = find_matching_access_rights type, allowed_groups, used_groups
 end
 
 
 # * to do: check if index exists before creating it
 # * to do: how to name indexes?
-def create_current_index client
+def create_current_index client, type_path
   allowed_groups, used_groups = current_groups
-  index = allowed_groups.join("-") # placeholder
-  put_access_rights index, allowed_groups, used_groups
-  client.create_index index, settings.mappings
-  make_index client, index 
+  type = settings.types[type_path]["type"]
+  index = type + "-" + allowed_groups.join("-") # placeholder
+  put_access_rights type, index, allowed_groups, used_groups
+  client.create_index index, settings.types[type_path]["mappings"]
+  make_index client, type, index 
   index
 end
 
@@ -208,62 +220,63 @@ end
 # indexes all documents (or all authorized documents,
 # if queries are routed through an authorization service)
 # * to do: should do batch updates
-def make_index client, index
+def make_index client, type_path, index
   count_list = [] # for reporting
 
-  settings.types.each do |type_def|
-    type = type_def[:type]
-    rdf_type = type_def[:rdf_type]
-    properties = type_def[:properties]
+  type_def = settings.types[type_path]
+  type = type_def["type"]
+  rdf_type = type_def["rdf_type"]
+  properties = type_def["properties"]
 
-    count = count_documents rdf_type
-    count_list.push( { type: type, count: count } )
+  count = count_documents rdf_type
 
-    (0..(count/10)).each do |i|
-      offset = i*settings.offset
-      query_result = query <<SPARQL
+  count_list.push( { type: type, count: count } )
+
+  (0..(count/10)).each do |i|
+    offset = i*settings.offset
+    query_result = query <<SPARQL
     SELECT ?id WHERE {
       ?doc a #{rdf_type};
            <http://mu.semte.ch/vocabularies/core/uuid> ?id
     } LIMIT 100 OFFSET #{offset}
 SPARQL
 
-      query_result.each do |result|
-        uuid = result[:id].to_s
-        query_result = query make_property_query uuid, properties
-        result = query_result.first
+    query_result.each do |result|
+      uuid = result[:id].to_s
+      query_result = query make_property_query uuid, properties
+      result = query_result.first
 
-        document = {
-          title: result[:title].to_s,
-          description: result[:description].to_s,
-        }
-        client.put_document(index, uuid, document.to_json)
-      end
-
+      document = {
+        title: result[:title].to_s,
+        description: result[:description].to_s,
+      }
+      client.put_document(index, uuid, document.to_json)
     end
+
   end
 
   { index: index, document_types: count_list }.to_json
 end
 
 
-get "/index" do
+post "/:type_path/index" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  index = current_index
-  create_current_index client unless index
-  make_index client, index
+
+  index = current_index type_path
+  create_current_index client, type_path unless index
+  make_index client, type_path, index
 end
 
 
-post "/search" do
+post "/:type_path/search" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
-  index = current_index
+  index = current_index type_path
   unless index 
-    index = create_current_index client
-    make_index client, index
+    index = create_current_index client, type_path
+    make_index client, type_path, index
     client.refresh_index index
   end
 
