@@ -259,6 +259,20 @@ SPARQL
 end
 
 
+def format_results type, results
+  { 
+    data: JSON.parse(results)["hits"]["hits"].map do |result|
+      {
+        type: type,
+        id: result["_id"],
+        attributes: result["_source"]
+      }
+    end,
+    links: { self: "http://application/" }
+  }
+end
+
+
 post "/:type_path/index" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
@@ -272,6 +286,7 @@ end
 post "/:type_path/search" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
+  type = settings.types[type_path]["type"]
 
   index = current_index type_path
   unless index 
@@ -280,5 +295,5 @@ post "/:type_path/search" do |type_path|
     client.refresh_index index
   end
 
-  client.search index: index, query: @json_body
+  format_results(type, client.search(index: index, query: @json_body)).to_json
 end
