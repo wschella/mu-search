@@ -259,6 +259,29 @@ SPARQL
 end
 
 
+# Currently supports ES methods that can be given a single value, e.g., match, term, prefix, fuzzy, etc.
+# i.e., anything that can be written: { "query": { "METHOD" : { "field": "value" } } }
+# not supported yet: everything else
+# such as value, range, boost...
+# Currently combined with { "bool": { "must": { ... } } } 
+def construct_query
+  filters = params["filter"].map do |field, v| 
+    v.map do |method, val| 
+      { method => { field => val } } 
+    end
+  end.first.first
+
+  {
+    query: {
+      bool: {
+        must: filters
+      }
+    }
+  }
+
+end
+
+
 def format_results type, results
   { 
     data: JSON.parse(results)["hits"]["hits"].map do |result|
@@ -283,6 +306,24 @@ post "/:type_path/index" do |type_path|
 end
 
 
+get "/:type_path/search" do |type_path|
+  content_type 'application/json'
+  client = Elastic.new(host: 'elasticsearch', port: 9200)
+  type = settings.types[type_path]["type"]
+
+  index = current_index type_path
+  unless index 
+    index = create_current_index client, type_path
+    make_index client, type_path, index
+    client.refresh_index index
+  end
+
+  es_query = construct_query
+
+  format_results(type, client.search(index: index, query: es_query)).to_json
+end
+
+
 post "/:type_path/search" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
@@ -295,5 +336,7 @@ post "/:type_path/search" do |type_path|
     client.refresh_index index
   end
 
-  format_results(type, client.search(index: index, query: @json_body)).to_json
+  es_query = @json_body
+
+  format_results(type, client.search(index: index, query: es_query)).to_json
 end
