@@ -1,31 +1,19 @@
 require 'net/http'
 
 configure do
+
+  configuration = JSON.parse File.read('/config/config.json')
+
   # determines batch size for indexing documents (SPARQL OFFSET)
-  set :offset, 100
+  set :offset, configuration["offset"]
 
-  # sample configuration (will be read from file)
-  configuration = { "types" => [ 
-                      {
-                        "type" => "document",
-                        "on_path" => "documents",
-                        "rdf_type" => "<http://mu.semte.ch/vocabularies/core/Document>",
-                        "properties" => {
-                          "title" => "<http://mu.semte.ch/vocabularies/core/title>",
-                          "description" => "<http://mu.semte.ch/vocabularies/core/description>" 
-                        },
-                        "mappings" => nil
-                      }
-                    ]
-                  }
-
-  types = {}
-
+  # invert definitions for easy lookup by path
+  type_defs = {}
   configuration["types"].each do |type_def|
-    types[type_def["on_path"]] = type_def
+    type_defs[type_def["on_path"]] = type_def
   end
 
-  set :types, types
+  set :types, type_defs
 end
 
 # a quick as-needed Elastic API, for use until
@@ -264,6 +252,9 @@ end
 # not supported yet: everything else
 # such as value, range, boost...
 # Currently combined with { "bool": { "must": { ... } } } 
+# * to do: range queries
+# * to do: sort
+# * to do: 
 def construct_query
   filters = params["filter"].map do |field, v| 
     v.map do |method, val| 
