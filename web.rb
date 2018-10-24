@@ -78,6 +78,22 @@ class Elastic
     run(uri, req)
   end
 
+  # data is an array of json/hashes, ordered according to
+  # https://www.elastic.co/guide/en/elasticsearch/reference/6.4/docs-bulk.html
+  def bulk_update_document index, data
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_bulk")
+    req = Net::HTTP::Post.new(uri)
+
+    body = ""
+    data.each do |datum|
+      body += datum.to_json + "\n"
+    end
+
+    log.info "DATA: #{body}"
+    req.body = body
+    run(uri, req)
+  end
+
   def delete_document index, id
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}")
     req = Net::HTTP::Delete.new(uri)
@@ -143,22 +159,11 @@ SPARQL
 end
 
 
-# * to do: implement real matching scheme
 def find_matching_access_rights type, allowed_groups, used_groups
   allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
   used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
 
-#   query_result = query <<SPARQL
-#   SELECT ?index WHERE {
-#     GRAPH <http://mu.semte.ch/authorization> {
-#         ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
-#                <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type}";
-#                <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{allowed_group_set};
-#                <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> ?index
-#     }
-#   }
-# SPARQL
-
+  # simplified example
   query_result = query <<SPARQL
   SELECT ?index WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
@@ -249,8 +254,9 @@ def make_index client, type_path, index
 
   (0..(count/10)).each do |i|
     offset = i*settings.offset
+    data = []
     query_result = query <<SPARQL
-    SELECT ?id WHERE {
+    SELECT DISTINCT ?id WHERE {
       ?doc a #{rdf_type};
            <http://mu.semte.ch/vocabularies/core/uuid> ?id
     } LIMIT 100 OFFSET #{offset}
@@ -265,9 +271,11 @@ SPARQL
         title: result[:title].to_s,
         description: result[:description].to_s,
       }
-      client.put_document(index, uuid, document.to_json)
+      # client.put_document(index, uuid, document.to_json)
+      data.push ({ index: { _id: uuid } })
+      data.push document
     end
-
+    client.bulk_update_document index, data
   end
 
   { index: index, document_types: count_list }.to_json
