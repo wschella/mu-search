@@ -96,6 +96,19 @@ class Elastic
 
     run(uri, req)    
   end
+
+  def count index:, query_string: nil, query: nil, sort: nil
+    if query_string
+      uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count?q=#{query_string}&sort=#{sort}")
+      req = Net::HTTP::Get.new(uri)
+    else 
+      uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count")
+      req = Net::HTTP::Get.new(uri)
+      req.body = query.to_json
+    end
+
+    run(uri, req)    
+  end
 end
 
 
@@ -146,7 +159,7 @@ def find_matching_access_rights type, allowed_groups, used_groups
 #   }
 # SPARQL
 
-  query_result = query  = <<SPARQL
+  query_result = query <<SPARQL
   SELECT ?index WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
@@ -262,13 +275,11 @@ end
 
 
 # Currently supports ES methods that can be given a single value, e.g., match, term, prefix, fuzzy, etc.
-# i.e., anything that can be written: { "query": { "METHOD" : { "field": "value" } } }
-# not supported yet: everything else
-# such as value, range, boost...
-# Currently combined with { "bool": { "must": { ... } } } 
+# i.e., any method that can be written: { "query": { "METHOD" : { "field": "value" } } }
+# * not supported yet: everything else, e.g., value, range, boost...
+# Currently combined using { "bool": { "must": { ... } } } 
 # * to do: range queries
 # * to do: sort
-# * to do: 
 def construct_query
   filters = params["filter"].map do |field, v| 
     v.map do |method, val| 
@@ -287,8 +298,13 @@ def construct_query
 end
 
 
-def format_results type, results
+def format_results type, count, page, size, results
+  last_page = count/size
+  next_page = [page+1, last_page].min
+  prev_page = [page-1, 0].max
+
   { 
+    count: count,
     data: JSON.parse(results)["hits"]["hits"].map do |result|
       {
         type: type,
@@ -296,7 +312,13 @@ def format_results type, results
         attributes: result["_source"]
       }
     end,
-    links: { self: "http://application/" }
+    links: {
+      self: "http://application/",
+      first: "page[number]=0&page[size]=#{size}",
+      last: "page[number]=#{last_page}&page[size]=#{size}",
+      prev: "page[number]=#{prev_page}&page[size]=#{size}",
+      next: "page[number]=#{next_page}&page[size]=#{size}"
+    }
   }
 end
 
@@ -323,12 +345,30 @@ get "/:type_path/search" do |type_path|
     client.refresh_index index
   end
 
+  if params["page"]
+    page = params["page"]["number"] or 0
+    size = params["page"]["size"] or 10
+  else
+    page = 0
+    size = 10
+  end
+
   es_query = construct_query
 
-  format_results(type, client.search(index: index, query: es_query)).to_json
+  count_result = JSON.parse(client.count index: index, query: es_query)
+  count = count_result["count"]
+
+  # add pagination parameters
+  es_query["from"] = page * size
+  es_query["size"] = size
+
+  results = client.search index: index, query: es_query
+  format_results( type, count, page, size, results).to_json
 end
 
 
+# Using raw ES search DSL, mostly for testing
+# Need to think through several things, such as pagination
 post "/:type_path/search" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
@@ -343,5 +383,11 @@ post "/:type_path/search" do |type_path|
 
   es_query = @json_body
 
-  format_results(type, client.search(index: index, query: es_query)).to_json
+  count_query = es_query
+  count_query.delete("from")
+  count_query.delete("size")
+  count_result = JSON.parse(client.count index: index, query: es_query)
+  count = count_result["count"]
+
+  format_results(type, count, 0, 10, client.search(index: index, query: es_query)).to_json
 end
