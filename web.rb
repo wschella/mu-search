@@ -135,18 +135,32 @@ def find_matching_access_rights type, allowed_groups, used_groups
   allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
   used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
 
-  query_result = query <<SPARQL
+#   query_result = query <<SPARQL
+#   SELECT ?index WHERE {
+#     GRAPH <http://mu.semte.ch/authorization> {
+#         ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
+#                <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type}";
+#                <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{allowed_group_set};
+#                <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> ?index
+#     }
+#   }
+# SPARQL
+
+  query_result = query  = <<SPARQL
   SELECT ?index WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
                <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type}";
-               <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{allowed_group_set};
+               <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> #{allowed_group_set};
                <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> ?index
+        FILTER NOT EXISTS {
+           ?rights <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group.
+            FILTER ( ?group NOT IN (#{allowed_group_set}) )
+        }
     }
   }
 SPARQL
-  
-  # placeholder
+
   result = query_result.first
   query_result.first ? query_result.first["index"] : nil
 end
@@ -189,7 +203,7 @@ def create_current_index client, type_path
   index = type + "-" + allowed_groups.join("-") # placeholder
   put_access_rights type, index, allowed_groups, used_groups
   client.create_index index, settings.types[type_path]["mappings"]
-  make_index client, type, index 
+  make_index client, type_path, index 
   index
 end
 
