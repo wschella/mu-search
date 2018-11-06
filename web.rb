@@ -1,20 +1,5 @@
 require 'net/http'
 
-configure do
-
-  configuration = JSON.parse File.read('/config/config.json')
-
-  # determines batch size for indexing documents (SPARQL OFFSET)
-  set :offset, configuration["offset"]
-
-  # invert definitions for easy lookup by path
-  type_defs = {}
-  configuration["types"].each do |type_def|
-    type_defs[type_def["on_path"]] = type_def
-  end
-
-  set :types, type_defs
-end
 
 # a quick as-needed Elastic API, for use until
 # the conflict with Sinatra::Utils is resolved
@@ -89,7 +74,6 @@ class Elastic
       body += datum.to_json + "\n"
     end
 
-    log.info "DATA: #{body}"
     req.body = body
     run(uri, req)
   end
@@ -134,7 +118,7 @@ def make_property_query uuid, properties
 
   properties.each do |key, predicate|
     select_variables_s += " ?#{key} " 
-    predicate_s = predicate.is_a? String ? predicate : predicate.join("/")
+    predicate_s = predicate.is_a?(String) ? predicate : predicate.join("/")
     property_predicates.push "#{predicate} ?#{key}"
   end
 
@@ -161,31 +145,12 @@ end
 
 
 def find_matching_access_rights type, allowed_groups, used_groups
-  allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
-  used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
-
-  # simplified example
-  query_result = query <<SPARQL
-  SELECT ?index WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
-               <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type}";
-               <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> #{allowed_group_set};
-               <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> ?index
-        FILTER NOT EXISTS {
-           ?rights <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group.
-            FILTER ( ?group NOT IN (#{allowed_group_set}) )
-        }
-    }
-  }
-SPARQL
-
-  result = query_result.first
-  query_result.first ? query_result.first["index"] : nil
+  rights = settings.rights[type][used_groups]
+  rights and rights[:index]
 end
 
 
-def put_access_rights type, index, allowed_groups, used_groups
+def store_access_rights type, index, allowed_groups, used_groups
   uuid = generate_uuid()
   uri = "<http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}>"
   
@@ -204,6 +169,50 @@ def put_access_rights type, index, allowed_groups, used_groups
     }
   }
 SPARQL
+
+  new_rights_set = { uri: uri, index: index,
+                     allowed_groups: allowed_groups, used_groups: used_groups }
+  settings.rights[type][used_groups] =  new_rights_set
+end
+
+
+def load_access_rights type
+  rights = {}
+
+  query_result = query <<SPARQL
+  SELECT * WHERE {
+    GRAPH <http://mu.semte.ch/authorization> {
+        ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
+               <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type}";
+               <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> ?index
+    }
+  }
+SPARQL
+
+  query_result.each do |result|
+    uri = result["rights"].to_s
+    allowed_groups_result = query <<SPARQL
+  SELECT * WHERE {
+    GRAPH <http://mu.semte.ch/authorization> {
+        <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group
+    }
+  }
+SPARQL
+    allowed_groups = allowed_groups_result.map { |g| g["group"].to_s }
+
+    used_groups_result = query <<SPARQL
+  SELECT * WHERE {
+    GRAPH <http://mu.semte.ch/authorization> {
+        <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> ?group
+    }
+  }
+SPARQL
+    used_groups = used_groups_result.map { |g| g["group"].to_s }
+  
+    rights[used_groups] = { uri: uri, index: result["index"].to_s, allowed_groups: allowed_groups, used_groups: used_groups }
+  end
+
+  rights
 end
 
 
@@ -220,7 +229,8 @@ def create_current_index client, type_path
   allowed_groups, used_groups = current_groups
   type = settings.types[type_path]["type"]
   index = type + "-" + allowed_groups.join("-") # placeholder
-  put_access_rights type, index, allowed_groups, used_groups
+  
+  store_access_rights type, index, allowed_groups, used_groups
   client.create_index index, settings.types[type_path]["mappings"]
   make_index client, type_path, index 
   index
@@ -329,6 +339,27 @@ def format_results type, count, page, size, results
       next: "page[number]=#{next_page}&page[size]=#{size}"
     }
   }
+end
+
+
+configure do
+  configuration = JSON.parse File.read('/config/config.json')
+
+  # determines batch size for indexing documents (SPARQL OFFSET)
+  set :offset, configuration["offset"]
+
+  # invert definitions for easy lookup by path
+  type_defs = {}
+  rights = {}
+  configuration["types"].each do |type_def|
+    type_defs[type_def["on_path"]] = type_def
+    type = type_def["type"]
+    rights[type] = load_access_rights type
+  end
+
+  set :types, type_defs
+
+  set :rights, rights
 end
 
 
