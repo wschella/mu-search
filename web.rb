@@ -134,6 +134,7 @@ def make_property_query uuid, properties
 
   properties.each do |key, predicate|
     select_variables_s += " ?#{key} " 
+    predicate_s = predicate.is_a? String ? predicate : predicate.join("/")
     property_predicates.push "#{predicate} ?#{key}"
   end
 
