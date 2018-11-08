@@ -1,13 +1,37 @@
-{ "offset": 100,
-  "types": 
-  [{
-      "type": "document",
-      "on_path": "documents",
-      "rdf_type": "<http://mu.semte.ch/vocabularies/core/Document>",
-      "properties": {
-          "title": "<http://mu.semte.ch/vocabularies/core/title>",
-          "description": "<http://mu.semte.ch/vocabularies/core/description>" 
-      },
-      "mappings": null
-  }]
+{
+    "offset": 100,
+    "types": [
+        {
+            "type": "document",
+            "on_path": "documents",
+            "rdf_type": "<http://mu.semte.ch/vocabularies/core/Document>",
+            "properties": {
+                "title": "<http://mu.semte.ch/vocabularies/core/title>",
+                "description": "<http://mu.semte.ch/vocabularies/core/description>" 
+            },
+            "mappings": null
+        },
+        {
+            "type": "user",
+            "on_path": "users",
+            "rdf_type": "<http://mu.semte.ch/vocabularies/core/User>",
+            "properties": {
+                "fullname": "<http://mu.semte.ch/vocabularies/core/name>"
+            },
+            "mappings": null
+        },
+        {
+            "types": ["document", "user"],
+            "on_path": "userdocs",
+            "properties": [
+                {
+                    "name": "title",
+                    "mappings": {
+                        "document": "title",
+                        "user": "fullname"
+                    }
+                }
+            ]
+        }
+    ]
 }

@@ -172,6 +172,7 @@ SPARQL
 
   new_rights_set = { uri: uri, index: index,
                      allowed_groups: allowed_groups, used_groups: used_groups }
+
   settings.rights[type][used_groups] =  new_rights_set
 end
 
@@ -218,7 +219,7 @@ end
 
 def current_index type_path
   allowed_groups, used_groups = current_groups
-  type = settings.types[type_path]["type"]
+  type = settings.type_defs[type_path]["type"] || settings.type_defs[type_path]["types"].join("-") # abstract this!
   index = find_matching_access_rights type, allowed_groups, used_groups
 end
 
@@ -227,11 +228,15 @@ end
 # * to do: how to name indexes?
 def create_current_index client, type_path
   allowed_groups, used_groups = current_groups
-  type = settings.types[type_path]["type"]
-  index = type + "-" + allowed_groups.join("-") # placeholder
+
+  # abstract this!
+  type = settings.type_defs[type_path]["type"] || settings.type_defs[type_path]["types"].join("-")
+
+  # placeholder
+  index = type + "-" + allowed_groups.join("-")
   
   store_access_rights type, index, allowed_groups, used_groups
-  client.create_index index, settings.types[type_path]["mappings"]
+  client.create_index index, settings.type_defs[type_path]["mappings"]
   make_index client, type_path, index 
   index
 end
@@ -254,42 +259,86 @@ end
 def make_index client, type_path, index
   count_list = [] # for reporting
 
-  type_def = settings.types[type_path]
-  type = type_def["type"]
-  rdf_type = type_def["rdf_type"]
-  properties = type_def["properties"]
+  type_def = settings.type_defs[type_path]
 
-  count = count_documents rdf_type
 
-  count_list.push( { type: type, count: count } )
+  # Can we do this inversion at load-up?
+  if type_def["type"]
+    rdf_type = type_def["rdf_type"]
+    types = [{
+               type: type_def["type"],
+               rdf_type: rdf_type,
+               count: count_documents(rdf_type),
+               properties: type_def["properties"]
+              }]
+  else
+    types = type_def["types"].map do |type_name|
+      source_type_def = settings.types[type_name]
+      rdf_type = source_type_def["rdf_type"]
 
-  (0..(count/10)).each do |i|
-    offset = i*settings.offset
-    data = []
-    query_result = query <<SPARQL
+      { 
+        type: type_name,
+        rdf_type: rdf_type,
+        count: count_documents(rdf_type),
+        properties: Hash[
+          type_def["properties"].map do |property|
+            property_name = property["name"]
+            [property_name, source_type_def["properties"][property_name]]
+          end
+        ]
+      }
+    end
+  end
+
+  # if type   
+  #   rdf_type = type_def["rdf_type"]
+  #   rdf_types = [rdf_type]
+  #   count = count_documents rdf_type
+  #   count_list.push( { type: type, count: count } )
+  # else
+  #   types = type_def["types"]
+  #   types.each do |type_name|
+  #     rdf_type = settings.types[type_name]["rdf_type"] 
+  #     count = count_documents rdf_type
+  #     count_list.push {type: type_name, count: count}
+  #   end
+  # end
+
+  types.each do |type|
+    rdf_type = type[:rdf_type]
+    properties = type[:properties]
+
+    count = type[:count]
+    (0..(count/10)).each do |i|
+      offset = i*settings.offset
+      data = []
+      query_result = query <<SPARQL
     SELECT DISTINCT ?id WHERE {
       ?doc a #{rdf_type};
            <http://mu.semte.ch/vocabularies/core/uuid> ?id
     } LIMIT 100 OFFSET #{offset}
 SPARQL
 
-    query_result.each do |result|
-      uuid = result[:id].to_s
-      query_result = query make_property_query uuid, properties
-      result = query_result.first
+      query_result.each do |result|
+        uuid = result[:id].to_s
+        query_result = query make_property_query uuid, properties
+        result = query_result.first
 
-      document = {
-        title: result[:title].to_s,
-        description: result[:description].to_s,
-      }
-      # client.put_document(index, uuid, document.to_json)
-      data.push ({ index: { _id: uuid } })
-      data.push document
+        document = {
+          title: result[:title].to_s,
+          description: result[:description].to_s,
+        }
+
+        # client.put_document(index, uuid, document.to_json)
+        data.push ({ index: { _id: uuid } })
+        data.push document
+      end
+
+      client.bulk_update_document index, data unless data.empty?
     end
-    client.bulk_update_document index, data
   end
 
-  { index: index, document_types: count_list }.to_json
+  { index: index, document_types: types }.to_json
 end
 
 
@@ -344,6 +393,11 @@ end
 
 configure do
   configuration = JSON.parse File.read('/config/config.json')
+  set :types, Hash[
+        configuration["types"].collect do |type_def|
+          [type_def["type"], type_def]
+        end
+      ]
 
   # determines batch size for indexing documents (SPARQL OFFSET)
   set :offset, configuration["offset"]
@@ -353,17 +407,17 @@ configure do
   rights = {}
   configuration["types"].each do |type_def|
     type_defs[type_def["on_path"]] = type_def
-    type = type_def["type"]
+    type = type_def["type"] || type_def["types"].join("-")
     rights[type] = load_access_rights type
   end
 
-  set :types, type_defs
+  set :type_defs, type_defs
 
   set :rights, rights
 end
 
 
-post "/:type_path/index" do |type_path|
+get "/:type_path/index" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
@@ -376,7 +430,7 @@ end
 get "/:type_path/search" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.types[type_path]["type"]
+  type = settings.type_defs[type_path]["type"]
 
   index = current_index type_path
   unless index 
@@ -412,7 +466,7 @@ end
 post "/:type_path/search" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.types[type_path]["type"]
+  type = settings.type_defs[type_path]["type"]
 
   index = current_index type_path
   unless index 
