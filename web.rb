@@ -129,32 +129,36 @@ def store_access_rights type, index, allowed_groups, used_groups
   query_result = query <<SPARQL
   INSERT DATA {
     GRAPH <http://mu.semte.ch/authorization> {
-        #{uri} a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
+        #{uri} a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
                <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
-               <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type}";
+               <http://mu.semte.ch/vocabularies/authorization/objectType> "#{type}";
                <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> #{allowed_group_set};
                <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{used_group_set};
-               <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> "#{index}"
+               <http://mu.semte.ch/vocabularies/authorization/indexName> "#{index}"
     }
   }
 SPARQL
 
-  new_rights_set = { uri: uri, index: index,
-                     allowed_groups: allowed_groups, used_groups: used_groups }
+  index_authorizations = {
+    uri: uri,
+    index: index,
+    allowed_groups: allowed_groups,
+    used_groups: used_groups 
+  }
 
-  settings.rights[type][used_groups] =  new_rights_set
+  settings.rights[type][used_groups] =  index_authorizations
 end
 
 
-def load_access_rights type_name
+def load_access_rights type
   rights = {}
 
   query_result = query <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
-        ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
-               <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type_name}";
-               <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> ?index
+        ?rights a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
+               <http://mu.semte.ch/vocabularies/authorization/objectType> "#{type}";
+               <http://mu.semte.ch/vocabularies/authorization/indexName> ?index
     }
   }
 SPARQL
@@ -179,7 +183,12 @@ SPARQL
 SPARQL
     used_groups = used_groups_result.map { |g| g["group"].to_s }
   
-    rights[used_groups] = { uri: uri, index: result["index"].to_s, allowed_groups: allowed_groups, used_groups: used_groups }
+    rights[used_groups] = { 
+      uri: uri,
+      index: result["index"].to_s,
+      allowed_groups: allowed_groups, 
+      used_groups: used_groups 
+    }
   end
 
   rights
@@ -188,10 +197,16 @@ end
 
 def current_index path
   allowed_groups, used_groups = current_groups
-  type = settings.type_paths[path]
-  type_name = (type.is_a?(String)) ? type : type.join("-")
+  type, type_s = get_type path
 
   find_matching_access_rights type, allowed_groups, used_groups
+end
+
+
+def get_type path
+  type = settings.type_paths[path]
+  type_s = (type.is_a?(String)) ? type :  type.join("-")
+  return type, type_s
 end
 
 
@@ -200,13 +215,11 @@ end
 def create_current_index client, path
   allowed_groups, used_groups = current_groups
 
-  # abstract this!
-  type = settings.type_paths[path]
-  type_name = (type.is_a?(String)) ? type :  type.join("-")
+  type, type_s = get_type path
 
-  index = Digest::MD5.hexdigest (type_name + "-" + allowed_groups.join("-"))
+  index = Digest::MD5.hexdigest (type_s + "-" + allowed_groups.join("-"))
   
-  store_access_rights type_name, index, allowed_groups, used_groups
+  store_access_rights type_s, index, allowed_groups, used_groups
   client.create_index index, settings.type_definitions[type]["mappings"]
   index_documents client, path, index 
   index
@@ -408,8 +421,8 @@ configure do
   rights = {}
   configuration["types"].each do |type_def|
     type = type_def["type"]
-    type_name =  type.is_a?(String) ? type : type.join("-")
-    rights[type] = load_access_rights type_name
+    type_s =  type.is_a?(String) ? type : type.join("-")
+    rights[type] = load_access_rights type_s
     end
 
   set :rights, rights
@@ -433,8 +446,7 @@ end
 get "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.type_paths[path]
-  type_name =  type.is_a?(String) ? type : type.join("-")
+  type, type_s = get_type path
 
   index = current_index path
   unless index 
@@ -462,7 +474,7 @@ get "/:path/search" do |path|
 
   results = client.search index: index, query: es_query
 
-  format_results( type_name, count, page, size, results).to_json
+  format_results( type_s, count, page, size, results).to_json
 end
 
 
@@ -471,7 +483,7 @@ end
 post "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.type_paths[path]
+  type, type_s = get_type path
 
   index = current_index path
   unless index 
