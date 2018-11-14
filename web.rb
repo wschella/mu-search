@@ -1,4 +1,5 @@
 require 'net/http'
+require 'digest'
 
 
 # A quick as-needed Elastic API, for use until
@@ -203,8 +204,7 @@ def create_current_index client, path
   type = settings.type_paths[path]
   type_name = (type.is_a?(String)) ? type :  type.join("-")
 
-  # placeholder
-  index = type_name + "-" + allowed_groups.join("-")
+  index = Digest::MD5.hexdigest (type_name + "-" + allowed_groups.join("-"))
   
   store_access_rights type_name, index, allowed_groups, used_groups
   client.create_index index, settings.type_definitions[type]["mappings"]
