@@ -112,31 +112,10 @@ class Elastic
 end
 
 
-def make_property_query uuid, properties
-  select_variables_s = ""
-  property_predicates = []
-
-  properties.each do |key, predicate|
-    select_variables_s += " ?#{key} " 
-    predicate_s = predicate.is_a?(String) ? predicate : predicate.join("/")
-    property_predicates.push "#{predicate} ?#{key}"
-  end
-
-  property_predicates_s = property_predicates.join("; ")
-
-  <<SPARQL
-    SELECT #{select_variables_s} WHERE { 
-     ?doc  <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
-           #{property_predicates_s}.
-    }
-SPARQL
-end
-
-
-def count_documents type
+def count_documents rdf_type
   query_result = query <<SPARQL
       SELECT (COUNT(?doc) AS ?count) WHERE {
-        ?doc a #{type}
+        ?doc a #{rdf_type}
       }
 SPARQL
 
@@ -177,14 +156,14 @@ SPARQL
 end
 
 
-def load_access_rights type
+def load_access_rights type_name
   rights = {}
 
   query_result = query <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?rights a <http://mu.semte.ch/vocabularies/authorization/AccessRights>;
-               <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type}";
+               <http://mu.semte.ch/vocabularies/authorization/hasType> "#{type_name}";
                <http://mu.semte.ch/vocabularies/authorization/hasEsIndex> ?index
     }
   }
@@ -219,7 +198,9 @@ end
 
 def current_index type_path
   allowed_groups, used_groups = current_groups
-  type = settings.type_defs[type_path]["type"] || settings.type_defs[type_path]["types"].join("-") # abstract this!
+  type = settings.type_paths[type_path]
+  type_name = (type.is_a?(String)) ? type : type.join("-")
+
   index = find_matching_access_rights type, allowed_groups, used_groups
 end
 
@@ -230,14 +211,15 @@ def create_current_index client, type_path
   allowed_groups, used_groups = current_groups
 
   # abstract this!
-  type = settings.type_defs[type_path]["type"] || settings.type_defs[type_path]["types"].join("-")
+  type = settings.type_paths[type_path]
+  type_name = (type.is_a?(String)) ? type :  type.join("-")
 
   # placeholder
-  index = type + "-" + allowed_groups.join("-")
+  index = type_name + "-" + allowed_groups.join("-")
   
-  store_access_rights type, index, allowed_groups, used_groups
-  client.create_index index, settings.type_defs[type_path]["mappings"]
-  make_index client, type_path, index 
+  store_access_rights type_name, index, allowed_groups, used_groups
+  client.create_index index, settings.type_definitions[type]["mappings"]
+  index_documents client, type_path, index 
   index
 end
 
@@ -253,63 +235,76 @@ def current_groups
 end
 
 
-# indexes all documents (or all authorized documents,
-# if queries are routed through an authorization service)
-# * to do: should do batch updates
-def make_index client, type_path, index
-  count_list = [] # for reporting
+def make_property_query uuid, properties
+  select_variables_s = ""
+  property_predicates = []
 
-  type_def = settings.type_defs[type_path]
-
-
-  # Can we do this inversion at load-up?
-  if type_def["type"]
-    rdf_type = type_def["rdf_type"]
-    types = [{
-               type: type_def["type"],
-               rdf_type: rdf_type,
-               count: count_documents(rdf_type),
-               properties: type_def["properties"]
-              }]
-  else
-    types = type_def["types"].map do |type_name|
-      source_type_def = settings.types[type_name]
-      rdf_type = source_type_def["rdf_type"]
-
-      { 
-        type: type_name,
-        rdf_type: rdf_type,
-        count: count_documents(rdf_type),
-        properties: Hash[
-          type_def["properties"].map do |property|
-            property_name = property["name"]
-            [property_name, source_type_def["properties"][property_name]]
-          end
-        ]
-      }
-    end
+  properties.each do |key, predicate|
+    select_variables_s += " ?#{key} " 
+    predicate_s = predicate.is_a?(String) ? predicate : predicate.join("/")
+    property_predicates.push "#{predicate} ?#{key}"
   end
 
-  # if type   
-  #   rdf_type = type_def["rdf_type"]
-  #   rdf_types = [rdf_type]
-  #   count = count_documents rdf_type
-  #   count_list.push( { type: type, count: count } )
-  # else
-  #   types = type_def["types"]
-  #   types.each do |type_name|
-  #     rdf_type = settings.types[type_name]["rdf_type"] 
-  #     count = count_documents rdf_type
-  #     count_list.push {type: type_name, count: count}
-  #   end
-  # end
+  property_predicates_s = property_predicates.join("; ")
+
+  <<SPARQL
+    SELECT #{select_variables_s} WHERE { 
+     ?doc  <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
+           #{property_predicates_s}.
+    }
+SPARQL
+end
+
+
+def type_definition_by_path type_path
+  settings.type_definitions[settings.type_paths[type_path]]
+end
+
+
+def is_multiple_type? type_definition
+  type_definition["type"].is_a?(Array)
+end
+
+
+def multiple_type_expand_subtypes types, properties
+  types.map do |type|
+    source_type_def = settings.type_definitions[type]
+    rdf_type = source_type_def["rdf_type"]
+
+    { 
+      "type" => type,
+      "rdf_type" => rdf_type,
+      "properties" => Hash[
+        properties.map do |property|
+          property_name = property["name"]
+          mapped_name = property["mappings"][type]
+          [property_name, source_type_def["properties"][mapped_name]]
+        end
+      ]
+    }
+  end
+end
+
+
+def index_documents client, type_path, index
+  count_list = [] # for reporting
+
+  type_def = type_definition_by_path type_path
+
+  if is_multiple_type?(type_def)
+    types = multiple_type_expand_subtypes type_def["type"], type_def["properties"]
+  else
+    types = [type_def]
+  end
 
   types.each do |type|
-    rdf_type = type[:rdf_type]
-    properties = type[:properties]
+    rdf_type = type["rdf_type"]
 
-    count = type[:count]
-    (0..(count/10)).each do |i|
+    count = count_documents rdf_type
+    type["count"] = count
+    properties = type["properties"]
+
+    (0..(count/settings.offset)).each do |i|
       offset = i*settings.offset
       data = []
       query_result = query <<SPARQL
@@ -324,12 +319,12 @@ SPARQL
         query_result = query make_property_query uuid, properties
         result = query_result.first
 
-        document = {
-          title: result[:title].to_s,
-          description: result[:description].to_s,
-        }
+        document = Hash[
+          properties.collect do |key, val|
+            [key, result[key]]
+          end
+        ]
 
-        # client.put_document(index, uuid, document.to_json)
         data.push ({ index: { _id: uuid } })
         data.push document
       end
@@ -393,25 +388,32 @@ end
 
 configure do
   configuration = JSON.parse File.read('/config/config.json')
-  set :types, Hash[
+
+  # determines batch size for indexing documents (SPARQL OFFSET)
+  set :offset, configuration["offset"]
+
+  set :type_paths, Hash[
+        configuration["types"].collect do |type_def|
+          [type_def["on_path"], type_def["type"]]
+        end
+      ]
+
+  set :type_definitions, Hash[
         configuration["types"].collect do |type_def|
           [type_def["type"], type_def]
         end
       ]
 
-  # determines batch size for indexing documents (SPARQL OFFSET)
-  set :offset, configuration["offset"]
-
-  # invert definitions for easy lookup by path
   type_defs = {}
   rights = {}
   configuration["types"].each do |type_def|
-    type_defs[type_def["on_path"]] = type_def
-    type = type_def["type"] || type_def["types"].join("-")
-    rights[type] = load_access_rights type
-  end
+    # type_defs[type_def["on_path"]] = type_def
+    type = type_def["type"]
+    type_name =  type.is_a?(String) ? type : type.join("-")
+    rights[type] = load_access_rights type_name
+    end
 
-  set :type_defs, type_defs
+  # set :type_defs, type_defs
 
   set :rights, rights
 end
@@ -423,19 +425,20 @@ get "/:type_path/index" do |type_path|
 
   index = current_index type_path
   create_current_index client, type_path unless index
-  make_index client, type_path, index
+  index_documents client, type_path, index
 end
 
 
 get "/:type_path/search" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.type_defs[type_path]["type"]
+  type = settings.type_paths[type_path]
+  type_name =  type.is_a?(String) ? type : type.join("-")
 
   index = current_index type_path
   unless index 
     index = create_current_index client, type_path
-    make_index client, type_path, index
+    index_documents client, type_path, index
     client.refresh_index index
   end
 
@@ -457,7 +460,8 @@ get "/:type_path/search" do |type_path|
   es_query["size"] = size
 
   results = client.search index: index, query: es_query
-  format_results( type, count, page, size, results).to_json
+
+  format_results( type_name, count, page, size, results).to_json
 end
 
 
@@ -466,12 +470,12 @@ end
 post "/:type_path/search" do |type_path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.type_defs[type_path]["type"]
+  type = settings.type_paths[type_path]
 
   index = current_index type_path
   unless index 
     index = create_current_index client, type_path
-    make_index client, type_path, index
+    index_documents client, type_path, index
     client.refresh_index index
   end
 

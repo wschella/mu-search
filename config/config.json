@@ -16,19 +16,27 @@
             "on_path": "users",
             "rdf_type": "<http://mu.semte.ch/vocabularies/core/User>",
             "properties": {
-                "fullname": "<http://mu.semte.ch/vocabularies/core/name>"
+                "fullname": "<http://mu.semte.ch/vocabularies/core/name>",
+                "bio": "<http://mu.semte.ch/vocabularies/core/bio>"
             },
             "mappings": null
         },
         {
-            "types": ["document", "user"],
+            "type": ["document", "user"],
             "on_path": "userdocs",
             "properties": [
                 {
-                    "name": "title",
+                    "name": "name",
                     "mappings": {
                         "document": "title",
                         "user": "fullname"
+                    }
+                },
+                {
+                    "name": "blurb",
+                    "mappings": {
+                        "document": "description",
+                        "user": "bio"
                     }
                 }
             ]
