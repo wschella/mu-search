@@ -1,7 +1,7 @@
 require 'net/http'
 
 
-# a quick as-needed Elastic API, for use until
+# A quick as-needed Elastic API, for use until
 # the conflict with Sinatra::Utils is resolved
 # * does not follow the standard API
 # * see: https://github.com/mu-semtech/mu-ruby-template/issues/16
@@ -112,17 +112,6 @@ class Elastic
 end
 
 
-def count_documents rdf_type
-  query_result = query <<SPARQL
-      SELECT (COUNT(?doc) AS ?count) WHERE {
-        ?doc a #{rdf_type}
-      }
-SPARQL
-
-  query_result.first["count"].to_i
-end
-
-
 def find_matching_access_rights type, allowed_groups, used_groups
   rights = settings.rights[type][used_groups]
   rights and rights[:index]
@@ -196,22 +185,22 @@ SPARQL
 end
 
 
-def current_index type_path
+def current_index path
   allowed_groups, used_groups = current_groups
-  type = settings.type_paths[type_path]
+  type = settings.type_paths[path]
   type_name = (type.is_a?(String)) ? type : type.join("-")
 
-  index = find_matching_access_rights type, allowed_groups, used_groups
+  find_matching_access_rights type, allowed_groups, used_groups
 end
 
 
 # * to do: check if index exists before creating it
 # * to do: how to name indexes?
-def create_current_index client, type_path
+def create_current_index client, path
   allowed_groups, used_groups = current_groups
 
   # abstract this!
-  type = settings.type_paths[type_path]
+  type = settings.type_paths[path]
   type_name = (type.is_a?(String)) ? type :  type.join("-")
 
   # placeholder
@@ -219,7 +208,7 @@ def create_current_index client, type_path
   
   store_access_rights type_name, index, allowed_groups, used_groups
   client.create_index index, settings.type_definitions[type]["mappings"]
-  index_documents client, type_path, index 
+  index_documents client, path, index 
   index
 end
 
@@ -232,6 +221,17 @@ def current_groups
   used_groups = used_groups_s ? JSON.parse(used_groups_s).map { |e| e["value"] } : []
 
   return allowed_groups.sort, used_groups.sort
+end
+
+
+def count_documents rdf_type
+  query_result = query <<SPARQL
+      SELECT (COUNT(?doc) AS ?count) WHERE {
+        ?doc a #{rdf_type}
+      }
+SPARQL
+
+  query_result.first["count"].to_i
 end
 
 
@@ -256,8 +256,8 @@ SPARQL
 end
 
 
-def type_definition_by_path type_path
-  settings.type_definitions[settings.type_paths[type_path]]
+def type_definition_by_path path
+  settings.type_definitions[settings.type_paths[path]]
 end
 
 
@@ -286,10 +286,10 @@ def multiple_type_expand_subtypes types, properties
 end
 
 
-def index_documents client, type_path, index
+def index_documents client, path, index
   count_list = [] # for reporting
 
-  type_def = type_definition_by_path type_path
+  type_def = type_definition_by_path path
 
   if is_multiple_type?(type_def)
     types = multiple_type_expand_subtypes type_def["type"], type_def["properties"]
@@ -343,7 +343,7 @@ end
 # Currently combined using { "bool": { "must": { ... } } } 
 # * to do: range queries
 # * to do: sort
-def construct_query
+def construct_es_query
   filters = params["filter"].map do |field, v| 
     v.map do |method, val| 
       { method => { field => val } } 
@@ -407,38 +407,39 @@ configure do
   type_defs = {}
   rights = {}
   configuration["types"].each do |type_def|
-    # type_defs[type_def["on_path"]] = type_def
     type = type_def["type"]
     type_name =  type.is_a?(String) ? type : type.join("-")
     rights[type] = load_access_rights type_name
     end
 
-  # set :type_defs, type_defs
-
   set :rights, rights
 end
 
 
-get "/:type_path/index" do |type_path|
+get "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
-  index = current_index type_path
-  create_current_index client, type_path unless index
-  index_documents client, type_path, index
+  index = current_index path
+
+  unless index
+    index = create_current_index client, path 
+  end
+
+  index_documents client, path, index
 end
 
 
-get "/:type_path/search" do |type_path|
+get "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.type_paths[type_path]
+  type = settings.type_paths[path]
   type_name =  type.is_a?(String) ? type : type.join("-")
 
-  index = current_index type_path
+  index = current_index path
   unless index 
-    index = create_current_index client, type_path
-    index_documents client, type_path, index
+    index = create_current_index client, path
+    index_documents client, path, index
     client.refresh_index index
   end
 
@@ -450,7 +451,7 @@ get "/:type_path/search" do |type_path|
     size = 10
   end
 
-  es_query = construct_query
+  es_query = construct_es_query
 
   count_result = JSON.parse(client.count index: index, query: es_query)
   count = count_result["count"]
@@ -467,15 +468,15 @@ end
 
 # Using raw ES search DSL, mostly for testing
 # Need to think through several things, such as pagination
-post "/:type_path/search" do |type_path|
+post "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.type_paths[type_path]
+  type = settings.type_paths[path]
 
-  index = current_index type_path
+  index = current_index path
   unless index 
-    index = create_current_index client, type_path
-    index_documents client, type_path, index
+    index = create_current_index client, path
+    index_documents client, path, index
     client.refresh_index index
   end
 
