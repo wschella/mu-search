@@ -81,14 +81,17 @@ Properties can also be mapped to lists of predicates, corresponding to a propert
             "properties": {
                 "title": "<http://purl.org/dc/elements/1.1/title>",
                 "description": "<http://purl.org/dc/elements/1.1/description>",
-                "interest": ["<http://application.com/interest>", "<http://purl.org/dc/elements/1.1/title>"]
+                "interest": [
+                  "<http://application.com/interest>", 
+                  "<http://purl.org/dc/elements/1.1/title>"
+                ]
             }
         }
 ```
 
 ### Multi-types
 
-It is also possible to define multi-types, which combine several simple types, which must (in the current state of the application) be defined as well.
+It is also possible to define multi-types, which combine several simple types. Currently, these simple types must be defined as well. (It should also be possible to define fully inline subtypes.)
 
 A multi-type is defined by a list of its constituent simple types, and a set of mappings per type for each of its properties. If a mapping, or the mappings object, is absent, the same property name is assumed.
 
@@ -173,7 +176,7 @@ When used with the Delta Service, mu-elastic-search can automatically invalidate
 
 ## Search and Configuration API
 
-### GET `/:type/search/`
+### GET `/:type/search`
 
 JSON-API compliant request format, intended to match the request format of mu-cl-resources. Currently, only simple Elasticsearch methods are supported, such as match, term, prefix, fuzzy, etc.
 
@@ -189,7 +192,7 @@ Pagination is specified with `page` `number` and `size`:
 http://localhost:8888/userdocs/search?filter[name][match]=fish&page=2&size=20
 ```
 
-### POST `/:type/search/`
+### POST `/:type/search`
 
 Accepts raw Elasticsearch Query DSL, as defined at <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html>.
 
