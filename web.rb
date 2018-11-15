@@ -220,7 +220,7 @@ def create_current_index client, path
   index = Digest::MD5.hexdigest (type_s + "-" + allowed_groups.join("-"))
   
   store_access_rights type_s, index, allowed_groups, used_groups
-  client.create_index index, settings.type_definitions[type]["mappings"]
+  client.create_index index, settings.type_definitions[type]["es_mappings"]
   index_documents client, path, index 
   index
 end
@@ -317,8 +317,8 @@ def index_documents client, path, index
     type["count"] = count
     properties = type["properties"]
 
-    (0..(count/settings.offset)).each do |i|
-      offset = i*settings.offset
+    (0..(count/settings.batch_size)).each do |i|
+      offset = i*settings.batch_size
       data = []
       query_result = query <<SPARQL
     SELECT DISTINCT ?id WHERE {
@@ -403,7 +403,7 @@ configure do
   configuration = JSON.parse File.read('/config/config.json')
 
   # determines batch size for indexing documents (SPARQL OFFSET)
-  set :offset, configuration["offset"]
+  set :batch_size, (configuration["batch_size"] || 100)
 
   set :type_paths, Hash[
         configuration["types"].collect do |type_def|
