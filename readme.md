@@ -30,13 +30,9 @@ Then, create the `./config/mu-elastic-search` directory, copy `config.json` into
 
 Access rights are determined according to the contents of two headers, `MU_AUTH_ALLOWED_GROUPS` and `MU_AUTH_USED_GROUPS`.
 
-In the current state of the application, a separate Elasticsearch index is created for each combination of document type and authorization group.  
+Currently, a separate Elasticsearch index is created for each combination of document type and authorization group.  
 
-
-
-### Authorization Groups
-
-[How groups are compared to determine access rights equivalence.]
+To be completed...
 
 
 
