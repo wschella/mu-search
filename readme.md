@@ -40,7 +40,7 @@ In the current state of the application, a separate Elasticsearch index is creat
 
 
 
-## Configuring mu-elastic-search
+## Configuration
 
 The configuration file `config.json` is used to specify the mapping between RDF triples and Elasticsearch documents, as well as other parameters.
 
@@ -160,7 +160,6 @@ PUT index4901823098
 
 **batch_size** -- number of documents loaded from the RDF store and indexed together in a single batch.
 
-[reference other parameters defined below]
 
 
 ## Eager Indexing [not implemented yet]
@@ -198,7 +197,7 @@ http://localhost:8888/userdocs/search?filter[name][match]=fish&page=2&size=20
 
 Accepts raw Elasticsearch Query DSL, as defined at <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html>.
 
-### GET `/:type/index`
+### POST `/:type/index`
 
 Re-index all documents of type `type` for the current user's authorization group.
 
