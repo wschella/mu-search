@@ -1,12 +1,10 @@
 # mu-elastic-search
 
-Component to integrate authorization-aware search via Elasticsearch into the mu.semte.ch stack.
+A component to integrate authorization-aware search via Elasticsearch into the mu.semte.ch stack.
 
 ## Using mu-elastic-search 
 
-Add mu-elastic-search and Elasticsearch to your docker-compose file. Further environment parameters are detailed below. 
-
-A link must be made for the configuration file. The current example is with a local build, since no docker-hub image has been published yet.
+First, add mu-elastic-search and Elasticsearch to your docker-compose file.  A link must be made to the folder containing the configuration file. (The current example is with a local build, since no image has been published yet on docker-hub.)
 
 ```
   mu-elastic:
@@ -25,6 +23,8 @@ A link must be made for the configuration file. The current example is with a lo
       - 9200:9200
 ```
 
+Then, create the `./config/mu-elastic-search` directory, copy `config.json` into it, and modify this file to define how RDF triples are indexed as Elasticsearch documents, as described [below](#configuration).
+
 
 ## Access Rights
 
@@ -32,7 +32,7 @@ Access rights are determined according to the contents of two headers, `MU_AUTH_
 
 In the current state of the application, a separate Elasticsearch index is created for each combination of document type and authorization group.  
 
-[Explain]
+
 
 ### Authorization Groups
 
