@@ -22,13 +22,13 @@
             "mappings": null
         },
         {
-            "type": ["document", "user"],
+            "type" : "userdoc",
+            "composite_types": ["document", "user"],
             "on_path": "userdocs",
             "properties": [
                 {
-                    "name": "name",
+                    "name": "title",
                     "mappings": {
-                        "document": "title",
                         "user": "fullname"
                     }
                 },

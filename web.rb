@@ -197,16 +197,14 @@ end
 
 def current_index path
   allowed_groups, used_groups = current_groups
-  type, type_s = get_type path
+  type = get_type path
 
   find_matching_access_rights type, allowed_groups, used_groups
 end
 
 
 def get_type path
-  type = settings.type_paths[path]
-  type_s = (type.is_a?(String)) ? type :  type.join("-")
-  return type, type_s
+  settings.type_paths[path]
 end
 
 
@@ -215,11 +213,11 @@ end
 def create_current_index client, path
   allowed_groups, used_groups = current_groups
 
-  type, type_s = get_type path
+  type = get_type path
 
-  index = Digest::MD5.hexdigest (type_s + "-" + allowed_groups.join("-"))
+  index = Digest::MD5.hexdigest (type + "-" + allowed_groups.join("-"))
   
-  store_access_rights type_s, index, allowed_groups, used_groups
+  store_access_rights type, index, allowed_groups, used_groups
   client.create_index index, settings.type_definitions[type]["es_mappings"]
   index_documents client, path, index 
   index
@@ -275,7 +273,7 @@ end
 
 
 def is_multiple_type? type_definition
-  type_definition["type"].is_a?(Array)
+  type_definition["composite_types"].is_a?(Array)
 end
 
 
@@ -290,7 +288,12 @@ def multiple_type_expand_subtypes types, properties
       "properties" => Hash[
         properties.map do |property|
           property_name = property["name"]
-          mapped_name = property["mappings"][type]
+          mapped_name = 
+            if property["mappings"]
+              property["mappings"][type] || property_name
+            else 
+              property_name
+            end
           [property_name, source_type_def["properties"][mapped_name]]
         end
       ]
@@ -305,7 +308,7 @@ def index_documents client, path, index
   type_def = type_definition_by_path path
 
   if is_multiple_type?(type_def)
-    types = multiple_type_expand_subtypes type_def["type"], type_def["properties"]
+    types = multiple_type_expand_subtypes type_def["composite_types"], type_def["properties"]
   else
     types = [type_def]
   end
@@ -421,8 +424,7 @@ configure do
   rights = {}
   configuration["types"].each do |type_def|
     type = type_def["type"]
-    type_s =  type.is_a?(String) ? type : type.join("-")
-    rights[type] = load_access_rights type_s
+    rights[type] = load_access_rights type
     end
 
   set :rights, rights
@@ -446,7 +448,7 @@ end
 get "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type, type_s = get_type path
+  type = get_type path
 
   index = current_index path
   unless index 
@@ -474,7 +476,7 @@ get "/:path/search" do |path|
 
   results = client.search index: index, query: es_query
 
-  format_results( type_s, count, page, size, results).to_json
+  format_results(type, count, page, size, results).to_json
 end
 
 
@@ -483,7 +485,7 @@ end
 post "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type, type_s = get_type path
+  type = get_type path
 
   index = current_index path
   unless index 
