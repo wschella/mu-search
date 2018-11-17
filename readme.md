@@ -1,12 +1,10 @@
 # mu-elastic-search
 
-Component to integrate authorization-aware search via Elasticsearch into the mu.semte.ch stack.
+A component to integrate authorization-aware search via Elasticsearch into the mu.semte.ch stack.
 
 ## Using mu-elastic-search 
 
-Add mu-elastic-search and Elasticsearch to your docker-compose file. Further environment parameters are detailed below. 
-
-A link must be made for the configuration file. The current example is with a local build, since no docker-hub image has been published yet.
+First, add mu-elastic-search and Elasticsearch to your docker-compose file.  A link must be made to the folder containing the configuration file. (The current example is with a local build, since no image has been published yet on docker-hub.)
 
 ```
   mu-elastic:
@@ -25,22 +23,20 @@ A link must be made for the configuration file. The current example is with a lo
       - 9200:9200
 ```
 
+Then, create the `./config/mu-elastic-search` directory, copy `config.json` into it, and modify this file to define how RDF triples are indexed as Elasticsearch documents, as described [below](#configuration).
+
 
 ## Access Rights
 
 Access rights are determined according to the contents of two headers, `MU_AUTH_ALLOWED_GROUPS` and `MU_AUTH_USED_GROUPS`.
 
-In the current state of the application, a separate Elasticsearch index is created for each combination of document type and authorization group.  
+Currently, a separate Elasticsearch index is created for each combination of document type and authorization group.  
 
-[Explain]
-
-### Authorization Groups
-
-[How groups are compared to determine access rights equivalence.]
+To be completed...
 
 
 
-## Configuring mu-elastic-search
+## Configuration
 
 The configuration file `config.json` is used to specify the mapping between RDF triples and Elasticsearch documents, as well as other parameters.
 
@@ -85,14 +81,17 @@ Properties can also be mapped to lists of predicates, corresponding to a propert
             "properties": {
                 "title": "<http://purl.org/dc/elements/1.1/title>",
                 "description": "<http://purl.org/dc/elements/1.1/description>",
-                "interest": ["<http://application.com/interest>", "<http://purl.org/dc/elements/1.1/title>"]
+                "interest": [
+                  "<http://application.com/interest>", 
+                  "<http://purl.org/dc/elements/1.1/title>"
+                ]
             }
         }
 ```
 
 ### Multi-types
 
-It is also possible to define multi-types, which combine several simple types, which must (in the current state of the application) be defined as well.
+It is also possible to define multi-types, which combine several simple types. Currently, these simple types must be defined as well. (It should also be possible to define fully inline subtypes.)
 
 A multi-type is defined by a list of its constituent simple types, and a set of mappings per type for each of its properties. If a mapping, or the mappings object, is absent, the same property name is assumed.
 
@@ -160,7 +159,6 @@ PUT index4901823098
 
 **batch_size** -- number of documents loaded from the RDF store and indexed together in a single batch.
 
-[reference other parameters defined below]
 
 
 ## Eager Indexing [not implemented yet]
@@ -178,7 +176,7 @@ When used with the Delta Service, mu-elastic-search can automatically invalidate
 
 ## Search and Configuration API
 
-### GET `/:type/search/`
+### GET `/:type/search`
 
 JSON-API compliant request format, intended to match the request format of mu-cl-resources. Currently, only simple Elasticsearch methods are supported, such as match, term, prefix, fuzzy, etc.
 
@@ -194,11 +192,11 @@ Pagination is specified with `page` `number` and `size`:
 http://localhost:8888/userdocs/search?filter[name][match]=fish&page=2&size=20
 ```
 
-### POST `/:type/search/`
+### POST `/:type/search`
 
 Accepts raw Elasticsearch Query DSL, as defined at <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html>.
 
-### GET `/:type/index`
+### POST `/:type/index`
 
 Re-index all documents of type `type` for the current user's authorization group.
 
