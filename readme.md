@@ -48,23 +48,23 @@ Here is a simple example of a complete `config.json` file.
 
 ```
 {
-    "types": [
+    "types" : [
         {
-            "type": "document",
-            "on_path": "documents",
-            "rdf_type": "<http://mu.semte.ch/vocabularies/core/Document>",
-            "properties": {
-                "title": "<http://purl.org/dc/elements/1.1/title>",
-                "description": "<http://purl.org/dc/elements/1.1/description>" 
+            "type" : "document",
+            "on_path" : "documents",
+            "rdf_type" : "<http://mu.semte.ch/vocabularies/core/Document>",
+            "properties" : {
+                "title" : "<http://purl.org/dc/elements/1.1/title>",
+                "description" : "<http://purl.org/dc/elements/1.1/description>" 
             }
         },
         {
-            "type": "user",
-            "on_path": "users",
-            "rdf_type": "<http://mu.semte.ch/vocabularies/core/User>",
-            "properties": {
-                "fullname": "<http://xmlns.com/foaf/0.1/name>",
-                "bio": "<http://mu.semte.ch/vocabularies/core/biography>"
+            "type" : "user",
+            "on_path" : "users",
+            "rdf_type" : "<http://mu.semte.ch/vocabularies/core/User>",
+            "properties" : {
+                "fullname" : "<http://xmlns.com/foaf/0.1/name>",
+                "bio" : "<http://mu.semte.ch/vocabularies/core/biography>"
             }
          }
     ]
@@ -75,13 +75,13 @@ Properties can also be mapped to lists of predicates, corresponding to a propert
 
 ```
         {
-            "type": "document",
-            "on_path": "documents",
-            "rdf_type": "<http://mu.semte.ch/vocabularies/core/Document>",
-            "properties": {
-                "title": "<http://purl.org/dc/elements/1.1/title>",
-                "description": "<http://purl.org/dc/elements/1.1/description>",
-                "interest": [
+            "type" : "document",
+            "on_path" : "documents",
+            "rdf_type" : "<http://mu.semte.ch/vocabularies/core/Document>",
+            "properties" : {
+                "title" : "<http://purl.org/dc/elements/1.1/title>",
+                "description" : "<http://purl.org/dc/elements/1.1/description>",
+                "interest" : [
                   "<http://application.com/interest>", 
                   "<http://purl.org/dc/elements/1.1/title>"
                 ]
@@ -97,21 +97,22 @@ A multi-type is defined by a list of its constituent simple types, and a set of 
 
 ```
         {
-            "type": ["document", "user"],
-            "on_path": "fiche",
-            "properties": [
+            "type" : "fiche",
+            "composite_types" : ["document", "user"],
+            "on_path" : "fiches",
+            "properties" : [
                 {
-                    "name": "name",
-                    "mappings": {
-                        "document": "title",
-                        "user": "fullname"
+                    "name" : "name",
+                    "mappings" : {
+                        "document" : "title",
+                        "user" : "fullname"
                     }
                 },
                 {
-                    "name": "blurb",
-                    "mappings": {
-                        "document": "description",
-                        "user": "bio"
+                    "name" : "blurb",
+                    "mappings" : {
+                        "document" : "description",
+                        "user" : "bio"
                     }
                 }
             ]
@@ -124,11 +125,11 @@ The optional `es_mappings` object for each type, if present, is used verbatim to
 
 ```
         {
-            "type": "document",
-            "on_path": "documents",
-            "rdf_type": "<http://mu.semte.ch/vocabularies/core/Document>",
-            "properties": {...},
-            "es_mappings": {
+            "type" : "document",
+            "on_path" : "documents",
+            "rdf_type" : "<http://mu.semte.ch/vocabularies/core/Document>",
+            "properties" : {...},
+            "es_mappings" : {
                 "title" : { "type" : "text" },
                 "description" : { "type" : "text" }
             }
