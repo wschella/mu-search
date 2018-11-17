@@ -129,7 +129,7 @@ def store_access_rights type, index, allowed_groups, used_groups
   query_result = query <<SPARQL
   INSERT DATA {
     GRAPH <http://mu.semte.ch/authorization> {
-        #{uri} a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
+        <#{uri}> a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
                <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
                <http://mu.semte.ch/vocabularies/authorization/objectType> "#{type}";
                <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> #{allowed_group_set};
@@ -238,7 +238,7 @@ end
 def count_documents rdf_type
   query_result = query <<SPARQL
       SELECT (COUNT(?doc) AS ?count) WHERE {
-        ?doc a #{rdf_type}
+        ?doc a <#{rdf_type}>
       }
 SPARQL
 
@@ -253,7 +253,7 @@ def make_property_query uuid, properties
   properties.each do |key, predicate|
     select_variables_s += " ?#{key} " 
     predicate_s = predicate.is_a?(String) ? predicate : predicate.join("/")
-    property_predicates.push "#{predicate} ?#{key}"
+    property_predicates.push "<#{predicate}> ?#{key}"
   end
 
   property_predicates_s = property_predicates.join("; ")
@@ -325,7 +325,7 @@ def index_documents client, path, index
       data = []
       query_result = query <<SPARQL
     SELECT DISTINCT ?id WHERE {
-      ?doc a #{rdf_type};
+      ?doc a <#{rdf_type}>;
            <http://mu.semte.ch/vocabularies/core/uuid> ?id
     } LIMIT 100 OFFSET #{offset}
 SPARQL
@@ -425,9 +425,36 @@ configure do
   configuration["types"].each do |type_def|
     type = type_def["type"]
     rights[type] = load_access_rights type
-    end
+  end
 
   set :rights, rights
+
+  # properties lookup table for deltas
+  rdf_properties = {}
+
+  configuration["types"].each do |type_def|
+    if type_def["composite_types"]
+    # this needs to be done looping on composite_types first
+    # to pick up implicit properties
+    #
+      # type_def["properties"].each do |name, property|
+      #   if property["mappings"]
+      #     property["mappings"].each do |source_type, source_property|
+      #       rdf_property = settings.type_definitions[source_type]["properties"][source_property]
+      #       rdf_properties[rdf_property] =  rdf_properties[rdf_property] || []
+      #       rdf_properties[rdf_property].push type_def["type"]
+      #     end
+      #   end
+    else
+      type_def["properties"].each do |name, rdf_property|
+        rdf_properties[rdf_property] =  rdf_properties[rdf_property] || []
+        rdf_properties[rdf_property].push type_def["type"]
+      end
+    end
+  end
+
+  set :rdf_properties, rdf_properties
+
 end
 
 
@@ -503,4 +530,33 @@ post "/:path/search" do |path|
   count = count_result["count"]
 
   format_results(type, count, 0, 10, client.search(index: index, query: es_query)).to_json
+end
+
+
+post "/update" do
+  deltas = @json_body
+  inserts = deltas["delta"]["inserts"]
+  deletes = deltas["delta"]["deletes"]
+
+  inserts.each do |triple|
+    s = triple["s"]
+    p = triple["p"]
+    possible_types = settings.rdf_properties[p]
+
+    possible_types.each do |type|
+      rdf_type = settings.type_definitions[type]["rdf_type"]
+
+      is_type? = query <<SPARQL
+    ASK WHERE {
+      <#{s}> a <#{rdf_type}>
+    }
+SPARQL
+
+      if is_type?
+        # invalidate all indexes for type
+      end
+    end
+  end
+
+  {message: "Updated."}.to_json
 end

@@ -4,20 +4,20 @@
         {
             "type": "document",
             "on_path": "documents",
-            "rdf_type": "<http://mu.semte.ch/vocabularies/core/Document>",
+            "rdf_type": "http://mu.semte.ch/vocabularies/core/Document",
             "properties": {
-                "title": "<http://mu.semte.ch/vocabularies/core/title>",
-                "description": "<http://mu.semte.ch/vocabularies/core/description>" 
+                "title": "http://mu.semte.ch/vocabularies/core/title",
+                "description": "http://mu.semte.ch/vocabularies/core/description" 
             },
             "mappings": null
         },
         {
             "type": "user",
             "on_path": "users",
-            "rdf_type": "<http://mu.semte.ch/vocabularies/core/User>",
+            "rdf_type": "http://mu.semte.ch/vocabularies/core/User",
             "properties": {
-                "fullname": "<http://mu.semte.ch/vocabularies/core/name>",
-                "bio": "<http://mu.semte.ch/vocabularies/core/bio>"
+                "fullname": "http://mu.semte.ch/vocabularies/core/name",
+                "bio": "http://mu.semte.ch/vocabularies/core/bio"
             },
             "mappings": null
         },
