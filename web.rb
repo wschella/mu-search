@@ -546,13 +546,7 @@ post "/update" do
     possible_types.each do |type|
       rdf_type = settings.type_definitions[type]["rdf_type"]
 
-      is_type? = query <<SPARQL
-    ASK WHERE {
-      <#{s}> a <#{rdf_type}>
-    }
-SPARQL
-
-      if is_type?
+      if query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
         # invalidate all indexes for type
       end
     end
