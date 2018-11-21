@@ -114,14 +114,14 @@ end
 
 
 def find_matching_access_rights type, allowed_groups, used_groups
-  rights = settings.rights[type][used_groups]
-  rights and rights[:index]
+  index = settings.indexes[type][used_groups]
+  index and index[:index]
 end
 
 
 def store_access_rights type, index, allowed_groups, used_groups
   uuid = generate_uuid()
-  uri = "<http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}>"
+  uri = "http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}"
   
   allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
   used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
@@ -146,7 +146,7 @@ SPARQL
     used_groups: used_groups 
   }
 
-  settings.rights[type][used_groups] =  index_authorizations
+  settings.indexes[type][used_groups] =  index_authorizations
 end
 
 
@@ -303,6 +303,8 @@ end
 
 
 def index_documents client, path, index
+  settings.index_status[index] = :updating
+
   count_list = [] # for reporting
 
   type_def = type_definition_by_path path
@@ -346,9 +348,12 @@ SPARQL
       end
 
       client.bulk_update_document index, data unless data.empty?
+
     end
   end
 
+  settings.index_status[index] = :valid
+  
   { index: index, document_types: types }.to_json
 end
 
@@ -427,7 +432,9 @@ configure do
     rights[type] = load_access_rights type
   end
 
-  set :rights, rights
+  set :indexes, rights
+
+  set :index_status, {}
 
   # properties lookup table for deltas
   rdf_properties = {}
@@ -478,6 +485,14 @@ get "/:path/search" do |path|
   type = get_type path
 
   index = current_index path
+
+  # wait if being updated
+
+  if index and settings.index_status[index] == :invalid
+    index_documents client, path, index
+    client.refresh_index index
+  end
+
   unless index 
     index = create_current_index client, path
     index_documents client, path, index
@@ -515,6 +530,12 @@ post "/:path/search" do |path|
   type = get_type path
 
   index = current_index path
+
+  if index and settings.index_status[index] == :invalid
+    index_documents client, path, index
+    client.refresh_index index
+  end
+
   unless index 
     index = create_current_index client, path
     index_documents client, path, index
@@ -547,10 +568,14 @@ post "/update" do
       rdf_type = settings.type_definitions[type]["rdf_type"]
 
       if query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
-        # invalidate all indexes for type
+        indexes = settings.indexes[type]
+        log.info "Invalidating #{indexes.length} indexes of document type: #{type}"
+        # if automatic_updates flag, then update/remove specified document
+        # else
+        indexes.each { |key, index| settings.index_status[index[:index]] = :invalid }
       end
     end
   end
 
-  {message: "Updated."}.to_json
+  {message: "Thanks for the update."}.to_json
 end
