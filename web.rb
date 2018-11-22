@@ -1,5 +1,6 @@
 require 'net/http'
 require 'digest'
+require 'set'
 
 
 # A quick as-needed Elastic API, for use until
@@ -60,7 +61,7 @@ class Elastic
   def update_document index, id, document
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}/_update")
     req = Net::HTTP::Post.new(uri)
-    req.body = document
+    req.body = { "doc": document }.to_json
     run(uri, req)
   end
 
@@ -246,10 +247,26 @@ SPARQL
 end
 
 
-def make_property_query uuid, properties
+def get_uuid s
+  query_result = query <<SPARQL
+SELECT ?uuid WHERE {
+   <#{s}> <http://mu.semte.ch/vocabularies/core/uuid> ?uuid 
+}
+SPARQL
+  uuid = query_result.first["uuid"]
+end
+
+
+def make_property_query uuid, uri, properties
   select_variables_s = ""
   property_predicates = []
 
+  id_line = 
+    if uuid
+      "?doc  <http://mu.semte.ch/vocabularies/core/uuid> \"#{uuid}\"; "
+    else
+      "<#{uri}> "
+    end
   properties.each do |key, predicate|
     select_variables_s += " ?#{key} " 
     predicate_s = predicate.is_a?(String) ? predicate : predicate.join("/")
@@ -260,7 +277,7 @@ def make_property_query uuid, properties
 
   <<SPARQL
     SELECT #{select_variables_s} WHERE { 
-     ?doc  <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
+     #{id_line}
            #{property_predicates_s}.
     }
 SPARQL
@@ -334,15 +351,7 @@ SPARQL
 
       query_result.each do |result|
         uuid = result[:id].to_s
-        query_result = query make_property_query uuid, properties
-        result = query_result.first
-
-        document = Hash[
-          properties.collect do |key, val|
-            [key, result[key]]
-          end
-        ]
-
+        document = fetch_document_to_index uuid: uuid, properties: properties
         data.push ({ index: { _id: uuid } })
         data.push document
       end
@@ -355,6 +364,18 @@ SPARQL
   settings.index_status[index] = :valid
   
   { index: index, document_types: types }.to_json
+end
+
+
+def fetch_document_to_index uuid: nil, uri: nil, properties: properties
+  query_result = query make_property_query uuid, uri, properties
+  result = query_result.first
+
+  document = Hash[
+    properties.collect do |key, val|
+      [key, result[key].to_s] # !! get right types!
+    end
+  ]            
 end
 
 
@@ -411,7 +432,9 @@ configure do
   configuration = JSON.parse File.read('/config/config.json')
 
   # determines batch size for indexing documents (SPARQL OFFSET)
-  set :batch_size, (configuration["batch_size"] || 100)
+  set :batch_size, (ENV['BATCH_SIZE'] || 100)
+
+  set :automatic_index_updates, ENV["AUTOMATIC_INDEX_UPDATES"]
 
   set :type_paths, Hash[
         configuration["types"].collect do |type_def|
@@ -436,8 +459,9 @@ configure do
 
   set :index_status, {}
 
-  # properties lookup table for deltas
+  # properties and types lookup tables for deltas
   rdf_properties = {}
+  rdf_types = {}
 
   configuration["types"].each do |type_def|
     if type_def["composite_types"]
@@ -453,6 +477,7 @@ configure do
       #     end
       #   end
     else
+      rdf_types[type_def["rdf_type"]] = type_def["type"]
       type_def["properties"].each do |name, rdf_property|
         rdf_properties[rdf_property] =  rdf_properties[rdf_property] || []
         rdf_properties[rdf_property].push type_def["type"]
@@ -461,6 +486,7 @@ configure do
   end
 
   set :rdf_properties, rdf_properties
+  set :rdf_types, rdf_types
 
 end
 
@@ -555,24 +581,71 @@ end
 
 
 post "/update" do
+  client = Elastic.new(host: 'elasticsearch', port: 9200)
+
   deltas = @json_body
-  inserts = deltas["delta"]["inserts"]
-  deletes = deltas["delta"]["deletes"]
 
-  inserts.each do |triple|
-    s = triple["s"]
-    p = triple["p"]
-    possible_types = settings.rdf_properties[p]
+  inserts = deltas["delta"]["inserts"].map { |t| [:+, t["s"], t["p"], t["o"]] }
+  deletes = deltas["delta"]["deletes"].map { |t| [:-, t["s"], t["p"], t["o"]] }
 
-    possible_types.each do |type|
-      rdf_type = settings.type_definitions[type]["rdf_type"]
+  # Tabulate first, to avoid duplicate updates
+  # { <uri> => [type] } or { <uri> => false } if document should be deleted
+  docs_to_update = {}
+  docs_to_delete = {}
 
-      if query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
-        indexes = settings.indexes[type]
-        log.info "Invalidating #{indexes.length} indexes of document type: #{type}"
-        # if automatic_updates flag, then update/remove specified document
-        # else
-        indexes.each { |key, index| settings.index_status[index[:index]] = :invalid }
+  (inserts + deletes).each do |triple|
+    delta, s, p, o = triple
+    if delta == :- and p == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      type = settings.rdf_types[o]
+      if type
+        docs_to_update[s] = false
+        triple_types = docs_to_delete[s] || Set[]
+        docs_to_delete[s] = triple_types.add(type)
+      end
+    else
+      possible_types = settings.rdf_properties[p]
+      possible_types.each do |type|
+        rdf_type = settings.type_definitions[type]["rdf_type"]
+
+        if query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
+          if settings.automatic_index_updates
+            unless docs_to_update[s] == false
+              triple_types = docs_to_update[s] || Set[]
+              docs_to_update[s] = triple_types.add(type)
+            end
+          else
+            indexes = settings.indexes[type]
+            indexes.each { |key, index| settings.index_status[index[:index]] = :invalid }
+          end
+        end
+      end
+    end
+  end
+
+  if settings.automatic_index_updates
+    docs_to_update.each do |s, types|
+      if types
+        types.each do |type|
+          indexes = settings.indexes[type]
+          indexes.each do |key, index|
+            properties = index["properties"]
+            document = fetch_document_to_index uri: s, properties: settings.type_definitions[type]["properties"]
+            client.update_document index[:index], get_uuid(s), document
+          end
+        end
+      end
+    end
+  end
+
+  docs_to_delete.each do |s, types|
+    types.each do |type|
+      uuid = get_uuid(s)
+      settings.indexes[type].each do |key, index|
+        begin
+          client.delete_document index[:index], uuid
+        rescue
+          10 # it probably doesn't exist, which isn't a problem
+        end
       end
     end
   end

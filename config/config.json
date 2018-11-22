@@ -1,5 +1,4 @@
 {
-    "batch_size": 100,
     "types": [
         {
             "type": "document",
