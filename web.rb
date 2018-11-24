@@ -580,6 +580,35 @@ post "/:path/search" do |path|
 end
 
 
+# memoized
+def is_type s, rdf_type
+  @subject_types ||= {}
+  if @subject_types.has_key? [s, rdf_type]
+    @subject_types[s, rdf_type]
+  else
+    query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
+  end
+end
+
+
+def query_with_headers query, headers
+  sparql_client.query query, { headers: headers }
+end
+
+
+# memoized
+def is_authorized s, rdf_type, allowed_groups
+  @authorizations ||= {}
+  if @authorizations.has_key? [s, rdf_type, allowed_groups]
+    @authorizations[s, rdf_type, allowed_groups]
+  else
+    allowed_groups_object = allowed_groups.map { |group| { value: group } }.to_json
+    query_with_headers "ASK WHERE { <#{s}> a <#{rdf_type}> }",
+                       { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object }
+  end
+end
+
+
 post "/update" do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
@@ -595,20 +624,25 @@ post "/update" do
 
   (inserts + deletes).each do |triple|
     delta, s, p, o = triple
-    if delta == :- and p == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+    if p == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
       type = settings.rdf_types[o]
       if type
-        docs_to_update[s] = false
-        triple_types = docs_to_delete[s] || Set[]
-        docs_to_delete[s] = triple_types.add(type)
+        if delta == :- 
+          docs_to_update[s] = false
+          triple_types = docs_to_delete[s] || Set[]
+          docs_to_delete[s] = triple_types.add(type)
+        else # does this need special treatment?
+          triple_types = docs_to_update[s] || Set[]
+          docs_to_update[s] = triple_types.add(type)
+        end
       end
     else
       possible_types = settings.rdf_properties[p]
       possible_types.each do |type|
         rdf_type = settings.type_definitions[type]["rdf_type"]
 
-        if query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
-          if settings.automatic_index_updates
+        if is_type s, rdf_type
+          if true # settings.automatic_index_updates
             unless docs_to_update[s] == false
               triple_types = docs_to_update[s] || Set[]
               docs_to_update[s] = triple_types.add(type)
@@ -622,15 +656,21 @@ post "/update" do
     end
   end
 
-  if settings.automatic_index_updates
+  if true # settings.automatic_index_updates
     docs_to_update.each do |s, types|
       if types
         types.each do |type|
           indexes = settings.indexes[type]
           indexes.each do |key, index|
-            properties = index["properties"]
-            document = fetch_document_to_index uri: s, properties: settings.type_definitions[type]["properties"]
-            client.update_document index[:index], get_uuid(s), document
+            allowed_groups = index[:allowed_groups]
+            rdf_type = settings.type_definitions[type]["rdf_type"]
+            if is_authorized s, rdf_type, allowed_groups
+              properties = index["properties"]
+              document = fetch_document_to_index uri: s, properties: settings.type_definitions[type]["properties"]
+              client.update_document index[:index], get_uuid(s), document
+            else
+              log.info "NOT AUTHORIZED"
+            end
           end
         end
       end
