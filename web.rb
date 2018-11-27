@@ -140,14 +140,12 @@ def store_access_rights type, index, allowed_groups, used_groups
   }
 SPARQL
 
-  index_authorizations = {
+  {
     uri: uri,
     index: index,
     allowed_groups: allowed_groups,
     used_groups: used_groups 
   }
-
-  settings.indexes[type][used_groups] =  index_authorizations
 end
 
 
@@ -183,13 +181,18 @@ SPARQL
   }
 SPARQL
     used_groups = used_groups_result.map { |g| g["group"].to_s }
-  
+
+    index = result["index"].to_s
+
     rights[used_groups] = { 
       uri: uri,
-      index: result["index"].to_s,
+      index: index,
       allowed_groups: allowed_groups, 
       used_groups: used_groups 
     }
+
+    settings.mutex[index] = Mutex.new
+
   end
 
   rights
@@ -218,9 +221,12 @@ def create_current_index client, path
 
   index = Digest::MD5.hexdigest (type + "-" + allowed_groups.join("-"))
   
-  store_access_rights type, index, allowed_groups, used_groups
+  index_definition = store_access_rights type, index, allowed_groups, used_groups
+  settings.indexes[type][used_groups] = index_definition
+  settings.mutex[index_definition[:index]] = Mutex.new
+
   client.create_index index, settings.type_definitions[type]["es_mappings"]
-  index_documents client, path, index 
+
   index
 end
 
@@ -320,8 +326,6 @@ end
 
 
 def index_documents client, path, index
-  settings.index_status[index] = :updating
-
   count_list = [] # for reporting
 
   type_def = type_definition_by_path path
@@ -361,8 +365,6 @@ SPARQL
     end
   end
 
-  settings.index_status[index] = :valid
-  
   { index: index, document_types: types }.to_json
 end
 
@@ -431,6 +433,10 @@ end
 configure do
   configuration = JSON.parse File.read('/config/config.json')
 
+  set :master_mutex, Mutex.new
+
+  set :mutex, {}
+
   # determines batch size for indexing documents (SPARQL OFFSET)
   set :batch_size, (ENV['BATCH_SIZE'] || 100)
 
@@ -495,35 +501,62 @@ get "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
-  index = current_index path
+  # if currently updating, cancel that.
 
-  unless index
-    index = create_current_index client, path 
+  settings.master_mutex.synchronize do
+    index = current_index path
+
+    unless index
+      index = create_current_index client, path 
+    end
+
+    settings.index_status[index] = :updating
   end
 
   index_documents client, path, index
+  settings.index_status[index] = :valid
 end
 
+
+def get_index_safe client, path
+  def sync path
+    settings.master_mutex.synchronize do
+      index = current_index path
+
+      if index
+        if settings.index_status[index] == :invalid
+          settings.index_status[index] = :updating
+          return index, true
+        else
+          return index, false
+        end
+      else
+        index = create_current_index client, path
+        settings.index_status[index] = :updating
+        return index, true
+      end
+    end
+  end
+
+  index, update_index = sync path
+
+  if update_index
+    settings.mutex[index].synchronize do
+      index_documents client, path, index
+      client.refresh_index index
+      settings.index_status[index] = :valid
+    end
+  end
+
+  index
+end
 
 get "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type path
 
-  index = current_index path
-
-  # wait if being updated
-
-  if index and settings.index_status[index] == :invalid
-    index_documents client, path, index
-    client.refresh_index index
-  end
-
-  unless index 
-    index = create_current_index client, path
-    index_documents client, path, index
-    client.refresh_index index
-  end
+  index = get_index_safe client, path
 
   if params["page"]
     page = params["page"]["number"] or 0
@@ -542,6 +575,10 @@ get "/:path/search" do |path|
   es_query["from"] = page * size
   es_query["size"] = size
 
+  while settings.index_status[index] == :updating
+    sleep 0.5
+  end
+
   results = client.search index: index, query: es_query
 
   format_results(type, count, page, size, results).to_json
@@ -555,18 +592,7 @@ post "/:path/search" do |path|
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type path
 
-  index = current_index path
-
-  if index and settings.index_status[index] == :invalid
-    index_documents client, path, index
-    client.refresh_index index
-  end
-
-  unless index 
-    index = create_current_index client, path
-    index_documents client, path, index
-    client.refresh_index index
-  end
+  index = get_index_safe client, path
 
   es_query = @json_body
 
@@ -619,6 +645,7 @@ post "/update" do
 
   # Tabulate first, to avoid duplicate updates
   # { <uri> => [type] } or { <uri> => false } if document should be deleted
+  # should be inverted to { <type> => [uri] } for easier index-specific blocking
   docs_to_update = {}
   docs_to_delete = {}
 
@@ -631,7 +658,7 @@ post "/update" do
           docs_to_update[s] = false
           triple_types = docs_to_delete[s] || Set[]
           docs_to_delete[s] = triple_types.add(type)
-        else # does this need special treatment?
+        else
           triple_types = docs_to_update[s] || Set[]
           docs_to_update[s] = triple_types.add(type)
         end
@@ -642,21 +669,25 @@ post "/update" do
         rdf_type = settings.type_definitions[type]["rdf_type"]
 
         if is_type s, rdf_type
-          if true # settings.automatic_index_updates
+          if settings.automatic_index_updates
             unless docs_to_update[s] == false
               triple_types = docs_to_update[s] || Set[]
               docs_to_update[s] = triple_types.add(type)
             end
           else
             indexes = settings.indexes[type]
-            indexes.each { |key, index| settings.index_status[index[:index]] = :invalid }
+            indexes.each do |key, index| 
+              settings.mutex[index[:index]].synchronize do
+                settings.index_status[index[:index]] = :invalid 
+              end
+            end
           end
         end
       end
     end
   end
 
-  if true # settings.automatic_index_updates
+  if settings.automatic_index_updates
     docs_to_update.each do |s, types|
       if types
         types.each do |type|
@@ -667,7 +698,11 @@ post "/update" do
             if is_authorized s, rdf_type, allowed_groups
               properties = index["properties"]
               document = fetch_document_to_index uri: s, properties: settings.type_definitions[type]["properties"]
-              client.update_document index[:index], get_uuid(s), document
+              begin
+                client.update_document index[:index], get_uuid(s), document
+              rescue
+                client.put_document index[:index], get_uuid(s), document
+              end
             else
               log.info "NOT AUTHORIZED"
             end
@@ -684,7 +719,7 @@ post "/update" do
         begin
           client.delete_document index[:index], uuid
         rescue
-          10 # it probably doesn't exist, which isn't a problem
+          log.info "Failed to delete document: #{uuid}"
         end
       end
     end
