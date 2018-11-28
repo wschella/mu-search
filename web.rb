@@ -114,7 +114,7 @@ class Elastic
 end
 
 
-def find_matching_access_rights type, allowed_groups, used_groups
+def find_matching_index type, allowed_groups, used_groups
   index = settings.indexes[type][used_groups]
   index and index[:index]
 end
@@ -149,7 +149,7 @@ SPARQL
 end
 
 
-def load_access_rights type
+def load_indexes type
   rights = {}
 
   query_result = query <<SPARQL
@@ -199,11 +199,10 @@ SPARQL
 end
 
 
-def current_index path
+def current_index type
   allowed_groups, used_groups = current_groups
-  type = get_type path
 
-  find_matching_access_rights type, allowed_groups, used_groups
+  find_matching_index type, allowed_groups, used_groups
 end
 
 
@@ -214,10 +213,8 @@ end
 
 # * to do: check if index exists before creating it
 # * to do: how to name indexes?
-def create_current_index client, path
+def create_current_index client, type
   allowed_groups, used_groups = current_groups
-
-  type = get_type path
 
   index = Digest::MD5.hexdigest (type + "-" + allowed_groups.join("-"))
   
@@ -290,9 +287,9 @@ SPARQL
 end
 
 
-def type_definition_by_path path
-  settings.type_definitions[settings.type_paths[path]]
-end
+# def type_definition_by_path path
+#   settings.type_definitions[settings.type_paths[path]]
+# end
 
 
 def is_multiple_type? type_definition
@@ -325,33 +322,35 @@ def multiple_type_expand_subtypes types, properties
 end
 
 
-def index_documents client, path, index
+def index_documents client, type, index, headers = {}
   count_list = [] # for reporting
 
-  type_def = type_definition_by_path path
+  type_def = settings.type_definitions[type]
 
   if is_multiple_type?(type_def)
-    types = multiple_type_expand_subtypes type_def["composite_types"], type_def["properties"]
+    type_defs = multiple_type_expand_subtypes type_def["composite_types"], type_def["properties"]
   else
-    types = [type_def]
+    type_defs = [type_def]
   end
 
-  types.each do |type|
-    rdf_type = type["rdf_type"]
+  type_defs.each do |type_def|
+    rdf_type = type_def["rdf_type"]
 
     count = count_documents rdf_type
-    type["count"] = count
-    properties = type["properties"]
+    type_def["count"] = count
+    properties = type_def["properties"]
 
     (0..(count/settings.batch_size)).each do |i|
       offset = i*settings.batch_size
       data = []
-      query_result = query <<SPARQL
+      q = <<SPARQL
     SELECT DISTINCT ?id WHERE {
       ?doc a <#{rdf_type}>;
            <http://mu.semte.ch/vocabularies/core/uuid> ?id
     } LIMIT 100 OFFSET #{offset}
 SPARQL
+
+    query_result = query_with_headers q, headers
 
       query_result.each do |result|
         uuid = result[:id].to_s
@@ -365,7 +364,7 @@ SPARQL
     end
   end
 
-  { index: index, document_types: types }.to_json
+  { index: index, document_types: type_defs }.to_json
 end
 
 
@@ -430,8 +429,18 @@ def format_results type, count, page, size, results
 end
 
 
+def sparql_up
+  begin 
+    query "ASK { ?s ?p ?o }"
+  rescue
+    false
+  end
+end
+
+
 configure do
   configuration = JSON.parse File.read('/config/config.json')
+  client = Elastic.new(host: 'elasticsearch', port: 9200)
 
   set :master_mutex, Mutex.new
 
@@ -454,13 +463,13 @@ configure do
         end
       ]
 
-  rights = {}
+  indexes = {}
   configuration["types"].each do |type_def|
     type = type_def["type"]
-    rights[type] = load_access_rights type
+    indexes[type] = load_indexes type
   end
 
-  set :indexes, rights
+  set :indexes, indexes
 
   set :index_status, {}
 
@@ -504,34 +513,61 @@ configure do
   set :rdf_properties, rdf_properties
   set :rdf_types, rdf_types
 
+  eager_indexing_groups = configuration["eager_indexing_groups"] || []
+  
+  # if configuration["eager_indexing_sparql_query"]
+  #   query_result = query configuration["eager_indexing_sparql_query"]
+  #   eager_indexing_groups += query_result.map { |key, value| value.to_s }
+  # end
+
+  unless eager_indexing_groups.empty?
+    while !sparql_up
+      sleep 0.5
+    end
+
+    eager_indexing_groups.each do |groups|
+      settings.type_definitions.keys.each do |type|
+        index = find_matching_index type, groups, groups
+        allowed_groups_object = groups.map { |group| { value: group } }.to_json
+        index_documents client, type, index, { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object }
+      end
+    end
+  end
 end
 
 
 get "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
+  type = get_type path
 
-  # if currently updating, cancel that.
+  def sync type
+    settings.master_mutex.synchronize do
+      index = current_index type
 
-  settings.master_mutex.synchronize do
-    index = current_index path
+      unless index
+        index = create_current_index client, type
+      end
 
-    unless index
-      index = create_current_index client, path 
+      settings.index_status[index] = :updating
+      return index
     end
-
-    settings.index_status[index] = :updating
   end
 
-  index_documents client, path, index
-  settings.index_status[index] = :valid
+  index = sync type
+
+  settings.mutex[index].synchronize do
+    report = index_documents client, type, index
+    settings.index_status[index] = :valid
+    return report
+  end
 end
 
 
-def get_index_safe client, path
-  def sync path
+def get_index_safe client, type
+  def sync type
     settings.master_mutex.synchronize do
-      index = current_index path
+      index = current_index type
 
       if index
         if settings.index_status[index] == :invalid
@@ -541,18 +577,18 @@ def get_index_safe client, path
           return index, false
         end
       else
-        index = create_current_index client, path
+        index = create_current_index client, type
         settings.index_status[index] = :updating
         return index, true
       end
     end
   end
 
-  index, update_index = sync path
+  index, update_index = sync type
 
   if update_index
     settings.mutex[index].synchronize do
-      index_documents client, path, index
+      index_documents client, type, index
       client.refresh_index index
       settings.index_status[index] = :valid
     end
@@ -566,7 +602,7 @@ get "/:path/search" do |path|
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type path
 
-  index = get_index_safe client, path
+  index = get_index_safe client, type
 
   es_query = construct_es_query
 
@@ -601,7 +637,7 @@ post "/:path/search" do |path|
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type path
 
-  index = get_index_safe client, path
+  index = get_index_safe client, type
 
   es_query = @json_body
 

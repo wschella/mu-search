@@ -40,5 +40,10 @@
                 }
             ]
         }
-    ]
+    ],
+    "eager_indexing_groups" : [
+        ["john"],
+        ["admin"]
+    ],
+    "eager_indexing_sparql_query" : false
 }
