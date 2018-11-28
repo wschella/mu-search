@@ -447,9 +447,11 @@ configure do
   set :mutex, {}
 
   # determines batch size for indexing documents (SPARQL OFFSET)
-  set :batch_size, (ENV['BATCH_SIZE'] || 100)
+  set :batch_size, 
+      (ENV['BATCH_SIZE'] || configuration["batch_size"] || 100)
 
-  set :automatic_index_updates, ENV["AUTOMATIC_INDEX_UPDATES"]
+  set :automatic_index_updates, 
+      (ENV["AUTOMATIC_INDEX_UPDATES"] || configuration["automatic_index_updates"])
 
   set :type_paths, Hash[
         configuration["types"].collect do |type_def|
@@ -496,16 +498,22 @@ configure do
             end
 
           rdf_property = settings.type_definitions[source_type][property_name]
-          rdf_properties[rdf_property] =  rdf_properties[rdf_property] || []
-          rdf_properties[rdf_property].push type_def["type"]
+          rdf_property = rdf_property.is_a?(Array) ? rdf_property : [rdf_property]
+          rdf_property.each do |prop|
+            rdf_properties[prop] =  rdf_properties[prop] || []
+            rdf_properties[prop].push type_def["type"]
+          end
         end
       end
     else
       rdf_types[type_def["rdf_type"]]  = rdf_types[type_def["rdf_type"]] || []
       rdf_types[type_def["rdf_type"]].push type_def["type"]
       type_def["properties"].each do |name, rdf_property|
-        rdf_properties[rdf_property] =  rdf_properties[rdf_property] || []
-        rdf_properties[rdf_property].push type_def["type"]
+        rdf_property = rdf_property.is_a?(Array) ? rdf_property : [rdf_property]
+        rdf_property.each do |prop|
+          rdf_properties[prop] =  rdf_properties[prop] || []
+          rdf_properties[prop].push type_def["type"]
+        end
       end
     end
   end
