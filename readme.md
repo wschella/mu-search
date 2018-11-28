@@ -67,6 +67,10 @@ Here is a simple example of a complete `config.json` file.
                 "bio" : "<http://mu.semte.ch/vocabularies/core/biography>"
             }
          }
+    ],
+    "eager_indexing_groups" : [
+        ["workingGroup"],
+        ["admin"]
     ]
 }
 ```
@@ -162,17 +166,48 @@ PUT index4901823098
 
 
 
-## Eager Indexing [not implemented yet]
+## Eager Indexing
 
 Indexes can be configured to be built when the application loads.
 
+Currently, this is done by specifying a list of `eager_indexing_groups` in the config.json file [above](#simple-types).
 
-## Automatic Index Invalidation [not implemented yet]
+In the future, it will also be possible to specify them via a SPARQL query
+
+
+## Automatic Index Invalidation
 
 When used with the Delta Service, mu-elastic-search can automatically invalidate or update indexes when notified of relevant changes in the data.
 
+Deltas are expected in the following format:
 
-## Automatic Index Updating [not implemented yet]
+```
+{
+  "graph": "http://graph1",
+  "delta": {
+    "inserts": [
+      {
+        "s": "http://uri1",
+        "p": "http://predicate1",
+        "o": "http://object1"
+      }
+    ],
+    "deletes": [
+
+    ]
+  }
+}
+```
+
+When a delta is received in which `p` corresponds to the property of given type and `s` is indeed of that type, then all indexes corresponding to that type are invalidated. Each one will be rebuilt the next time it is searched.
+
+## Automatic Index Updating
+
+Alternate to automatic index invalidation, indexes can be dynamically updated on a per-document basis according to received deltas.
+
+Note this is currently not a blocking operation: an update will not lock the index, so that a simultaneously received search request might be run on the un-updated index.
+
+Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UPDATES`, or `automatic_index_updates` in the config.json file.
 
 
 ## Search and Configuration API
