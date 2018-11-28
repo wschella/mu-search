@@ -454,7 +454,6 @@ configure do
         end
       ]
 
-  type_defs = {}
   rights = {}
   configuration["types"].each do |type_def|
     type = type_def["type"]
@@ -466,24 +465,35 @@ configure do
   set :index_status, {}
 
   # properties and types lookup tables for deltas
+  # { <rdf_property> => [type, ...] }
   rdf_properties = {}
   rdf_types = {}
 
   configuration["types"].each do |type_def|
     if type_def["composite_types"]
-    # this needs to be done looping on composite_types first
-    # to pick up implicit properties
-    #
-      # type_def["properties"].each do |name, property|
-      #   if property["mappings"]
-      #     property["mappings"].each do |source_type, source_property|
-      #       rdf_property = settings.type_definitions[source_type]["properties"][source_property]
-      #       rdf_properties[rdf_property] =  rdf_properties[rdf_property] || []
-      #       rdf_properties[rdf_property].push type_def["type"]
-      #     end
-      #   end
+      type_def["composite_types"].each do |source_type|
+        rdf_type = settings.type_definitions[source_type]["rdf_type"]
+        rdf_types[rdf_type] = rdf_types[rdf_type] || []
+        rdf_types[rdf_type].push source_type
+      end
+
+      type_def["properties"].each do |property|
+        type_def["composite_types"].each do |source_type|
+          property_name = 
+            if property["mappings"]
+              property["mappings"][source_type] || property["name"]
+            else
+              property["name"]
+            end
+
+          rdf_property = settings.type_definitions[source_type][property_name]
+          rdf_properties[rdf_property] =  rdf_properties[rdf_property] || []
+          rdf_properties[rdf_property].push type_def["type"]
+        end
+      end
     else
-      rdf_types[type_def["rdf_type"]] = type_def["type"]
+      rdf_types[type_def["rdf_type"]]  = rdf_types[type_def["rdf_type"]] || []
+      rdf_types[type_def["rdf_type"]].push type_def["type"]
       type_def["properties"].each do |name, rdf_property|
         rdf_properties[rdf_property] =  rdf_properties[rdf_property] || []
         rdf_properties[rdf_property].push type_def["type"]
@@ -558,6 +568,11 @@ get "/:path/search" do |path|
 
   index = get_index_safe client, path
 
+  es_query = construct_es_query
+
+  count_result = JSON.parse(client.count index: index, query: es_query)
+  count = count_result["count"]
+
   if params["page"]
     page = params["page"]["number"] or 0
     size = params["page"]["size"] or 10
@@ -566,12 +581,6 @@ get "/:path/search" do |path|
     size = 10
   end
 
-  es_query = construct_es_query
-
-  count_result = JSON.parse(client.count index: index, query: es_query)
-  count = count_result["count"]
-
-  # add pagination parameters
   es_query["from"] = page * size
   es_query["size"] = size
 
@@ -644,23 +653,26 @@ post "/update" do
   deletes = deltas["delta"]["deletes"].map { |t| [:-, t["s"], t["p"], t["o"]] }
 
   # Tabulate first, to avoid duplicate updates
-  # { <uri> => [type] } or { <uri> => false } if document should be deleted
-  # should be inverted to { <type> => [uri] } for easier index-specific blocking
+  # { <uri> => [type, ...] } or { <uri> => false } if document should be deleted
+  # should be inverted to { <type> => [uri, ...] } for easier index-specific blocking
   docs_to_update = {}
   docs_to_delete = {}
 
   (inserts + deletes).each do |triple|
     delta, s, p, o = triple
+
     if p == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-      type = settings.rdf_types[o]
-      if type
-        if delta == :- 
-          docs_to_update[s] = false
-          triple_types = docs_to_delete[s] || Set[]
-          docs_to_delete[s] = triple_types.add(type)
-        else
-          triple_types = docs_to_update[s] || Set[]
-          docs_to_update[s] = triple_types.add(type)
+      types = settings.rdf_types[o]
+      if types
+        types.each do |type|
+          if delta == :- 
+            docs_to_update[s] = false
+            triple_types = docs_to_delete[s] || Set[]
+            docs_to_delete[s] = triple_types.add(type)
+          else
+            triple_types = docs_to_update[s] || Set[]
+            docs_to_update[s] = triple_types.add(type)
+          end
         end
       end
     else
