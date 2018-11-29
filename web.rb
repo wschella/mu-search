@@ -114,6 +114,11 @@ class Elastic
 end
 
 
+# def query_endpoint endpoint, query
+#   sparql_client.query query, { endpoint: endpoint }
+# end
+
+
 def find_matching_index type, allowed_groups, used_groups
   index = settings.indexes[type][used_groups]
   index and index[:index]
@@ -127,7 +132,7 @@ def store_access_rights type, index, allowed_groups, used_groups
   allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
   used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
 
-  query_result = query <<SPARQL
+  query_result = settings.db.query  <<SPARQL
   INSERT DATA {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
@@ -152,7 +157,7 @@ end
 def load_indexes type
   rights = {}
 
-  query_result = query <<SPARQL
+  query_result = settings.db.query  <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?rights a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
@@ -164,7 +169,7 @@ SPARQL
 
   query_result.each do |result|
     uri = result["rights"].to_s
-    allowed_groups_result = query <<SPARQL
+    allowed_groups_result = settings.db.query  <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group
@@ -173,7 +178,7 @@ SPARQL
 SPARQL
     allowed_groups = allowed_groups_result.map { |g| g["group"].to_s }
 
-    used_groups_result = query <<SPARQL
+    used_groups_result = settings.db.query  <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> ?group
@@ -240,7 +245,7 @@ end
 
 
 def count_documents rdf_type
-  query_result = query <<SPARQL
+  query_result = authorized_query <<SPARQL
       SELECT (COUNT(?doc) AS ?count) WHERE {
         ?doc a <#{rdf_type}>
       }
@@ -251,7 +256,7 @@ end
 
 
 def get_uuid s
-  query_result = query <<SPARQL
+  query_result = authorized_query <<SPARQL
 SELECT ?uuid WHERE {
    <#{s}> <http://mu.semte.ch/vocabularies/core/uuid> ?uuid 
 }
@@ -322,7 +327,8 @@ def multiple_type_expand_subtypes types, properties
 end
 
 
-def index_documents client, type, index, headers = {}
+def index_documents client, type, index, headers = nil
+  headers = headers || { MU_AUTH_ALLOWED_GROUPS: request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"] }
   count_list = [] # for reporting
 
   type_def = settings.type_definitions[type]
@@ -368,8 +374,8 @@ SPARQL
 end
 
 
-def fetch_document_to_index uuid: nil, uri: nil, properties: properties
-  query_result = query make_property_query uuid, uri, properties
+def fetch_document_to_index uuid: nil, uri: nil, properties: nil
+  query_result = authorized_query make_property_query(uuid, uri, properties)
   result = query_result.first
 
   document = Hash[
@@ -431,7 +437,7 @@ end
 
 def sparql_up
   begin 
-    query "ASK { ?s ?p ?o }"
+    settings.db.query "ASK { ?s ?p ?o }"
   rescue
     false
   end
@@ -441,6 +447,10 @@ end
 configure do
   configuration = JSON.parse File.read('/config/config.json')
   client = Elastic.new(host: 'elasticsearch', port: 9200)
+
+  set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', {})
+  
+  # set :admin_db, "http://db:8890/sparql"
 
   set :master_mutex, Mutex.new
 
@@ -573,7 +583,7 @@ end
 
 
 def get_index_safe client, type
-  def sync type
+  def sync client, type
     settings.master_mutex.synchronize do
       index = current_index type
 
@@ -592,7 +602,7 @@ def get_index_safe client, type
     end
   end
 
-  index, update_index = sync type
+  index, update_index = sync client, type
 
   if update_index
     settings.mutex[index].synchronize do
@@ -665,7 +675,7 @@ def is_type s, rdf_type
   if @subject_types.has_key? [s, rdf_type]
     @subject_types[s, rdf_type]
   else
-    query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
+    authorized_query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
   end
 end
 
@@ -674,6 +684,10 @@ def query_with_headers query, headers
   sparql_client.query query, { headers: headers }
 end
 
+
+def authorized_query query
+  sparql_client.query query, { headers: { MU_AUTH_ALLOWED_GROUPS: request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"] } }
+end
 
 # memoized
 def is_authorized s, rdf_type, allowed_groups

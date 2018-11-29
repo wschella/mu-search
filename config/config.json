@@ -4,10 +4,10 @@
         {
             "type": "document",
             "on_path": "documents",
-            "rdf_type": "http://mu.semte.ch/vocabularies/core/Document",
+            "rdf_type": "http://example.org/Document",
             "properties": {
-                "title": "http://mu.semte.ch/vocabularies/core/title",
-                "description": "http://mu.semte.ch/vocabularies/core/description" 
+                "title": "http://purl.org/dc/elements/1.1/title",
+                "description": "http://purl.org/dc/elements/1.1/description" 
             },
             "mappings": null
         },
@@ -43,8 +43,6 @@
         }
     ],
     "eager_indexing_groups" : [
-        ["john"],
-        ["admin"]
     ],
     "eager_indexing_sparql_query" : false
 }
