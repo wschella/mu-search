@@ -128,9 +128,18 @@ end
 def store_access_rights type, index, allowed_groups, used_groups
   uuid = generate_uuid()
   uri = "http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}"
+
+  def group_statement predicate, groups
+    if groups.empty?
+      ""
+    else
+      group_set = groups.map { |g| sparql_escape_uri g }.join(",")
+      " <#{predicate}> #{group_set}; "
+    end
+  end
   
-  allowed_group_set = allowed_groups.map { |g| "\"#{g}\"" }.join(",")
-  used_group_set = used_groups.map { |g| "\"#{g}\"" }.join(",")
+  allowed_group_statement = group_statement "http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup", allowed_groups
+  used_group_statement = group_statement "http://mu.semte.ch/vocabularies/authorization/hasUsedGroup", used_groups
 
   query_result = settings.db.query  <<SPARQL
   INSERT DATA {
@@ -138,8 +147,8 @@ def store_access_rights type, index, allowed_groups, used_groups
         <#{uri}> a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
                <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
                <http://mu.semte.ch/vocabularies/authorization/objectType> "#{type}";
-               <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> #{allowed_group_set};
-               <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> #{used_group_set};
+               #{used_group_statement}
+               #{allowed_group_statement}        
                <http://mu.semte.ch/vocabularies/authorization/indexName> "#{index}"
     }
   }
@@ -227,7 +236,7 @@ def create_current_index client, type
   settings.indexes[type][used_groups] = index_definition
   settings.mutex[index_definition[:index]] = Mutex.new
 
-  client.create_index index, settings.type_definitions[type]["es_mappings"]
+  client.create_index index, nil #settings.type_definitions[type]["es_mappings"]
 
   index
 end
@@ -256,7 +265,8 @@ end
 
 
 def get_uuid s
-  query_result = authorized_query <<SPARQL
+  # ok to circumvent the authorization service?
+  query_result = settings.db.query <<SPARQL
 SELECT ?uuid WHERE {
    <#{s}> <http://mu.semte.ch/vocabularies/core/uuid> ?uuid 
 }
@@ -271,22 +281,25 @@ def make_property_query uuid, uri, properties
 
   id_line = 
     if uuid
-      "?doc  <http://mu.semte.ch/vocabularies/core/uuid> \"#{uuid}\"; "
+      "?doc <http://mu.semte.ch/vocabularies/core/uuid> \"#{uuid}\". "
     else
-      "<#{uri}> "
+      " "
     end
+
+  s = uuid ? "?doc" : "<#{uri}>"
+
   properties.each do |key, predicate|
     select_variables_s += " ?#{key} " 
     predicate_s = predicate.is_a?(String) ? predicate : predicate.join("/")
-    property_predicates.push "<#{predicate}> ?#{key}"
+    property_predicates.push " OPTIONAL { #{s} <#{predicate}> ?#{key} } "
   end
 
-  property_predicates_s = property_predicates.join("; ")
+  property_predicates_s = property_predicates.join(" ")
 
   <<SPARQL
     SELECT #{select_variables_s} WHERE { 
      #{id_line}
-           #{property_predicates_s}.
+     #{property_predicates_s}     
     }
 SPARQL
 end
@@ -361,7 +374,7 @@ SPARQL
       query_result.each do |result|
         uuid = result[:id].to_s
         document = fetch_document_to_index uuid: uuid, properties: properties
-        data.push ({ index: { _id: uuid } })
+        data.push({ index: { _id: uuid } })
         data.push document
       end
 
@@ -374,8 +387,16 @@ SPARQL
 end
 
 
-def fetch_document_to_index uuid: nil, uri: nil, properties: nil
-  query_result = authorized_query make_property_query(uuid, uri, properties)
+def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups: nil
+  query_result =
+    if allowed_groups
+      # abstract this
+      allowed_groups_object = allowed_groups.map { |group| { value: group } }.to_json
+      query_with_headers make_property_query(uuid, uri, properties), { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object }
+    else
+      authorized_query make_property_query(uuid, uri, properties)
+    end
+  
   result = query_result.first
 
   document = Hash[
@@ -559,7 +580,7 @@ get "/:path/index" do |path|
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type path
 
-  def sync type
+  def sync client, type
     settings.master_mutex.synchronize do
       index = current_index type
 
@@ -572,7 +593,7 @@ get "/:path/index" do |path|
     end
   end
 
-  index = sync type
+  index = sync client, type
 
   settings.mutex[index].synchronize do
     report = index_documents client, type, index
@@ -675,7 +696,7 @@ def is_type s, rdf_type
   if @subject_types.has_key? [s, rdf_type]
     @subject_types[s, rdf_type]
   else
-    authorized_query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
+    settings.db.query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
   end
 end
 
@@ -689,6 +710,7 @@ def authorized_query query
   sparql_client.query query, { headers: { MU_AUTH_ALLOWED_GROUPS: request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"] } }
 end
 
+
 # memoized
 def is_authorized s, rdf_type, allowed_groups
   @authorizations ||= {}
@@ -696,8 +718,8 @@ def is_authorized s, rdf_type, allowed_groups
     @authorizations[s, rdf_type, allowed_groups]
   else
     allowed_groups_object = allowed_groups.map { |group| { value: group } }.to_json
-    query_with_headers "ASK WHERE { <#{s}> a <#{rdf_type}> }",
-                       { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object }
+    settings.db.query "ASK WHERE { <#{s}> a <#{rdf_type}> }",
+                      { headers: { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object } }
   end
 end
 
@@ -707,8 +729,15 @@ post "/update" do
 
   deltas = @json_body
 
-  inserts = deltas["delta"]["inserts"].map { |t| [:+, t["s"], t["p"], t["o"]] }
-  deletes = deltas["delta"]["deletes"].map { |t| [:-, t["s"], t["p"], t["o"]] }
+  # placeholder: check this
+  if deltas.is_a?(Array)
+    deltas = deltas.first
+  end
+
+  inserts = deltas["delta"]["inserts"] || []
+  inserts = inserts.map { |t| [:+, t["s"], t["p"], t["o"]] } 
+  deletes = deltas["delta"]["deletes"] || []
+  deletes = deletes.map { |t| [:-, t["s"], t["p"], t["o"]] } 
 
   # Tabulate first, to avoid duplicate updates
   # { <uri> => [type, ...] } or { <uri> => false } if document should be deleted
@@ -735,20 +764,22 @@ post "/update" do
       end
     else
       possible_types = settings.rdf_properties[p]
-      possible_types.each do |type|
-        rdf_type = settings.type_definitions[type]["rdf_type"]
+      if possible_types
+        possible_types.each do |type|
+          rdf_type = settings.type_definitions[type]["rdf_type"]
 
-        if is_type s, rdf_type
-          if settings.automatic_index_updates
-            unless docs_to_update[s] == false
-              triple_types = docs_to_update[s] || Set[]
-              docs_to_update[s] = triple_types.add(type)
-            end
-          else
-            indexes = settings.indexes[type]
-            indexes.each do |key, index| 
-              settings.mutex[index[:index]].synchronize do
-                settings.index_status[index[:index]] = :invalid 
+          if is_type s, rdf_type
+            if settings.automatic_index_updates
+              unless docs_to_update[s] == false
+                triple_types = docs_to_update[s] || Set[]
+                docs_to_update[s] = triple_types.add(type)
+              end
+            else
+              indexes = settings.indexes[type]
+              indexes.each do |key, index| 
+                settings.mutex[index[:index]].synchronize do
+                  settings.index_status[index[:index]] = :invalid 
+                end
               end
             end
           end
@@ -767,7 +798,7 @@ post "/update" do
             rdf_type = settings.type_definitions[type]["rdf_type"]
             if is_authorized s, rdf_type, allowed_groups
               properties = index["properties"]
-              document = fetch_document_to_index uri: s, properties: settings.type_definitions[type]["properties"]
+              document = fetch_document_to_index uri: s, properties: settings.type_definitions[type]["properties"], allowed_groups: index[:allowed_groups]
               begin
                 client.update_document index[:index], get_uuid(s), document
               rescue
@@ -789,11 +820,11 @@ post "/update" do
         begin
           client.delete_document index[:index], uuid
         rescue
-          log.info "Failed to delete document: #{uuid}"
+          log.info "Failed to delete document: #{uuid} in index: #{index[:index]}"
         end
       end
     end
   end
 
-  {message: "Thanks for the update."}.to_json
+  { message: "Thanks for the update." }.to_json
 end

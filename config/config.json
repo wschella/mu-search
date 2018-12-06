@@ -1,5 +1,5 @@
 {
-    "automatic_index_updates" : false,
+    "automatic_index_updates" : true,
     "types": [
         {
             "type": "document",
