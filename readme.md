@@ -199,13 +199,20 @@ Deltas are expected in the following format:
 }
 ```
 
-When a delta is received in which `p` corresponds to the property of given type and `s` is indeed of that type, then all indexes corresponding to that type are invalidated. Each one will be rebuilt the next time it is searched.
+When a delta is received in which:
+
+- `p` corresponds to the property of given type, and
+- `s` is indeed of that type (verified by querying the triple store)
+
+then all indexes corresponding to that type are invalidated. Each one will be rebuilt the next time it is searched.
 
 ## Automatic Index Updating
 
 Alternate to automatic index invalidation, indexes can be dynamically updated on a per-document basis according to received deltas.
 
-Note this is currently not a blocking operation: an update will not lock the index, so that a simultaneously received search request might be run on the un-updated index.
+When a corresponding delta is received (see previous section), the document corresponding to the delta's `s` is updated (or deleted) in every index corresponding to `s`'s type(s). Note that if there are many different configurations of ALLOWED_GROUPS, this might be a large number of indexes.
+
+Also note this is not currently a blocking operation: an update will not lock the index, so that a simultaneously received search request might be run on the un-updated index.
 
 Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UPDATES`, or `automatic_index_updates` in the config.json file.
 
