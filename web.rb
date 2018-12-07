@@ -1,7 +1,7 @@
 require 'net/http'
 require 'digest'
 require 'set'
-
+require 'request_store'
 
 # A quick as-needed Elastic API, for use until
 # the conflict with Sinatra::Utils is resolved
@@ -114,9 +114,26 @@ class Elastic
 end
 
 
-# def query_endpoint endpoint, query
-#   sparql_client.query query, { endpoint: endpoint }
-# end
+def query_with_headers query, headers
+  sparql_client.query query, { headers: headers }
+end
+
+
+def authorized_query query, allowed_groups
+  allowed_groups_object = allowed_groups.map { |group| { value: group } }.to_json
+  sparql_client.query query, { headers: { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object } }
+end
+
+
+# Shouldn't be necessary: ruby template should pass headers on
+def request_authorized_query query
+  sparql_client.query query, { headers: { MU_AUTH_ALLOWED_GROUPS: request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"] } }
+end
+
+
+def direct_query q
+  settings.db.query q
+end
 
 
 def find_matching_index type, allowed_groups, used_groups
@@ -125,7 +142,7 @@ def find_matching_index type, allowed_groups, used_groups
 end
 
 
-def store_access_rights type, index, allowed_groups, used_groups
+def store_index type, index, allowed_groups, used_groups
   uuid = generate_uuid()
   uri = "http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}"
 
@@ -141,7 +158,7 @@ def store_access_rights type, index, allowed_groups, used_groups
   allowed_group_statement = group_statement "http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup", allowed_groups
   used_group_statement = group_statement "http://mu.semte.ch/vocabularies/authorization/hasUsedGroup", used_groups
 
-  query_result = settings.db.query  <<SPARQL
+  query_result = direct_query  <<SPARQL
   INSERT DATA {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
@@ -166,7 +183,7 @@ end
 def load_indexes type
   rights = {}
 
-  query_result = settings.db.query  <<SPARQL
+  query_result = direct_query  <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?rights a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
@@ -178,7 +195,7 @@ SPARQL
 
   query_result.each do |result|
     uri = result["rights"].to_s
-    allowed_groups_result = settings.db.query  <<SPARQL
+    allowed_groups_result = direct_query  <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group
@@ -187,7 +204,7 @@ SPARQL
 SPARQL
     allowed_groups = allowed_groups_result.map { |g| g["group"].to_s }
 
-    used_groups_result = settings.db.query  <<SPARQL
+    used_groups_result = direct_query  <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> ?group
@@ -206,43 +223,19 @@ SPARQL
     }
 
     settings.mutex[index] = Mutex.new
-
   end
 
   rights
 end
 
 
-def current_index type
-  allowed_groups, used_groups = current_groups
-
+def get_request_index type
+  allowed_groups, used_groups = get_request_groups
   find_matching_index type, allowed_groups, used_groups
 end
 
 
-def get_type path
-  settings.type_paths[path]
-end
-
-
-# * to do: check if index exists before creating it
-# * to do: how to name indexes?
-def create_current_index client, type
-  allowed_groups, used_groups = current_groups
-
-  index = Digest::MD5.hexdigest (type + "-" + allowed_groups.join("-"))
-  
-  index_definition = store_access_rights type, index, allowed_groups, used_groups
-  settings.indexes[type][used_groups] = index_definition
-  settings.mutex[index_definition[:index]] = Mutex.new
-
-  client.create_index index, nil #settings.type_definitions[type]["es_mappings"]
-
-  index
-end
-
-
-def current_groups
+def get_request_groups
   allowed_groups_s = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
   allowed_groups = allowed_groups_s ? JSON.parse(allowed_groups_s).map { |e| e["value"] } : []
 
@@ -253,8 +246,64 @@ def current_groups
 end
 
 
+# * to do: check if index exists before creating it
+# * to do: how to name indexes?
+def create_request_index client, type
+  allowed_groups, used_groups = get_request_groups
+
+  index = Digest::MD5.hexdigest (type + "-" + allowed_groups.join("-"))
+  
+  index_definition = store_index type, index, allowed_groups, used_groups
+  settings.indexes[type][used_groups] = index_definition
+  settings.mutex[index_definition[:index]] = Mutex.new
+
+  client.create_index index, settings.type_definitions[type]["es_mappings"]
+
+  index
+end
+
+
+def get_index_safe client, type
+  def sync client, type
+    settings.master_mutex.synchronize do
+      index = get_request_index type
+
+      if index
+        if settings.index_status[index] == :invalid
+          settings.index_status[index] = :updating
+          return index, true
+        else
+          return index, false
+        end
+      else
+        index = create_request_index client, type
+        settings.index_status[index] = :updating
+        return index, true
+      end
+    end
+  end
+
+  index, update_index = sync client, type
+
+  if update_index
+    settings.mutex[index].synchronize do
+      index_documents client, type, index
+      client.refresh_index index
+      settings.index_status[index] = :valid
+    end
+  end
+
+  index
+end
+
+
+def get_type_from_path path
+  settings.type_paths[path]
+end
+
+
 def count_documents rdf_type
-  query_result = authorized_query <<SPARQL
+  query_result = request_authorized_query <<SPARQL
       SELECT (COUNT(?doc) AS ?count) WHERE {
         ?doc a <#{rdf_type}>
       }
@@ -264,9 +313,31 @@ SPARQL
 end
 
 
+# memoized
+def is_type s, rdf_type
+  @subject_types ||= {}
+  if @subject_types.has_key? [s, rdf_type]
+    @subject_types[s, rdf_type]
+  else
+    direct_query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
+  end
+end
+
+
+# memoized
+def is_authorized s, rdf_type, allowed_groups
+  @authorizations ||= {}
+  if @authorizations.has_key? [s, rdf_type, allowed_groups]
+    @authorizations[s, rdf_type, allowed_groups]
+  else
+
+    authorized_query "ASK WHERE { <#{s}> a <#{rdf_type}> }", allowed_groups
+  end
+end
+
+
 def get_uuid s
-  # ok to circumvent the authorization service?
-  query_result = settings.db.query <<SPARQL
+  query_result = direct_query <<SPARQL
 SELECT ?uuid WHERE {
    <#{s}> <http://mu.semte.ch/vocabularies/core/uuid> ?uuid 
 }
@@ -305,11 +376,6 @@ SPARQL
 end
 
 
-# def type_definition_by_path path
-#   settings.type_definitions[settings.type_paths[path]]
-# end
-
-
 def is_multiple_type? type_definition
   type_definition["composite_types"].is_a?(Array)
 end
@@ -340,8 +406,25 @@ def multiple_type_expand_subtypes types, properties
 end
 
 
-def index_documents client, type, index, headers = nil
-  headers = headers || { MU_AUTH_ALLOWED_GROUPS: request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"] }
+def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups: nil
+  query_result =
+    if allowed_groups
+      authorized_query make_property_query(uuid, uri, properties), allowed_groups
+    else
+      request_authorized_query make_property_query(uuid, uri, properties)
+    end
+  
+  result = query_result.first
+
+  document = Hash[
+    properties.collect do |key, val|
+      [key, result[key].to_s] # !! get right types!
+    end
+  ]            
+end
+
+
+def index_documents client, type, index, allowed_groups = nil
   count_list = [] # for reporting
 
   type_def = settings.type_definitions[type]
@@ -369,7 +452,12 @@ def index_documents client, type, index, headers = nil
     } LIMIT 100 OFFSET #{offset}
 SPARQL
 
-    query_result = query_with_headers q, headers
+    query_result =
+      if allowed_groups
+        authorized_query q, allowed_groups
+      else
+        request_authorized_query q
+      end
 
       query_result.each do |result|
         uuid = result[:id].to_s
@@ -384,26 +472,6 @@ SPARQL
   end
 
   { index: index, document_types: type_defs }.to_json
-end
-
-
-def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups: nil
-  query_result =
-    if allowed_groups
-      # abstract this
-      allowed_groups_object = allowed_groups.map { |group| { value: group } }.to_json
-      query_with_headers make_property_query(uuid, uri, properties), { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object }
-    else
-      authorized_query make_property_query(uuid, uri, properties)
-    end
-  
-  result = query_result.first
-
-  document = Hash[
-    properties.collect do |key, val|
-      [key, result[key].to_s] # !! get right types!
-    end
-  ]            
 end
 
 
@@ -458,10 +526,26 @@ end
 
 def sparql_up
   begin 
-    settings.db.query "ASK { ?s ?p ?o }"
+    direct_query "ASK { ?s ?p ?o }"
   rescue
     false
   end
+end
+
+
+def parse_deltas raw_deltas
+  # Assumes there is only one application graph
+  if raw_deltas.is_a?(Array)
+    raw_deltas = raw_deltas.first
+  end
+
+  inserts = raw_deltas["delta"]["inserts"] || []
+  inserts = inserts.map { |t| [:+, t["s"], t["p"], t["o"]] } 
+
+  deletes = raw_deltas["delta"]["deletes"] || []
+  deletes = deletes.map { |t| [:-, t["s"], t["p"], t["o"]] } 
+
+  inserts + deletes
 end
 
 
@@ -564,11 +648,12 @@ configure do
       sleep 0.5
     end
 
-    eager_indexing_groups.each do |groups|
-      settings.type_definitions.keys.each do |type|
-        index = find_matching_index type, groups, groups
-        allowed_groups_object = groups.map { |group| { value: group } }.to_json
-        index_documents client, type, index, { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object }
+    settings.master_mutex.synchronize do
+      eager_indexing_groups.each do |groups|
+        settings.type_definitions.keys.each do |type|
+          index = find_matching_index type, groups, groups
+          index_documents client, type, index, groups
+        end
       end
     end
   end
@@ -578,14 +663,14 @@ end
 get "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = get_type path
+  type = get_type_from_path path
 
   def sync client, type
     settings.master_mutex.synchronize do
-      index = current_index type
+      index = get_request_index type
 
       unless index
-        index = create_current_index client, type
+        index = create_request_index client, type
       end
 
       settings.index_status[index] = :updating
@@ -603,43 +688,10 @@ get "/:path/index" do |path|
 end
 
 
-def get_index_safe client, type
-  def sync client, type
-    settings.master_mutex.synchronize do
-      index = current_index type
-
-      if index
-        if settings.index_status[index] == :invalid
-          settings.index_status[index] = :updating
-          return index, true
-        else
-          return index, false
-        end
-      else
-        index = create_current_index client, type
-        settings.index_status[index] = :updating
-        return index, true
-      end
-    end
-  end
-
-  index, update_index = sync client, type
-
-  if update_index
-    settings.mutex[index].synchronize do
-      index_documents client, type, index
-      client.refresh_index index
-      settings.index_status[index] = :valid
-    end
-  end
-
-  index
-end
-
 get "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = get_type path
+  type = get_type_from_path path
 
   index = get_index_safe client, type
 
@@ -674,7 +726,7 @@ end
 post "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = get_type path
+  type = get_type_from_path path
 
   index = get_index_safe client, type
 
@@ -690,54 +742,11 @@ post "/:path/search" do |path|
 end
 
 
-# memoized
-def is_type s, rdf_type
-  @subject_types ||= {}
-  if @subject_types.has_key? [s, rdf_type]
-    @subject_types[s, rdf_type]
-  else
-    settings.db.query "ASK WHERE { <#{s}> a <#{rdf_type}> }"
-  end
-end
-
-
-def query_with_headers query, headers
-  sparql_client.query query, { headers: headers }
-end
-
-
-def authorized_query query
-  sparql_client.query query, { headers: { MU_AUTH_ALLOWED_GROUPS: request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"] } }
-end
-
-
-# memoized
-def is_authorized s, rdf_type, allowed_groups
-  @authorizations ||= {}
-  if @authorizations.has_key? [s, rdf_type, allowed_groups]
-    @authorizations[s, rdf_type, allowed_groups]
-  else
-    allowed_groups_object = allowed_groups.map { |group| { value: group } }.to_json
-    settings.db.query "ASK WHERE { <#{s}> a <#{rdf_type}> }",
-                      { headers: { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object } }
-  end
-end
-
-
 post "/update" do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
-  deltas = @json_body
-
-  # placeholder: check this
-  if deltas.is_a?(Array)
-    deltas = deltas.first
-  end
-
-  inserts = deltas["delta"]["inserts"] || []
-  inserts = inserts.map { |t| [:+, t["s"], t["p"], t["o"]] } 
-  deletes = deltas["delta"]["deletes"] || []
-  deletes = deletes.map { |t| [:-, t["s"], t["p"], t["o"]] } 
+  # [[d, s, p, o], ...] where d is :- or :+ for deletes/inserts respectively
+  deltas = parse_deltas @json_body
 
   # Tabulate first, to avoid duplicate updates
   # { <uri> => [type, ...] } or { <uri> => false } if document should be deleted
@@ -745,7 +754,7 @@ post "/update" do
   docs_to_update = {}
   docs_to_delete = {}
 
-  (inserts + deletes).each do |triple|
+  deltas.each do |triple|
     delta, s, p, o = triple
 
     if p == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -798,7 +807,9 @@ post "/update" do
             rdf_type = settings.type_definitions[type]["rdf_type"]
             if is_authorized s, rdf_type, allowed_groups
               properties = index["properties"]
-              document = fetch_document_to_index uri: s, properties: settings.type_definitions[type]["properties"], allowed_groups: index[:allowed_groups]
+              document = fetch_document_to_index uri: s,
+                                                 properties: settings.type_definitions[type]["properties"], 
+                                                 allowed_groups: index[:allowed_groups]
               begin
                 client.update_document index[:index], get_uuid(s), document
               rescue
