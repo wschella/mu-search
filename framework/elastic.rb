@@ -49,7 +49,7 @@ class Elastic
   def put_document index, id, document
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}")
     req = Net::HTTP::Put.new(uri)
-    req.body = document
+    req.body = document.to_json
     run(uri, req)
   end
 

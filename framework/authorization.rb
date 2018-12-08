@@ -99,7 +99,8 @@ end
 
 def get_request_groups
   allowed_groups_s = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
-  allowed_groups = allowed_groups_s ? JSON.parse(allowed_groups_s).map { |e| e["value"] } : []
+  allowed_groups = 
+    allowed_groups_s ? JSON.parse(allowed_groups_s).map { |e| e["value"] } : []
 
   used_groups_s = request.env["HTTP_MU_AUTH_USED_GROUPS"]
   used_groups = used_groups_s ? JSON.parse(used_groups_s).map { |e| e["value"] } : []

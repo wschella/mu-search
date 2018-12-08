@@ -16,17 +16,13 @@ configure do
 
   set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', {})
   
-  # set :admin_db, "http://db:8890/sparql"
-
   set :master_mutex, Mutex.new
 
   set :mutex, {}
 
-  # determines batch size for indexing documents (SPARQL OFFSET)
-  set :batch_size, 
-      (ENV['BATCH_SIZE'] || configuration["batch_size"] || 100)
+  set :batch_size, (ENV['BATCH_SIZE'] || configuration["batch_size"] || 100)
 
-  set :automatic_index_updates, 
+  set :automatic_index_updates,  
       (ENV["AUTOMATIC_INDEX_UPDATES"] || configuration["automatic_index_updates"])
 
   set :type_paths, Hash[
@@ -162,9 +158,7 @@ get "/:path/search" do |path|
   index = get_index_safe client, type
 
   es_query = construct_es_query
-
-  count_result = JSON.parse(client.count index: index, query: es_query)
-  count = count_result["count"]
+  count_query = es_query.clone
 
   if params["page"]
     page = params["page"]["number"] or 0
@@ -180,6 +174,9 @@ get "/:path/search" do |path|
   while settings.index_status[index] == :updating
     sleep 0.5
   end
+
+  count_result = JSON.parse(client.count index: index, query: count_query)
+  count = count_result["count"]
 
   results = client.search index: index, query: es_query
 
@@ -217,12 +214,17 @@ post "/update" do
   # Tabulate first, to avoid duplicate updates
   # { <uri> => [type, ...] } or { <uri> => false } if document should be deleted
   # should be inverted to { <type> => [uri, ...] } for easier index-specific blocking
-  docs_to_update, docs_to_delete = tabulate_or_invalidate_updates deltas
+  
+  
 
   if settings.automatic_index_updates
+    docs_to_update, docs_to_delete = tabulate_updates deltas
     docs_to_update.each { |s, types| update_document_all_types client, s, types }
     docs_to_delete.each { |s, types| delete_document_all_types client, s, types }
+  else
+    invalidate_updates deltas
   end
+
 
 
   { message: "Thanks for the update." }.to_json
