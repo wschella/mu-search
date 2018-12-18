@@ -24,7 +24,7 @@ def invalidate_indexes s, type
         settings.index_status[index[:index]] = :invalid 
       end
     else
-      log.info "Not Authorized, doing nothing."
+      log.info "Not Authorized, nothing doing."
     end
   end
 end
@@ -117,6 +117,7 @@ def update_document_all_types client, s, types
     end
   end
 end
+
 
 def delete_document_all_types client, s, types
   types.each do |type|
