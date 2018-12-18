@@ -14,10 +14,17 @@ def parse_deltas raw_deltas
 end
 
 
-def invalidate_indexes type
+def invalidate_indexes s, type
   settings.indexes[type].each do |key, index| 
-    settings.mutex[index[:index]].synchronize do
-      settings.index_status[index[:index]] = :invalid 
+    allowed_groups = index[:allowed_groups]
+    rdf_type = settings.type_definitions[type]["rdf_type"]
+
+    if is_authorized s, rdf_type, allowed_groups
+      settings.mutex[index[:index]].synchronize do
+        settings.index_status[index[:index]] = :invalid 
+      end
+    else
+      log.info "Not Authorized, doing nothing."
     end
   end
 end
@@ -28,7 +35,7 @@ def invalidate_updates deltas
     delta, s, p, o = triple
 
     if p == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-      settings.rdf_types[o].each { |type| invalidate_indexes type }
+      settings.rdf_types[o].each { |type| invalidate_indexes s, type }
     else
       possible_types = settings.rdf_properties[p]
       if possible_types
@@ -36,7 +43,7 @@ def invalidate_updates deltas
           rdf_type = settings.type_definitions[type]["rdf_type"]
 
           if is_type s, rdf_type
-            invalidate_indexes type
+            invalidate_indexes s, type
           end
         end
       end
@@ -104,7 +111,7 @@ def update_document_all_types client, s, types
             client.put_document index[:index], get_uuid(s), document
           end
         else
-          log.info "NOT AUTHORIZED"
+          log.info "Not Authorized."
         end
       end
     end
