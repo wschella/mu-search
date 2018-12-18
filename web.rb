@@ -174,7 +174,8 @@ get "/:path/search" do |path|
   while settings.index_status[index] == :updating
     sleep 0.5
   end
-
+  log.info "Index exists: #{client.index_exists index}"
+  log.info "Index exists: #{client.index_exists 'george'}"
   count_result = JSON.parse(client.count index: index, query: count_query)
   count = count_result["count"]
 
@@ -214,8 +215,7 @@ post "/update" do
   # Tabulate first, to avoid duplicate updates
   # { <uri> => [type, ...] } or { <uri> => false } if document should be deleted
   # should be inverted to { <type> => [uri, ...] } for easier index-specific blocking
-  
-  
+    
 
   if settings.automatic_index_updates
     docs_to_update, docs_to_delete = tabulate_updates deltas
@@ -227,5 +227,15 @@ post "/update" do
 
 
 
-  { message: "Thanks for the update." }.to_json
+  { message: "Thanks for all the updates." }.to_json
 end
+
+
+post "/settings/automatic_updates" do
+  settings.automatic_index_updates = true
+end 
+
+
+delete "/settings/automatic_updates" do
+  settings.automatic_index_updates = false
+end 

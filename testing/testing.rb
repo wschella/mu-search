@@ -56,3 +56,12 @@ def run_test value
   end
 end
 
+
+def automatic_updates val
+  uri = URI(ELASTIC + '/settings/automatic_updates')
+  req = val ? req = Net::HTTP::Post.new(uri) : req = Net::HTTP::Delete.new(uri)
+
+  res = Net::HTTP.start(uri.hostname, uri.port) {|http|
+    http.request(req)
+  }
+end

@@ -24,6 +24,18 @@ class Elastic
     end
   end
 
+  def index_exists index
+    uri = URI("http://#{@host}:#{@port_s}/#{index}")
+    req = Net::HTTP::Head.new(uri)
+
+    begin
+      run(uri, req)
+      true
+    rescue
+      false
+    end
+  end
+
   def create_index index, mappings = nil
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Put.new(uri)

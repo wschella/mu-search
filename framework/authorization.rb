@@ -120,7 +120,16 @@ def create_request_index client, type
   settings.indexes[type][used_groups] = index_definition
   settings.mutex[index_definition[:index]] = Mutex.new
 
-  client.create_index index, settings.type_definitions[type]["es_mappings"]
+  begin
+    client.create_index index, settings.type_definitions[type]["es_mappings"]
+  rescue
+    if client.index_exists index
+      log.info "Index not created, already exists: #{index}"
+      # Is this an error??
+    else
+      raise "Error creating index: #{index}"
+    end
+  end
 
   index
 end
@@ -150,9 +159,13 @@ def get_index_safe client, type
 
   if update_index
     settings.mutex[index].synchronize do
-      index_documents client, type, index
-      client.refresh_index index
-      settings.index_status[index] = :valid
+      begin
+        index_documents client, type, index
+        client.refresh_index index
+        settings.index_status[index] = :valid
+      rescue
+        settings.index_status[index] = :invalid
+      end
     end
   end
 
