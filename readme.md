@@ -75,6 +75,8 @@ Here is a simple example of a complete `config.json` file.
 }
 ```
 
+### Property Paths
+
 Properties can also be mapped to lists of predicates, corresponding to a property path in RDF.
 
 ```
@@ -164,6 +166,14 @@ PUT index4901823098
 
 **batch_size** -- number of documents loaded from the RDF store and indexed together in a single batch.
 
+**automatic_index_updates** -- flag to apply automatic index updates instead of invalidating indexes on receiving deltas. See below.
+
+**eager_indexing_groups** -- see below.
+
+**eager_indexing_sparql_query** -- see below.
+
+
+
 
 
 ## Eager Indexing
@@ -204,7 +214,12 @@ When a delta is received in which:
 - `p` corresponds to the property of given type, and
 - `s` is indeed of that type (verified by querying the triple store)
 
-then all indexes corresponding to that type are invalidated. Each one will be rebuilt the next time it is searched.
+then all indexes which
+
+- correspond to that type 
+- are authorized to see `s`
+
+are invalidated. Each one will be rebuilt the next time it is searched.
 
 ## Automatic Index Updating
 
@@ -215,6 +230,11 @@ When a corresponding delta is received (see previous section), the document corr
 Also note this is not currently a blocking operation: an update will not lock the index, so that a simultaneously received search request might be run on the un-updated index.
 
 Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UPDATES`, or `automatic_index_updates` in the config.json file.
+
+
+## Blocking and Queuing
+
+Notes on index building and re-building, the blocking model, request priority, which requests might be forced to wait and when...
 
 
 ## Search and Configuration API
