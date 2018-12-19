@@ -1,3 +1,21 @@
+def split_filter filter
+  match = /(?:\:)(\w+)(?::)(\w+)/.match(filter)
+  if match
+    return match[1], match[2]
+  else
+    return nil, filter
+  end
+end
+
+
+def split_fields field
+  fields = field.split(',')
+  if fields.length > 1
+    fields
+  else
+    nil
+  end
+end
 
 
 # Currently supports ES methods that can be given a single value, e.g., match, term, prefix, fuzzy, etc.
@@ -7,20 +25,49 @@
 # * to do: range queries
 # * to do: sort
 def construct_es_query
-  filters = params["filter"].map do |field, v| 
-    v.map do |method, val| 
-      { method => { field => val } } 
-    end
-  end.first.first
+  filters = params["filter"].map do |field, val| 
+    if field == '_all'
+      { multi_match: { query: val, fields: ['*'] } }
+    else
+      flag, field = split_filter field
+      fields = split_fields field
 
-  {
-    query: {
-      bool: {
-        must: filters
+      unless flag
+        if fields
+          { multi_match: { query: val, fields: fields } }
+        else
+          { match: { field => val } }
+        end
+      else
+        case flag
+        when 'term', 'fuzzy'
+          { flag => { field => val } }
+        when "terms"
+          { terms: { field => val.split(',') } }
+        when 'gte', 'lte', 'gt', 'lt'
+          { range: { field => { flag => val } } }
+        when 'lte,gte', 'lt,gt', 'lt,gte', 'lte,gt'
+          flags = flag.split(',')
+          vals = val.split(',')
+          { range: { field => { flags[0] => vals[0], flags[1] => vals[1] } } }
+        when "query"
+          { query_string: { default_field: field, query: val } }
+        end
+      end
+    end
+  end
+
+  if filters.length == 1
+    { query: filters.first }
+  else
+    {
+      query: {
+        bool: {
+          must: filters
+        }
       }
     }
-  }
-
+  end
 end
 
 

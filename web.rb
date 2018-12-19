@@ -174,8 +174,6 @@ get "/:path/search" do |path|
   while settings.index_status[index] == :updating
     sleep 0.5
   end
-  log.info "Index exists: #{client.index_exists index}"
-  log.info "Index exists: #{client.index_exists 'george'}"
   count_result = JSON.parse(client.count index: index, query: count_query)
   count = count_result["count"]
 
