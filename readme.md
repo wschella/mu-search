@@ -219,21 +219,50 @@ Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UP
 
 ## Search and Configuration API
 
+### POST `/:type/search`
+
+Accepts raw Elasticsearch Query DSL, for testing and more complex queries. 
+
 ### GET `/:type/search`
 
-JSON-API compliant request format, intended to match the request format of mu-cl-resources. Currently, only simple Elasticsearch methods are supported, such as match, term, prefix, fuzzy, etc.
+JSON-API compliant request format, intended to match the request format of mu-cl-resources. A portion of the Elasticsearch Query DSL is supported. More complex queries should be sent via POST to the raw Elasticsearch Query DSL endpoint
+
+To search for `document`s on all fields:
+
+    http://localhost:8888/userdocs/search?filter[_all]=fish
 
 To search for `document`s on the field `name`:
 
-```
-http://localhost:8888/userdocs/search?filter[name][match]=fish
-```
+    http://localhost:8888/userdocs/search?filter[name]=fish
+
+Multiple fields can also be searched:
+
+    http://localhost:8888/userdocs/search?filter[name,description]=fish
+
+A series of flags provide access to features such as term, range and fuzzy searches. Filters are expressed as terms separated by `:` before the field name(s), as follows:
+
+    http://localhost:8888/userdocs/search?filter[:term:tag]=fish
+
+The following flags are currently implemented:
+
+- `:term:` Term Query
+- `:terms:` Terms Query, terms should be separated by a `,`, such as:
+
+    http://localhost:8888/userdocs/search?filter[:terms:tag]=fish,seafood
+
+- Other Term level queries: `:prefix:`, `:wildcard:`, `:regexp:`, `:fuzzy:`
+- `:query:` -- Query String Query
+- single range flags `:gt:`,`lt:`, `:gte:`, `:lte:` -- Range Query
+- paired range flags `:lt,gt:`, `:lte,gte:`, `:lt,gte:`, `:lte,gt:` -- Range Query, ranges limits should be separated by a `,` such as:
+
+    http://localhost:8888/userdocs/search?filter[:lte,gte:importance]=3,7
+
+
+#### Pagination
 
 Pagination is specified with `page` `number` and `size`:
 
-```
-http://localhost:8888/userdocs/search?filter[name][match]=fish&page=2&size=20
-```
+    http://localhost:8888/userdocs/search?filter[name]=fish&page=2&size=20
 
 ### POST `/:type/search`
 
