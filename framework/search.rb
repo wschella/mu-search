@@ -40,7 +40,7 @@ def construct_es_query
         end
       else
         case flag
-        when 'term', 'fuzzy'
+        when 'term', 'fuzzy', 'prefix', 'wildcard', 'regexp'
           { flag => { field => val } }
         when "terms"
           { terms: { field => val.split(',') } }
