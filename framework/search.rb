@@ -1,5 +1,5 @@
 def split_filter filter
-  match = /(?:\:)(\w+)(?::)(\w+)/.match(filter)
+  match = /(?:\:)([^ ]+)(?::)(\w+)/.match(filter)
   if match
     return match[1], match[2]
   else
@@ -18,16 +18,19 @@ def split_fields field
 end
 
 
+def es_query_sort_statement
+  params['sort'] && params['sort'].collect do |field, val|
+    flag, field = split_filter field
+    unless flag
+      { field => val }
+    else
+      { field => { order: val, mode: flag } }
+    end
+  end
+end
+
+
 def construct_es_query
-  sorts = params['sort'] && params['sort'].collect do |field, val|
-              flag, field = split_filter field
-              unless flag
-                { field => val }
-              else
-                { field => { order: val, mode: flag } }
-              end
-            end
-  
   filters = params['filter'] && params['filter'].map do |field, val| 
     if field == '_all'
       { multi_match: { query: val, fields: ['*'] } }
@@ -55,16 +58,23 @@ def construct_es_query
           { range: { field => { flags[0] => vals[0], flags[1] => vals[1] } } }
         when 'query'
           { query_string: { default_field: field, query: val } }
+        when /common(,[0-9.]+){,2}/
+          flag, cutoff, min_match = flag.split(',')
+          cutoff = cutoff or settings.common_terms_cutoff_frequency
+          term = { common: { field => { query: val, cutoff_frequency: cutoff } } }
+          if min_match
+            term['minimum_should_match'] = min_match
+          end
+          term
         end
       end
     end
   end
 
   if filters.length == 1
-    { sort: sorts, query: filters.first }
+    { query: filters.first }
   else
     {
-      sort: sorts,
       query: {
         bool: {
           must: filters

@@ -279,6 +279,15 @@ The following flags are currently implemented:
 
     /documents/search?filter[:lte,gte:importance]=3,7
 
+- `:common:` -- Common Terms Query. `cutoff_frequency` and `minimum_should_match` can be specified with a `,`, in that order. The former can be set application-wide in the configuration.
+
+    /documents/search?filter[:common:description]=a+cat+named+Barney
+
+    /documents/search?filter[:common,0.002:description]=a+cat+named+Barney
+
+    /documents/search?filter[:common,0.002,2:description]=a+cat+named+Barney
+
+
 #### Sorting
 
 Sorting results is done using the `sort` parameter, specifying the field and `asc` or `desc`:

@@ -22,6 +22,8 @@ configure do
 
   set :batch_size, (ENV['BATCH_SIZE'] || configuration["batch_size"] || 100)
 
+  set :common_terms_cutoff_frequency, (ENV['COMMON_TERMS_CUTOFF_FREQUENCY'] || configuration["common_terms_cutoff_frequency"] || 0.001)
+
   set :automatic_index_updates,  
       (ENV["AUTOMATIC_INDEX_UPDATES"] || configuration["automatic_index_updates"])
 
@@ -159,6 +161,12 @@ get "/:path/search" do |path|
 
   es_query = construct_es_query
   count_query = es_query.clone
+
+  sort_statement = es_query_sort_statement
+
+  if sort_statement
+    es_query['sort'] = sort_statement
+  end
 
   if params["page"]
     page = (params["page"]["number"] && params["page"]["number"].to_i) || 0
