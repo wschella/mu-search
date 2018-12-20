@@ -18,14 +18,17 @@ def split_fields field
 end
 
 
-# Currently supports ES methods that can be given a single value, e.g., match, term, prefix, fuzzy, etc.
-# i.e., any method that can be written: { "query": { "METHOD" : { "field": "value" } } }
-# * not supported yet: everything else, e.g., value, range, boost...
-# Currently combined using { "bool": { "must": { ... } } } 
-# * to do: range queries
-# * to do: sort
 def construct_es_query
-  filters = params["filter"].map do |field, val| 
+  sorts = params['sort'] && params['sort'].collect do |field, val|
+              flag, field = split_filter field
+              unless flag
+                { field => val }
+              else
+                { field => { order: val, mode: flag } }
+              end
+            end
+  
+  filters = params['filter'] && params['filter'].map do |field, val| 
     if field == '_all'
       { multi_match: { query: val, fields: ['*'] } }
     else
@@ -50,7 +53,7 @@ def construct_es_query
           flags = flag.split(',')
           vals = val.split(',')
           { range: { field => { flags[0] => vals[0], flags[1] => vals[1] } } }
-        when "query"
+        when 'query'
           { query_string: { default_field: field, query: val } }
         end
       end
@@ -58,9 +61,10 @@ def construct_es_query
   end
 
   if filters.length == 1
-    { query: filters.first }
+    { sort: sorts, query: filters.first }
   else
     {
+      sort: sorts,
       query: {
         bool: {
           must: filters

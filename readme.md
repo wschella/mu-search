@@ -245,44 +245,57 @@ Accepts raw Elasticsearch Query DSL, for testing and more complex queries.
 
 ### GET `/:type/search`
 
-JSON-API compliant request format, intended to match the request format of mu-cl-resources. A portion of the Elasticsearch Query DSL is supported. More complex queries should be sent via POST to the raw Elasticsearch Query DSL endpoint
+JSON-API compliant request format, intended to match the request format of mu-cl-resources. A portion of the Elasticsearch Query DSL is supported, via the `filter`, `page`, and `sort` query parameters. More complex queries should be sent via POST to the raw Elasticsearch Query DSL endpoint.
 
 To search for `document`s on all fields:
 
-    http://localhost:8888/userdocs/search?filter[_all]=fish
+    /documents/search?filter[_all]=fish
 
 To search for `document`s on the field `name`:
 
-    http://localhost:8888/userdocs/search?filter[name]=fish
+    /documents/search?filter[name]=fish
 
 Multiple fields can also be searched:
 
-    http://localhost:8888/userdocs/search?filter[name,description]=fish
+    /documents/search?filter[name,description]=fish
+
+#### Other Search Methods
 
 A series of flags provide access to features such as term, range and fuzzy searches. Filters are expressed as terms separated by `:` before the field name(s), as follows:
 
-    http://localhost:8888/userdocs/search?filter[:term:tag]=fish
+    /documents/search?filter[:term:tag]=fish
 
 The following flags are currently implemented:
 
 - `:term:` Term Query
 - `:terms:` Terms Query, terms should be separated by a `,`, such as:
 
-    http://localhost:8888/userdocs/search?filter[:terms:tag]=fish,seafood
+    /documents/search?filter[:terms:tag]=fish,seafood
 
 - Other Term level queries: `:prefix:`, `:wildcard:`, `:regexp:`, `:fuzzy:`
 - `:query:` -- Query String Query
 - single range flags `:gt:`,`lt:`, `:gte:`, `:lte:` -- Range Query
 - paired range flags `:lt,gt:`, `:lte,gte:`, `:lt,gte:`, `:lte,gt:` -- Range Query, ranges limits should be separated by a `,` such as:
 
-    http://localhost:8888/userdocs/search?filter[:lte,gte:importance]=3,7
+    /documents/search?filter[:lte,gte:importance]=3,7
 
+#### Sorting
+
+Sorting results is done using the `sort` parameter, specifying the field and `asc` or `desc`:
+
+    /documents/search?filter[name]=fish&sort[priority]=asc
+
+Flags can be used to specify Elasticsearch sort modes (min, max, sum, avg, median):
+
+    /documents/search?filter[name]=fish&sort[:avg:score]=asc
+
+Note that sorting cannot be done on text fields, unless fielddata is enabled (not recommended). Keyword and numerical data types (declared in the [type mapping](#elasticsearch-mappings)) are recommended.
 
 #### Pagination
 
 Pagination is specified with `page` `number` and `size`:
 
-    http://localhost:8888/userdocs/search?filter[name]=fish&page=2&size=20
+    /documents/search?filter[name]=fish&page=2&size=20
 
 ### POST `/:type/search`
 
