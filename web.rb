@@ -161,8 +161,8 @@ get "/:path/search" do |path|
   count_query = es_query.clone
 
   if params["page"]
-    page = params["page"]["number"] or 0
-    size = params["page"]["size"] or 10
+    page = (params["page"]["number"] && params["page"]["number"].to_i) || 0
+    size = (params["page"]["size"] && params["page"]["size"].to_i) || 10
   else
     page = 0
     size = 10

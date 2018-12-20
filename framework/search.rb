@@ -76,6 +76,21 @@ def format_results type, count, page, size, results
   next_page = [page+1, last_page].min
   prev_page = [page-1, 0].max
 
+  query_string = request.query_string.gsub(/&?page\[(number|size)\]=[0-9]+/, '')
+  uri =  request.path + '?' + query_string
+
+  def join *elements
+    elements.reduce('') { |cumm, e| e == '' ? cumm : (cumm == '' ? e : cumm + '&' + e) }
+  end
+
+  def page_string uri, page, size
+    size_specd = params["page"] && params["page"]["size"]
+    size_string = (size_specd && "page[size]=#{size}") || ''
+    zero = page == 0
+    page_number_string = zero ? '' : "page[number]=#{page}"
+    join uri, page_number_string, size_string
+  end
+
   { 
     count: count,
     data: JSON.parse(results)["hits"]["hits"].map do |result|
@@ -86,11 +101,11 @@ def format_results type, count, page, size, results
       }
     end,
     links: {
-      self: "http://application/",
-      first: "page[number]=0&page[size]=#{size}",
-      last: "page[number]=#{last_page}&page[size]=#{size}",
-      prev: "page[number]=#{prev_page}&page[size]=#{size}",
-      next: "page[number]=#{next_page}&page[size]=#{size}"
+      self: page_string(uri, page, size),
+      first: page_string(uri, 0, size),
+      last:  page_string(uri, last_page, size),
+      prev:  page_string(uri, prev_page, size),
+      next:  page_string(uri, next_page, size)
     }
   }
 end
