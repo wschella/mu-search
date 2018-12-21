@@ -48,6 +48,8 @@ def construct_es_query
         case flag
         when 'term', 'fuzzy', 'prefix', 'wildcard', 'regexp'
           { flag => { field => val } }
+        when 'phrase', 'phrase_prefix'
+          { 'match_' + flag => { field => val } }
         when "terms"
           { terms: { field => val.split(',') } }
         when 'gte', 'lte', 'gt', 'lt'

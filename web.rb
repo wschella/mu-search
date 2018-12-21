@@ -124,6 +124,7 @@ def get_type_from_path path
 end
 
 
+# should be POST (why not working?)
 get "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
@@ -182,6 +183,7 @@ get "/:path/search" do |path|
   while settings.index_status[index] == :updating
     sleep 0.5
   end
+
   count_result = JSON.parse(client.count index: index, query: count_query)
   count = count_result["count"]
 

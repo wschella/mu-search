@@ -273,6 +273,7 @@ The following flags are currently implemented:
     /documents/search?filter[:terms:tag]=fish,seafood
 
 - Other Term level queries: `:prefix:`, `:wildcard:`, `:regexp:`, `:fuzzy:`
+- `:phrase:` and `:phrase_prefix:` -- Match Phrase and Match Phrase Prefix queries
 - `:query:` -- Query String Query
 - single range flags `:gt:`,`lt:`, `:gte:`, `:lte:` -- Range Query
 - paired range flags `:lt,gt:`, `:lte,gte:`, `:lt,gte:`, `:lte,gt:` -- Range Query, ranges limits should be separated by a `,` such as:
