@@ -43,7 +43,7 @@ end
 
 
 def load_indexes type
-  rights = {}
+  index = {}
 
   query_result = direct_query  <<SPARQL
   SELECT * WHERE {
@@ -75,19 +75,19 @@ SPARQL
 SPARQL
     used_groups = used_groups_result.map { |g| g["group"].to_s }
 
-    index = result["index"].to_s
+    index_name = result["index"].to_s
 
-    rights[used_groups] = { 
+    index[allowed_groups] = { 
       uri: uri,
-      index: index,
+      index: index_name,
       allowed_groups: allowed_groups, 
       used_groups: used_groups 
     }
 
-    settings.mutex[index] = Mutex.new
+    settings.mutex[index_name] = Mutex.new
   end
 
-  rights
+  index
 end
 
 
@@ -117,7 +117,7 @@ def create_request_index client, type
   index = Digest::MD5.hexdigest (type + "-" + allowed_groups.join("-"))
   
   index_definition = store_index type, index, allowed_groups, used_groups
-  settings.indexes[type][used_groups] = index_definition
+  settings.indexes[type][allowed_groups] = index_definition
   settings.mutex[index_definition[:index]] = Mutex.new
 
   begin

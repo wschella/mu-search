@@ -2,6 +2,7 @@ require 'net/http'
 require 'digest'
 require 'set'
 require 'request_store'
+require 'thin'
 
 require_relative 'framework/elastic.rb'
 require_relative 'framework/sparql.rb'
@@ -124,12 +125,45 @@ def get_type_from_path path
 end
 
 
-# should be POST (why not working?)
-get "/:path/index" do |path|
+post "/:path/invalidate" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
 
+  if path == '_all'
+    indexes_invalidated = []
+    settings.master_mutex.synchronize do
+      settings.indexes.each do |type, indexes|
+        indexes.each do |groups, index_definition|
+          index = index_definition[:index]
+          settings.index_status[index] = :invalid
+          indexes_invalidated.push index_definition[:index]
+        end
+      end
+    end
+
+    { indexes: indexes_invalidated, status: "invalid" }.to_json
+  else
+    settings.master_mutex.synchronize do
+      index = get_request_index type
+      settings.mutex[index].synchronize do
+        settings.index_status[index] = :invalid
+      end
+
+      { index: index, status: "invalid" }.to_json
+    end
+  end
+end
+
+
+post "/:path/index" do |path|
+  content_type 'application/json'
+  client = Elastic.new(host: 'elasticsearch', port: 9200)
+  type = get_type_from_path path
+
+  # This method shouldn't be necessary... 
+  # something wrong with how I'm using synchronize
+  # and return values.
   def sync client, type
     settings.master_mutex.synchronize do
       index = get_request_index type
@@ -224,7 +258,6 @@ post "/update" do
   # { <uri> => [type, ...] } or { <uri> => false } if document should be deleted
   # should be inverted to { <type> => [uri, ...] } for easier index-specific blocking
     
-
   if settings.automatic_index_updates
     docs_to_update, docs_to_delete = tabulate_updates deltas
     docs_to_update.each { |s, types| update_document_all_types client, s, types }
@@ -232,8 +265,6 @@ post "/update" do
   else
     invalidate_updates deltas
   end
-
-
 
   { message: "Thanks for all the updates." }.to_json
 end
