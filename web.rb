@@ -3,6 +3,7 @@ require 'digest'
 require 'set'
 require 'request_store'
 require 'thin'
+require 'listen'
 
 require_relative 'framework/elastic.rb'
 require_relative 'framework/sparql.rb'
@@ -11,9 +12,8 @@ require_relative 'framework/indexing.rb'
 require_relative 'framework/search.rb'
 require_relative 'framework/updates.rb'
 
-configure do
+def configure_settings client
   configuration = JSON.parse File.read('/config/config.json')
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
 
   set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', {})
   
@@ -22,6 +22,8 @@ configure do
   set :mutex, {}
 
   set :batch_size, (ENV['BATCH_SIZE'] || configuration["batch_size"] || 100)
+
+  set :persist_indexes, ENV['PERSIST_INDEXES'] || configuration["persist_indexes"]
 
   set :common_terms_cutoff_frequency, (ENV['COMMON_TERMS_CUTOFF_FREQUENCY'] || configuration["common_terms_cutoff_frequency"] || 0.001)
 
@@ -41,16 +43,26 @@ configure do
       ]
 
   indexes = {}
-  configuration["types"].each do |type_def|
-    type = type_def["type"]
-    indexes[type] = load_indexes type
+
+  while !sparql_up
+    sleep 0.5
+  end
+
+  if settings.persist_indexes
+    # load existing indexes
+    configuration["types"].each do |type_def|
+      type = type_def["type"]
+      indexes[type] = load_indexes type
+    end
+  else
+    destroy_existing_indexes client
   end
 
   set :indexes, indexes
 
   set :index_status, {}
 
-  # properties and types lookup tables for deltas
+  # properties and types lookup-tables for deltas
   # { <rdf_property> => [type, ...] }
   rdf_properties = {}
   rdf_types = {}
@@ -96,6 +108,7 @@ configure do
   set :rdf_properties, rdf_properties
   set :rdf_types, rdf_types
 
+  # Eager Indexing
   eager_indexing_groups = configuration["eager_indexing_groups"] || []
   
   # if configuration["eager_indexing_sparql_query"]
@@ -104,19 +117,32 @@ configure do
   # end
 
   unless eager_indexing_groups.empty?
-    while !sparql_up
-      sleep 0.5
-    end
-
     settings.master_mutex.synchronize do
       eager_indexing_groups.each do |groups|
         settings.type_definitions.keys.each do |type|
-          index = find_matching_index type, groups, groups
+          index = find_matching_index type, groups, groups 
+          index = index or create_request_index(client, type, groups, groups)
           index_documents client, type, index, groups
         end
       end
     end
   end
+end
+
+configure do
+  client = Elastic.new(host: 'elasticsearch', port: 9200)
+  configure_settings client
+
+  listener = Listen.to('/config/') do |modified, added, removed|
+    if modified.include? '/config/config.json'
+      log.info 'Reloading configuration'
+      destroy_existing_indexes client
+      configure_settings client
+      log.info 'Done reloading configuration'
+    end
+  end
+
+  listener.start
 end
 
 

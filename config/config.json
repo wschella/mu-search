@@ -1,5 +1,5 @@
 {
-    "automatic_index_updates" : true,
+    "automatic_index_updates" : false,
     "types": [
         {
             "type": "document",
@@ -42,7 +42,7 @@
             ]
         }
     ],
-    "eager_indexing_groups" : [
+    "eager_indexing_groups" : [ ["group1"] 
     ],
     "eager_indexing_sparql_query" : false
 }

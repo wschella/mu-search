@@ -46,6 +46,12 @@ class Elastic
     run(uri, req)
   end
 
+  def delete_index index
+    uri = URI("http://#{@host}:#{@port_s}/#{index}")
+    req = Net::HTTP::Delete.new(uri)
+    run(uri, req)
+  end
+
   def refresh_index index
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_refresh")
     req = Net::HTTP::Post.new(uri)

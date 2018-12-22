@@ -44,7 +44,7 @@ def index_documents client, type, index, allowed_groups = nil
   type_defs.each do |type_def|
     rdf_type = type_def["rdf_type"]
 
-    count = count_documents rdf_type
+    count = count_documents rdf_type, allowed_groups
     type_def["count"] = count
     properties = type_def["properties"]
 
@@ -67,7 +67,7 @@ SPARQL
 
       query_result.each do |result|
         uuid = result[:id].to_s
-        document = fetch_document_to_index uuid: uuid, properties: properties
+        document = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
         data.push({ index: { _id: uuid } })
         data.push document
       end

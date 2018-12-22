@@ -20,12 +20,19 @@ def direct_query q
 end
 
 
-def count_documents rdf_type
-  query_result = request_authorized_query <<SPARQL
+def count_documents rdf_type, allowed_groups = nil
+  sparql_query =  <<SPARQL
       SELECT (COUNT(?doc) AS ?count) WHERE {
         ?doc a <#{rdf_type}>
       }
 SPARQL
+
+  query_result =
+    if allowed_groups
+      authorized_query sparql_query, allowed_groups
+    else
+      request_authorized_query sparql_query
+    end
 
   query_result.first["count"].to_i
 end
