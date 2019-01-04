@@ -1,5 +1,5 @@
 def find_matching_index type, allowed_groups, used_groups
-  index = settings.indexes[type] && settings.indexes[type][used_groups]
+  index = settings.indexes[type] && settings.indexes[type][allowed_groups]
   index and index[:index]
 end
 
@@ -7,8 +7,8 @@ end
 def destroy_existing_indexes client
   get_index_names().each do |result|
     index_name = result['index_name']
-    log.info "Deleting #{index_name}"
     if client.index_exists index_name
+      log.info "Deleting #{index_name}"
       client.delete_index index_name
     end
     remove_index index_name
@@ -53,22 +53,6 @@ SELECT ?index_name WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
                <http://mu.semte.ch/vocabularies/authorization/indexName> ?index_name
-    }
-  }
-SPARQL
-end
-
-
-def remove_index index_name
-  direct_query <<SPARQL
-DELETE {
-  GRAPH <http://mu.semte.ch/authorization> {
-    ?index ?p ?o
-  }
-} WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
-               <http://mu.semte.ch/vocabularies/authorization/indexName> "#{index_name}"
     }
   }
 SPARQL
@@ -182,60 +166,14 @@ DELETE {
 } WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
-               <http://mu.semte.ch/vocabularies/authorization/indexName> "#{index_name}"
+               <http://mu.semte.ch/vocabularies/authorization/indexName> "#{index_name}";
+                ?p ?o
     }
   }
 SPARQL
 end
 
 
-def load_indexes type
-  index = {}
-
-  query_result = direct_query  <<SPARQL
-  SELECT * WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
-                 <http://mu.semte.ch/vocabularies/authorization/objectType> "#{type}";
-                 <http://mu.semte.ch/vocabularies/authorization/indexName> ?index_name
-    }
-  }
-SPARQL
-
-  query_result.each do |result|
-    uri = result["index"].to_s
-    allowed_groups_result = direct_query  <<SPARQL
-  SELECT * WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group
-    }
-  }
-SPARQL
-    allowed_groups = allowed_groups_result.map { |g| g["group"].to_s }
-
-    used_groups_result = direct_query  <<SPARQL
-  SELECT * WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> ?group
-    }
-  }
-SPARQL
-    used_groups = used_groups_result.map { |g| g["group"].to_s }
-
-    index_name = result["index_name"].to_s
-
-    index[allowed_groups] = { 
-      uri: uri,
-      index: index_name,
-      allowed_groups: allowed_groups, 
-      used_groups: used_groups 
-    }
-
-    settings.mutex[index_name] = Mutex.new
-  end
-
-  index
-end
 
 
 def get_request_groups
@@ -308,7 +246,6 @@ def get_index_safe client, type
   end
 
   index, update_index = sync client, type
-
   if update_index
     settings.mutex[index].synchronize do
       begin
