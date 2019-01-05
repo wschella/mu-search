@@ -15,7 +15,7 @@ end
 
 
 def invalidate_indexes s, type
-  settings.indexes[type].each do |key, index| 
+  Indexes.instance.index[type].each do |key, index| 
     allowed_groups = index[:allowed_groups]
     rdf_type = settings.type_definitions[type]["rdf_type"]
 
@@ -96,7 +96,7 @@ end
 def update_document_all_types client, s, types
   if types
     types.each do |type|
-      indexes = settings.indexes[type]
+      indexes = Indexes.instance.index[type]
       indexes.each do |key, index|
         allowed_groups = index[:allowed_groups]
         rdf_type = settings.type_definitions[type]["rdf_type"]
@@ -122,7 +122,7 @@ end
 def delete_document_all_types client, s, types
   types.each do |type|
     uuid = get_uuid(s)
-    settings.indexes[type].each do |key, index|
+    Indexes.instance.index[type].each do |key, index|
       begin
         client.delete_document index[:index], uuid
       rescue

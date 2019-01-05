@@ -1,10 +1,10 @@
 def find_matching_index type, allowed_groups, used_groups
-  index = settings.indexes[type] && settings.indexes[type][allowed_groups]
+  index = Indexes.instance.indexes[type] && Indexes.instance.indexes[type][allowed_groups]
   index and index[:index]
 end
 
 
-def destroy_existing_indexes client
+def destroy_persisted_indexes client
   get_index_names().each do |result|
     index_name = result['index_name']
     if client.index_exists index_name
@@ -12,6 +12,19 @@ def destroy_existing_indexes client
       client.delete_index index_name
     end
     remove_index index_name
+  end
+end
+
+def destroy_existing_indexes client
+  Indexes.instance.indexes.each do |type, indexes|
+    indexes.each do |groups, index|
+      index_name = index[:index]
+      if client.index_exists index_name
+        log.info "Deleting #{index_name}"
+        client.delete_index index_name
+      end
+      remove_index index_name
+    end
   end
 end
 
@@ -145,18 +158,6 @@ SPARQL
 end
 
 
-def get_index_names 
-  direct_query <<SPARQL
-SELECT ?index_name WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
-               <http://mu.semte.ch/vocabularies/authorization/indexName> ?index_name
-    }
-  }
-SPARQL
-end
-
-
 def remove_index index_name
   direct_query <<SPARQL
 DELETE {
@@ -206,8 +207,8 @@ def create_request_index client, type, allowed_groups = nil, used_groups = nil
     used_groups: used_groups 
   }
   
-  settings.indexes[type] = {} unless settings.indexes[type]
-  settings.indexes[type][allowed_groups] = index_definition
+  Indexes.instance.indexes[type] = {} unless Indexes.instance.indexes[type]
+  Indexes.instance.indexes[type][allowed_groups] = index_definition
   settings.mutex[index_definition[:index]] = Mutex.new
 
   begin
@@ -229,7 +230,6 @@ def get_index_safe client, type
   def sync client, type
     settings.master_mutex.synchronize do
       index = get_request_index type
-
       if index
         if settings.index_status[index] == :invalid
           settings.index_status[index] = :updating

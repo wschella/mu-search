@@ -3,7 +3,7 @@
     "eager_indexing_groups" : [ ["group1"] 
     ],
     "eager_indexing_sparql_query" : false,
-    "persist_indexes" : true,
+    "persist_indexes" : false,
     "types": [
         {
             "type": "document",

@@ -4,6 +4,7 @@ require 'set'
 require 'request_store'
 require 'thin'
 require 'listen'
+require 'singleton'
 
 require_relative 'framework/elastic.rb'
 require_relative 'framework/sparql.rb'
@@ -12,7 +13,23 @@ require_relative 'framework/indexing.rb'
 require_relative 'framework/search.rb'
 require_relative 'framework/updates.rb'
 
-def configure_settings client
+# Needed for correct reloading on config.json changes.
+# Regular Sinatra settings, when they are complex
+# hash tables, aren't getting re-set correctly
+# (it isn't clear that they should, since settings
+# are supposed to be static).
+# This should probably be generalized to all complex settings
+# especially dynamic ones.
+class Indexes
+  attr_accessor :indexes
+  include Singleton
+  def initialize
+    @indexes = {}
+  end
+end
+
+
+def configure_settings client, is_reload = nil
   configuration = JSON.parse File.read('/config/config.json')
 
   set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', {})
@@ -42,7 +59,7 @@ def configure_settings client
         end
       ]
 
-  indexes = {}
+  Indexes.instance.indexes = {}
 
   while !sparql_up
     sleep 0.5
@@ -50,15 +67,14 @@ def configure_settings client
 
   if settings.persist_indexes
     # load existing indexes
+    log.info "Loading persisted indexes"
     configuration["types"].each do |type_def|
       type = type_def["type"]
-      indexes[type] = load_indexes type
+      Indexes.instance.indexes[type] = load_indexes type
     end
   else
-    destroy_existing_indexes client
+    destroy_persisted_indexes client
   end
-
-  set :indexes, indexes
 
   set :index_status, {}
 
@@ -115,13 +131,12 @@ def configure_settings client
   #   query_result = query configuration["eager_indexing_sparql_query"]
   #   eager_indexing_groups += query_result.map { |key, value| value.to_s }
   # end
-
   unless eager_indexing_groups.empty?
     settings.master_mutex.synchronize do
       eager_indexing_groups.each do |groups|
         settings.type_definitions.keys.each do |type|
           index = find_matching_index type, groups, groups 
-          index = index or create_request_index(client, type, groups, groups)
+          index = index || create_request_index(client, type, groups, groups)
           index_documents client, type, index, groups
         end
       end
@@ -137,8 +152,7 @@ configure do
     if modified.include? '/config/config.json'
       log.info 'Reloading configuration'
       destroy_existing_indexes client
-      configure_settings client
-      log.info 'Done reloading configuration'
+      configure_settings client, true
     end
   end
 
@@ -159,7 +173,7 @@ post "/:path/invalidate" do |path|
   if path == '_all'
     indexes_invalidated = []
     settings.master_mutex.synchronize do
-      settings.indexes.each do |type, indexes|
+      Indexes.instance.indexes.each do |type, indexes|
         indexes.each do |groups, index_definition|
           index = index_definition[:index]
           settings.index_status[index] = :invalid
