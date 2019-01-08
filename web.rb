@@ -13,6 +13,7 @@ require_relative 'framework/indexing.rb'
 require_relative 'framework/search.rb'
 require_relative 'framework/updates.rb'
 
+
 # Needed for correct reloading on config.json changes.
 # Regular Sinatra settings, when they are complex
 # hash tables, aren't getting re-set correctly
@@ -20,7 +21,7 @@ require_relative 'framework/updates.rb'
 # are supposed to be static).
 # This should probably be generalized to all complex settings
 # especially dynamic ones.
-class Indexes
+class Settings
   attr_accessor :indexes
   include Singleton
   def initialize
@@ -59,7 +60,7 @@ def configure_settings client, is_reload = nil
         end
       ]
 
-  Indexes.instance.indexes = {}
+  Settings.instance.indexes = {}
 
   while !sparql_up
     sleep 0.5
@@ -70,7 +71,7 @@ def configure_settings client, is_reload = nil
     log.info "Loading persisted indexes"
     configuration["types"].each do |type_def|
       type = type_def["type"]
-      Indexes.instance.indexes[type] = load_indexes type
+      Settings.instance.indexes[type] = load_indexes type
     end
   else
     destroy_persisted_indexes client
@@ -131,6 +132,7 @@ def configure_settings client, is_reload = nil
   #   query_result = query configuration["eager_indexing_sparql_query"]
   #   eager_indexing_groups += query_result.map { |key, value| value.to_s }
   # end
+
   unless eager_indexing_groups.empty?
     settings.master_mutex.synchronize do
       eager_indexing_groups.each do |groups|
@@ -173,7 +175,7 @@ post "/:path/invalidate" do |path|
   if path == '_all'
     indexes_invalidated = []
     settings.master_mutex.synchronize do
-      Indexes.instance.indexes.each do |type, indexes|
+      Settings.instance.indexes.each do |type, indexes|
         indexes.each do |groups, index_definition|
           index = index_definition[:index]
           settings.index_status[index] = :invalid

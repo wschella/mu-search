@@ -1,5 +1,5 @@
 def find_matching_index type, allowed_groups, used_groups
-  index = Indexes.instance.indexes[type] && Indexes.instance.indexes[type][allowed_groups]
+  index = Settings.instance.indexes[type] && Settings.instance.indexes[type][allowed_groups]
   index and index[:index]
 end
 
@@ -16,7 +16,7 @@ def destroy_persisted_indexes client
 end
 
 def destroy_existing_indexes client
-  Indexes.instance.indexes.each do |type, indexes|
+  Settings.instance.indexes.each do |type, indexes|
     indexes.each do |groups, index|
       index_name = index[:index]
       if client.index_exists index_name
@@ -207,8 +207,8 @@ def create_request_index client, type, allowed_groups = nil, used_groups = nil
     used_groups: used_groups 
   }
   
-  Indexes.instance.indexes[type] = {} unless Indexes.instance.indexes[type]
-  Indexes.instance.indexes[type][allowed_groups] = index_definition
+  Settings.instance.indexes[type] = {} unless Settings.instance.indexes[type]
+  Settings.instance.indexes[type][allowed_groups] = index_definition
   settings.mutex[index_definition[:index]] = Mutex.new
 
   begin
