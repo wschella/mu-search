@@ -39,6 +39,8 @@ def configure_settings client, is_reload = nil
 
   set :mutex, {}
 
+  set :dev, (ENV['RACK_ENV'] == 'development')
+
   set :batch_size, (ENV['BATCH_SIZE'] || configuration["batch_size"] || 100)
 
   set :persist_indexes, ENV['PERSIST_INDEXES'] || configuration["persist_indexes"]
@@ -150,15 +152,18 @@ configure do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   configure_settings client
 
-  listener = Listen.to('/config/') do |modified, added, removed|
-    if modified.include? '/config/config.json'
-      log.info 'Reloading configuration'
-      destroy_existing_indexes client
-      configure_settings client, true
-    end
-  end
 
-  listener.start
+  if settings.dev
+    listener = Listen.to('/config/') do |modified, added, removed|
+      if modified.include? '/config/config.json'
+        log.info 'Reloading configuration'
+        destroy_existing_indexes client
+        configure_settings client, true
+      end
+    end
+
+    listener.start
+  end
 end
 
 

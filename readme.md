@@ -2,6 +2,24 @@
 
 A component to integrate authorization-aware search via Elasticsearch into the mu.semte.ch stack.
 
+## Table of Contents
+
+- [Using mu-elastic-search](#using-mu-elastic-search)
+- [Access Rights](#access-rights)
+- [Configuration](#configuration)
+  - [Simple Types](#simple-types)
+  - [Property Paths](#property-paths)
+  - [Multi-types](#multi-types)
+  - [Elasticsearch Mappings](#elasticsearch-mappings)
+- [Index Lifecycle](#index-lifecycle)
+  - [Persistent Indexes](#persistent-indexes)
+  - [Eager Indexing](#eager-indexing)
+  - [Automatic Index Invalidation](#automatic-index-invalidation)
+  - [Automatic Index Updating](#automatic-index-updating)
+- [Blocking and Queuing](#blocking-and-queuing)
+- [API](#api)
+- [Environment Parameters](#environment-parameters)
+
 ## Using mu-elastic-search 
 
 First, add mu-elastic-search and Elasticsearch to your docker-compose file.  A link must be made to the folder containing the configuration file. (The current example is with a local build, since no image has been published yet on docker-hub.)
@@ -32,7 +50,7 @@ Access rights are determined according to the contents of two headers, `MU_AUTH_
 
 Currently, a separate Elasticsearch index is created for each combination of document type and authorization group.  
 
-To be completed...
+[To be completed...]
 
 
 
@@ -52,19 +70,19 @@ Here is a simple example of a complete `config.json` file.
         {
             "type" : "document",
             "on_path" : "documents",
-            "rdf_type" : "<http://mu.semte.ch/vocabularies/core/Document>",
+            "rdf_type" : "http://mu.semte.ch/vocabularies/core/Document",
             "properties" : {
-                "title" : "<http://purl.org/dc/elements/1.1/title>",
-                "description" : "<http://purl.org/dc/elements/1.1/description>" 
+                "title" : "http://purl.org/dc/elements/1.1/title",
+                "description" : "http://purl.org/dc/elements/1.1/description" 
             }
         },
         {
             "type" : "user",
             "on_path" : "users",
-            "rdf_type" : "<http://mu.semte.ch/vocabularies/core/User>",
+            "rdf_type" : "http://mu.semte.ch/vocabularies/core/User",
             "properties" : {
-                "fullname" : "<http://xmlns.com/foaf/0.1/name>",
-                "bio" : "<http://mu.semte.ch/vocabularies/core/biography>"
+                "fullname" : "http://xmlns.com/foaf/0.1/name",
+                "bio" : "http://mu.semte.ch/vocabularies/core/biography"
             }
          }
     ],
@@ -83,13 +101,13 @@ Properties can also be mapped to lists of predicates, corresponding to a propert
         {
             "type" : "document",
             "on_path" : "documents",
-            "rdf_type" : "<http://mu.semte.ch/vocabularies/core/Document>",
+            "rdf_type" : "http://mu.semte.ch/vocabularies/core/Document",
             "properties" : {
-                "title" : "<http://purl.org/dc/elements/1.1/title>",
-                "description" : "<http://purl.org/dc/elements/1.1/description>",
+                "title" : "http://purl.org/dc/elements/1.1/title",
+                "description" : "http://purl.org/dc/elements/1.1/description",
                 "interest" : [
-                  "<http://application.com/interest>", 
-                  "<http://purl.org/dc/elements/1.1/title>"
+                  "http://application.com/interest", 
+                  "http://purl.org/dc/elements/1.1/title"
                 ]
             }
         }
@@ -133,7 +151,7 @@ The optional `es_mappings` object for each type, if present, is used verbatim to
         {
             "type" : "document",
             "on_path" : "documents",
-            "rdf_type" : "<http://mu.semte.ch/vocabularies/core/Document>",
+            "rdf_type" : "http://mu.semte.ch/vocabularies/core/Document",
             "properties" : {...},
             "es_mappings" : {
                 "title" : { "type" : "text" },
@@ -145,7 +163,7 @@ The optional `es_mappings` object for each type, if present, is used verbatim to
 This will be used when creating new Elasticsearch indexes, equivalent to:
 
 ```
-PUT index4901823098
+PUT /index4901823098
 {
     "settings" : {
         "number_of_shards" : 1
@@ -162,30 +180,31 @@ PUT index4901823098
 ```
 
 
-### Other configuration file parameters
 
-**batch_size** -- number of documents loaded from the RDF store and indexed together in a single batch.
+## Index Lifecycle
 
-**automatic_index_updates** -- flag to apply automatic index updates instead of invalidating indexes on receiving deltas. See below.
+In the base scenario, indexes are created on an as-needed basis, whenever a new search profile (authorization rights and data type) is received. Indexes can be manually re-indexed by triggering the `POST /:type/index` endpoint (see [below)(#api)).
 
-**eager_indexing_groups** -- see below.
+When an index is created, it is registered in the triplestore in the `<http://mu.semte.ch/authorization>` graph. On startup, all existing indexes are deleted, since data might have changed in the meantime. 
 
-**eager_indexing_sparql_query** -- see below.
+### Persistent Indexes
 
+In production environments, it might be costly to regenerate large indexes. If it is possible to guaranty that no data has changed while the application was down, indexes can be persisted between sessions by setting the `persist_indexes` parameter to `true`.
 
+### Dynamic Reload (Debug)
 
+In development mode (setting the environment parameter `RACK_ENV` to `development`), the application will listen for changes in `config.json`. Any changes will trigger a complete reload of the full application, including deleting existing indexes, and building any default indexes specified in eager indexing. This overrides persistence.
 
-
-## Eager Indexing
+### Eager Indexing
 
 Indexes can be configured to be built when the application loads.
 
-Currently, this is done by specifying a list of `eager_indexing_groups` in the config.json file [above](#simple-types).
+Currently, this is done by specifying a list of `eager_indexing_groups` in the `config.json` file [above](#simple-types).
 
 In the future, it will also be possible to specify them via a SPARQL query
 
 
-## Automatic Index Invalidation
+### Automatic Index Invalidation
 
 When used with the Delta Service, mu-elastic-search can automatically invalidate or update indexes when notified of relevant changes in the data.
 
@@ -221,7 +240,7 @@ then all indexes which
 
 are invalidated. Each one will be rebuilt the next time it is searched.
 
-## Automatic Index Updating
+### Automatic Index Updating
 
 Alternate to automatic index invalidation, indexes can be dynamically updated on a per-document basis according to received deltas.
 
@@ -229,19 +248,19 @@ When a corresponding delta is received (see previous section), the document corr
 
 Also note this is not currently a blocking operation: an update will not lock the index, so that a simultaneously received search request might be run on the un-updated index.
 
-Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UPDATES`, or `automatic_index_updates` in the config.json file.
+Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UPDATES`, or `automatic_index_updates` in the `config.json` file.
 
 
 ## Blocking and Queuing
 
-Notes on index building and re-building, the blocking model, request priority, which requests might be forced to wait and when...
+[To be completed: Notes on index building and re-building, the blocking model, request priority, which requests might be forced to wait and when...]
 
 
-## Search and Configuration API
+## API
 
 ### POST `/:type/search`
 
-Accepts raw Elasticsearch Query DSL, for testing and more complex queries. 
+Accepts raw Elasticsearch Query DSL, for testing purposes, and sending more complex queries than can be expressed with the JSON-API endpoint. 
 
 ### GET `/:type/search`
 
@@ -303,19 +322,32 @@ Note that sorting cannot be done on text fields, unless fielddata is enabled (no
 
 #### Pagination
 
-Pagination is specified with `page` `number` and `size`:
+Pagination is specified with `page[number]` and `page[size]`:
 
-    /documents/search?filter[name]=fish&page=2&size=20
-
-### POST `/:type/search`
-
-Accepts raw Elasticsearch Query DSL, as defined at <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html>.
+    /documents/search?filter[name]=fish&page[number]=2&page[size]=20
 
 ### POST `/:type/index`
 
-Re-index all documents of type `type` for the current user's authorization group.
+Re-index all documents of type `type`. If the request is sent with authorization headers, only the authorized indexes are re-indexed. Otherwise, all pertaining indexes are triggered.
 
 
 
 
 ## Environment parameters
+
+Environment parameters can be set in the `config.json` file (lowercase) or Docker (UPPERCASE).
+
+**batch_size** -- number of documents loaded from the RDF store and indexed together in a single batch.
+
+**automatic_index_updates** -- flag to apply automatic index updates instead of invalidating indexes on receiving deltas.
+
+**persist_indexes** -- when `true`, do not delete existing indexes on startup.
+
+**common_terms_cutoff_frequency** -- default cutoff frequency for Common Terms Query.
+
+**eager_indexing_groups** (`config.json` only) -- list of lists of groups to be indexed at startup. 
+
+**eager_indexing_sparql_query** (`config.json` only) -- To be defined. 
+
+
+
