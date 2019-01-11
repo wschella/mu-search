@@ -1,12 +1,19 @@
 require_relative 'testing'
 
+sparql ['admin'], <<SPARQL
+DELETE WHERE {
+ <document5> ?p ?o
+}
+SPARQL
+
+
 #####
 # With Index Invalidation
 
 automatic_updates false
 
 run_test(0) { 
-  res = elastic '/documents/search?filter%5Btitle%5D%5Bmatch%5D=giraffes', ['group1']
+  res = elastic '/documents/search?filter[title]=giraffes', ['group1']
   res["count"] 
 }
 
@@ -23,7 +30,7 @@ SPARQL
 sleep 1
 
 run_test(1) { 
-  res = elastic '/documents/search?filter%5Btitle%5D%5Bmatch%5D=giraffes', ['group1']
+  res = elastic '/documents/search?filter[title]=giraffes', ['group1']
   res["count"] 
 }
 
@@ -36,7 +43,7 @@ SPARQL
 sleep 1
 
 run_test(0) { 
-  res = elastic '/documents/search?filter%5Btitle%5D%5Bmatch%5D=giraffes', ['group1']
+  res = elastic '/documents/search?filter[title]=giraffes', ['group1']
   res["count"] 
 }
 
@@ -50,7 +57,7 @@ sleep 1
 automatic_updates true
 
 run_test(0) { 
-  res = elastic '/documents/search?filter%5Btitle%5D%5Bmatch%5D=giraffes', ['group1']
+  res = elastic '/documents/search?filter[title]=giraffes', ['group1']
   res["count"] 
 }
 
@@ -67,7 +74,7 @@ SPARQL
 sleep 1
 
 run_test(1) { 
-  res = elastic '/documents/search?filter%5Btitle%5D%5Bmatch%5D=giraffes', ['group1']
+  res = elastic '/documents/search?filter[title]=giraffes', ['group1']
   res["count"] 
 }
 
@@ -80,6 +87,6 @@ SPARQL
 sleep 1
 
 run_test(0) { 
-  res = elastic '/documents/search?filter%5Btitle%5D%5Bmatch%5D=giraffes', ['group1']
+  res = elastic '/documents/search?filter[title]=giraffes', ['group1']
   res["count"] 
 }

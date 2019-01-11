@@ -5,17 +5,17 @@ def parse_deltas raw_deltas
   end
 
   inserts = raw_deltas["delta"]["inserts"] || []
-  inserts = inserts.map { |t| [:+, t["s"], t["p"], t["o"]] } 
+  inserts = inserts && inserts.map { |t| [:+, t["s"], t["p"], t["o"]] } 
 
   deletes = raw_deltas["delta"]["deletes"] || []
-  deletes = deletes.map { |t| [:-, t["s"], t["p"], t["o"]] } 
+  deletes = deletes && deletes.map { |t| [:-, t["s"], t["p"], t["o"]] } 
 
   inserts + deletes
 end
 
 
 def invalidate_indexes s, type
-  Settings.instance.index[type].each do |key, index| 
+  Settings.instance.indexes[type].each do |key, index| 
     allowed_groups = index[:allowed_groups]
     rdf_type = settings.type_definitions[type]["rdf_type"]
 
@@ -96,7 +96,7 @@ end
 def update_document_all_types client, s, types
   if types
     types.each do |type|
-      indexes = Settings.instance.index[type]
+      indexes = Settings.instance.indexes[type]
       indexes.each do |key, index|
         allowed_groups = index[:allowed_groups]
         rdf_type = settings.type_definitions[type]["rdf_type"]
@@ -121,12 +121,15 @@ end
 
 def delete_document_all_types client, s, types
   types.each do |type|
+    log.info "Deleting #{s}"
     uuid = get_uuid(s)
-    Settings.instance.index[type].each do |key, index|
-      begin
-        client.delete_document index[:index], uuid
-      rescue
-        log.info "Failed to delete document: #{uuid} in index: #{index[:index]}"
+    if uuid
+      Settings.instance.indexes[type].each do |key, index|
+        begin
+          client.delete_document index[:index], uuid
+        rescue
+          log.info "Failed to delete document: #{uuid} in index: #{index[:index]}"
+        end
       end
     end
   end

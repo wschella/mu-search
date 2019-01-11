@@ -67,7 +67,7 @@ SELECT ?uuid WHERE {
    <#{s}> <http://mu.semte.ch/vocabularies/core/uuid> ?uuid 
 }
 SPARQL
-  uuid = query_result.first["uuid"]
+  uuid = query_result && query_result.first["uuid"]
 end
 
 

@@ -265,9 +265,10 @@ get "/:path/search" do |path|
     sleep 0.5
   end
 
+  log.info "Doing: #{count_query.to_json}"
   count_result = JSON.parse(client.count index: index, query: count_query)
   count = count_result["count"]
-
+  log.info "Doing: #{es_query.to_json}"
   results = client.search index: index, query: es_query
 
   format_results(type, count, page, size, results).to_json
@@ -325,3 +326,14 @@ end
 delete "/settings/automatic_updates" do
   settings.automatic_index_updates = false
 end 
+
+
+post "/settings/persist_indexes" do
+  settings.persist_indexes = true
+end 
+
+
+delete "/settings/persist_indexes" do
+  settings.persist_indexes = false
+end 
+

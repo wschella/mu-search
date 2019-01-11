@@ -65,3 +65,13 @@ def automatic_updates val
     http.request(req)
   }
 end
+
+
+def persist_indexes val
+  uri = URI(ELASTIC + '/settings/persist_indexes')
+  req = val ? req = Net::HTTP::Post.new(uri) : req = Net::HTTP::Delete.new(uri)
+
+  res = Net::HTTP.start(uri.hostname, uri.port) {|http|
+    http.request(req)
+  }
+end
