@@ -99,6 +99,13 @@ class Elastic
     run(uri, req)
   end
 
+  def delete_by_query index, query
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_delete_by_query")
+    req = Net::HTTP::Post.new(uri)
+    req.body = query.to_json
+    run(uri, req)
+  end
+
   def search index:, query_string: nil, query: nil, sort: nil
     if query_string
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_search?q=#{query_string}&sort=#{sort}")

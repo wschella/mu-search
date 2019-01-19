@@ -1,22 +1,67 @@
-def find_matching_index type, allowed_groups, used_groups
-  index = Settings.instance.indexes[type] && Settings.instance.indexes[type][allowed_groups]
-  index and index[:index]
-end
+class Indexes
+  attr_accessor :indexes
+  include Singleton
+  def initialize
+    @indexes = {}
+    @mutexes = {}
+    @status = {}
+  end
 
+  def get_indexes type
+    @indexes[type]
+  end
 
-def destroy_persisted_indexes client
-  get_index_names().each do |result|
-    index_name = result['index_name']
-    if client.index_exists index_name
-      log.info "Deleting #{index_name}"
-      client.delete_index index_name
+  def add_index type, allowed_groups, used_groups, index_definition
+    indexes[type] = {} unless @indexes[type]
+    @indexes[type][allowed_groups] = index_definition
+    @mutexes[index_definition[:index]] = Mutex.new
+  end
+
+  def set_status index, status
+    @status[index] = status
+  end
+
+  def status index
+    @status[index]
+  end
+
+  def invalidate_all 
+    indexes_invalidated = []
+    @indexes.each do |type, indexes|
+      indexes.each do |groups, index_definition|
+        index = index_definition[:index]
+        @status[index] = :invalid
+        indexes_invalidated.push index_definition[:index]
+      end
     end
-    remove_index index_name
+    indexes_invalidated
+  end
+
+  def find_matching_index type, allowed_groups, used_groups
+    index = @indexes[type] && @indexes[type][allowed_groups]
+    index and index[:index]
+  end
+
+  def mutex index
+    @mutexes[index]
+  end
+
+  def new_mutex index
+    @mutexes[index] = Mutex.new
   end
 end
 
+
+def clear_index client, index
+  if client.index_exists index
+    client.delete_by_query(index, { query: { match_all: {} } })
+  end
+end
+
+
+# should be inside Indexes, but uses *settings*
 def destroy_existing_indexes client
-  Settings.instance.indexes.each do |type, indexes|
+  Indexes.instance.indexes.each do |type, indexes|
     indexes.each do |groups, index|
       index_name = index[:index]
       if client.index_exists index_name
@@ -25,6 +70,40 @@ def destroy_existing_indexes client
       end
       remove_index index_name
     end
+  end
+end
+
+
+def invalidate_indexes s, type
+  Indexes.instance.indexes[type].each do |key, index| 
+    allowed_groups = index[:allowed_groups]
+    rdf_type = settings.type_definitions[type]["rdf_type"]
+    if is_authorized s, rdf_type, allowed_groups
+      Indexes.instance.mutex(index[:index]).synchronize do
+        Indexes.instance.set_status index[:index], :invalid 
+      end
+    else
+      log.info "Not Authorized, nothing doing."
+    end
+  end
+end
+
+
+def load_persisted_indexes types
+  types.each do |type_def|
+    type = type_def["type"]
+    Indexes.instance.indexes[type] = load_indexes type
+  end
+end
+
+def destroy_persisted_indexes client
+  get_persisted_index_names().each do |result|
+    index_name = result['index_name']
+    if client.index_exists index_name
+      log.info "Deleting #{index_name}"
+      client.delete_index index_name
+    end
+    remove_index index_name
   end
 end
 
@@ -60,7 +139,7 @@ SPARQL
 end
 
 
-def get_index_names 
+def get_persisted_index_names 
   direct_query <<SPARQL
 SELECT ?index_name WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
@@ -72,58 +151,9 @@ SPARQL
 end
 
 
-def load_indexes type
-  index = {}
-
-  query_result = direct_query  <<SPARQL
-  SELECT * WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
-                 <http://mu.semte.ch/vocabularies/authorization/objectType> "#{type}";
-                 <http://mu.semte.ch/vocabularies/authorization/indexName> ?index_name
-    }
-  }
-SPARQL
-
-  query_result.each do |result|
-    uri = result["index"].to_s
-    allowed_groups_result = direct_query  <<SPARQL
-  SELECT * WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group
-    }
-  }
-SPARQL
-    allowed_groups = allowed_groups_result.map { |g| g["group"].to_s }
-
-    used_groups_result = direct_query  <<SPARQL
-  SELECT * WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> ?group
-    }
-  }
-SPARQL
-    used_groups = used_groups_result.map { |g| g["group"].to_s }
-
-    index_name = result["index_name"].to_s
-
-    index[allowed_groups] = { 
-      uri: uri,
-      index: index_name,
-      allowed_groups: allowed_groups, 
-      used_groups: used_groups 
-    }
-
-    settings.mutex[index_name] = Mutex.new
-  end
-
-  index
-end
-
-
 def get_request_index type
   allowed_groups, used_groups = get_request_groups
-  find_matching_index type, allowed_groups, used_groups
+  Indexes.instance.find_matching_index type, allowed_groups, used_groups
 end
 
 
@@ -197,7 +227,6 @@ def create_request_index client, type, allowed_groups = nil, used_groups = nil
   end
 
   index = Digest::MD5.hexdigest (type + "-" + allowed_groups.join("-"))
-  log.info "Creating index: #{index} of type #{type} + #{allowed_groups}"
   uri =  store_index type, index, allowed_groups, used_groups    
 
   index_definition =   {
@@ -207,9 +236,8 @@ def create_request_index client, type, allowed_groups = nil, used_groups = nil
     used_groups: used_groups 
   }
   
-  Settings.instance.indexes[type] = {} unless Settings.instance.indexes[type]
-  Settings.instance.indexes[type][allowed_groups] = index_definition
-  settings.mutex[index_definition[:index]] = Mutex.new
+  
+  Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
 
   begin
     client.create_index index, settings.type_definitions[type]["es_mappings"]
@@ -231,15 +259,15 @@ def get_index_safe client, type
     settings.master_mutex.synchronize do
       index = get_request_index type
       if index
-        if settings.index_status[index] == :invalid
-          settings.index_status[index] = :updating
+        if Indexes.instance.status(index) == :invalid
+          Indexes.instance.set_status index, :updating
           return index, true
         else
           return index, false
         end
       else
         index = create_request_index client, type
-        settings.index_status[index] = :updating
+        Indexes.instance.set_status index, :updating
         return index, true
       end
     end
@@ -247,13 +275,14 @@ def get_index_safe client, type
 
   index, update_index = sync client, type
   if update_index
-    settings.mutex[index].synchronize do
+    Indexes.instance.mutex(index).synchronize do
       begin
+        clear_index client, index
         index_documents client, type, index
         client.refresh_index index
-        settings.index_status[index] = :valid
+        Indexes.instance.set_status index, :valid
       rescue
-        settings.index_status[index] = :invalid
+        Indexes.instance.set_status index, :invalid
       end
     end
   end
@@ -261,3 +290,51 @@ def get_index_safe client, type
   index
 end
 
+
+  def load_indexes type
+    indexes = {}
+
+    query_result = direct_query  <<SPARQL
+  SELECT * WHERE {
+    GRAPH <http://mu.semte.ch/authorization> {
+        ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
+                 <http://mu.semte.ch/vocabularies/authorization/objectType> "#{type}";
+                 <http://mu.semte.ch/vocabularies/authorization/indexName> ?index_name
+    }
+  }
+SPARQL
+
+    query_result.each do |result|
+      uri = result["index"].to_s
+      allowed_groups_result = direct_query  <<SPARQL
+  SELECT * WHERE {
+    GRAPH <http://mu.semte.ch/authorization> {
+        <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group
+    }
+  }
+SPARQL
+      allowed_groups = allowed_groups_result.map { |g| g["group"].to_s }
+
+      used_groups_result = direct_query  <<SPARQL
+  SELECT * WHERE {
+    GRAPH <http://mu.semte.ch/authorization> {
+        <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> ?group
+    }
+  }
+SPARQL
+      used_groups = used_groups_result.map { |g| g["group"].to_s }
+
+      index_name = result["index_name"].to_s
+
+      indexes[allowed_groups] = { 
+        uri: uri,
+        index: index_name,
+        allowed_groups: allowed_groups, 
+        used_groups: used_groups 
+      }
+
+      Indexes.instance.new_mutex index_name
+    end
+
+    indexes
+  end
