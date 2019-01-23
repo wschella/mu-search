@@ -112,21 +112,32 @@ post "/:path/invalidate" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
+  allowed_groups, used_groups = get_request_groups
 
   if path == '_all'
     settings.master_mutex.synchronize do
-      indexes_invalidated = Indexes.instance.invalidate_all
+      indexes_invalidated =
+        if allowed_groups.empty?
+          Indexes.instance.invalidate_all
+        else
+          Indexes.instance.invalidate_all_request_groups allowed_groups, used_groups
+        end 
+      { indexes: indexes_invalidated, status: "invalid" }.to_json
     end
-
-    { indexes: indexes_invalidated, status: "invalid" }.to_json
   else
     settings.master_mutex.synchronize do
-      index = get_request_index type
-      Indexes.instance.mutex(index).synchronize do
-        Indexes.instance.set_status index, :invalid
+      if allowed_groups.empty?
+        type = get_type_from_path path
+        indexes_invalidated =
+          Indexes.instance.invalidate_all_by_type type
+        { indexes: indexes_invalidated, status: "invalid" }.to_json
+      else
+        index = get_request_index type
+        Indexes.instance.mutex(index).synchronize do
+          Indexes.instance.set_status index, :invalid
+        end
+        { index: index, status: "invalid" }.to_json
       end
-
-      { index: index, status: "invalid" }.to_json
     end
   end
 end

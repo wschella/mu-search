@@ -27,6 +27,7 @@ class Indexes
 
   def invalidate_all 
     indexes_invalidated = []
+
     @indexes.each do |type, indexes|
       indexes.each do |groups, index_definition|
         index = index_definition[:index]
@@ -36,6 +37,38 @@ class Indexes
     end
     indexes_invalidated
   end
+
+  def invalidate_all_request_groups allowed_groups, used_groups
+    indexes_invalidated = []
+
+    @indexes.each do |type, indexes|
+      index_definition = indexes[allowed_groups]
+      if index_definition
+        index = index_definition[:index]
+        @status[index] = :invalid
+        indexes_invalidated.push index_definition[:index]
+      end
+    end
+    indexes_invalidated
+  end
+
+
+  def invalidate_all_by_type type
+    indexes_invalidated = []
+    indexes = @indexes[type]
+
+    if indexes 
+      @indexes.each do |type, indexes|
+        indexes.each do |groups, index_definition|
+          index = index_definition[:index]
+          @status[index] = :invalid
+          indexes_invalidated.push index_definition[:index]
+        end
+      end
+    end
+    indexes_invalidated
+  end
+
 
   def find_matching_index type, allowed_groups, used_groups
     index = @indexes[type] && @indexes[type][allowed_groups]
