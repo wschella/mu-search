@@ -120,7 +120,7 @@ post "/:path/invalidate" do |path|
         if allowed_groups.empty?
           Indexes.instance.invalidate_all
         else
-          Indexes.instance.invalidate_all_request_groups allowed_groups, used_groups
+          Indexes.instance.invalidate_all_authorized allowed_groups, used_groups
         end 
       { indexes: indexes_invalidated, status: "invalid" }.to_json
     end
@@ -145,8 +145,8 @@ end
 
 post "/:path/index" do |path|
   content_type 'application/json'
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = get_type_from_path path
+  client = Elastic.new host: 'elasticsearch', port: 9200
+  allowed_groups, used_groups = get_request_groups
 
   # This method shouldn't be necessary... 
   # something wrong with how I'm using synchronize
@@ -164,14 +164,45 @@ post "/:path/index" do |path|
     end
   end
 
-  index = sync client, type
-
-  Indexes.instance.mutex(index).synchronize do
-    clear_index client, index
-    report = index_documents client, type, index
-    Indexes.instance.set_status index, :valid
-    return report
+  # yes, rename this please
+  def go client, index, type, allowed_groups = nil
+    Indexes.instance.mutex(index).synchronize do
+      clear_index client, index
+      report = index_documents client, type, index, allowed_groups
+      Indexes.instance.set_status index, :valid
+      report
+    end
   end
+
+  report = 
+    if !allowed_groups.empty?
+      if path == '_all'
+        Indexes.instance.types.map do |type|
+          index = sync client, type
+          go client, index, type
+        end
+      else
+        type = get_type_from_path path
+        index = sync client, type
+        go client, index, type
+      end
+    else
+      if path == '_all'
+        report = 
+          Indexes.instance.indexes.map do |type, indexes|
+            indexes.map do |groups, index|
+              go client, index[:index], type, groups
+            end
+          end
+        report.reduce([], :concat)
+      else
+        type = get_type_from_path path
+        Indexes.instance.get_indexes(type).map do |groups, index|
+          go client, index[:index], type, groups
+        end
+      end
+    end
+  report.to_json
 end
 
 

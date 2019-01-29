@@ -11,6 +11,26 @@ class Indexes
     @indexes[type]
   end
 
+  # def all_names
+  #   @indexes.values.reduce([]) do |result, indexes|
+  #     result + indexes.values.reduce([]) { |r, definition| l + [definition[:index]] } 
+  #   end
+  # end
+
+  # def all_authorized allowed_groups, used_groups
+  #   @indexes.values.reduce([]) do |result, indexes| 
+  #     if indexes[allowed_groups]
+  #       result + [indexes[allowed_groups][:index]]
+  #     else
+  #       result
+  #     end
+  #   end
+  # end
+
+  def types
+    @indexes.keys
+  end
+
   def add_index type, allowed_groups, used_groups, index_definition
     indexes[type] = {} unless @indexes[type]
     @indexes[type][allowed_groups] = index_definition
@@ -38,7 +58,7 @@ class Indexes
     indexes_invalidated
   end
 
-  def invalidate_all_request_groups allowed_groups, used_groups
+  def invalidate_all_authorized allowed_groups, used_groups
     indexes_invalidated = []
 
     @indexes.each do |type, indexes|
@@ -87,7 +107,7 @@ end
 
 def clear_index client, index
   if client.index_exists index
-    client.delete_by_query(index, { query: { match_all: {} } })
+    client.delete_by_query(index, { query: { match_all: {} } }, true)
   end
 end
 

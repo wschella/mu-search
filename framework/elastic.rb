@@ -99,8 +99,10 @@ class Elastic
     run(uri, req)
   end
 
-  def delete_by_query index, query
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_delete_by_query")
+  def delete_by_query index, query, conflicts_proceed
+    conflicts = conflicts_proceed ? 'conflicts=proceed' : ''
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_delete_by_query?#{conflicts}")
+
     req = Net::HTTP::Post.new(uri)
     req.body = query.to_json
     run(uri, req)

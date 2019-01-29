@@ -45,7 +45,7 @@ def index_documents client, type, index, allowed_groups = nil
     rdf_type = type_def["rdf_type"]
 
     count = count_documents rdf_type, allowed_groups
-    type_def["count"] = count
+    count_list.push({type: type_def["type"], count: count})
     properties = type_def["properties"]
 
     (0..(count/settings.batch_size)).each do |i|
@@ -77,6 +77,6 @@ SPARQL
     end
   end
 
-  { index: index, document_types: type_defs }.to_json
+  { index: index, document_types: count_list }
 end
 
