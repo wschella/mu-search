@@ -143,6 +143,49 @@ post "/:path/invalidate" do |path|
 end
 
 
+delete "/:path" do |path|
+  content_type 'application/json'
+  client = Elastic.new(host: 'elasticsearch', port: 9200)
+  type = get_type_from_path path
+  allowed_groups, used_groups = get_request_groups
+
+  if path == '_all'
+    settings.master_mutex.synchronize do
+      indexes_deleted =
+        if allowed_groups.empty?
+          destroy_existing_indexes client
+        else
+          destroy_authorized_indexes client, allowed_groups, used_groups
+        end 
+      { indexes: indexes_deleted, status: "deleted" }.to_json
+    end
+  else
+    settings.master_mutex.synchronize do
+      if allowed_groups.empty?
+        type = get_type_from_path path
+
+        indexes_deleted =
+          Indexes.instance.get_indexes(type).map do |groups, index|
+          destroy_index client, index[:index]
+          Indexes.instance.indexes[type].delete(groups)
+          index[:index]
+        end
+
+        { indexes: indexes_deleted, status: "invalid" }.to_json
+      else
+        index = get_request_index type
+        Indexes.instance.mutex(index).synchronize do
+          destroy_index client, index
+          Indexes.instance.indexes[type].delete(allowed_groups)
+        end
+
+        { index: index, status: "deleted" }.to_json
+      end
+    end
+  end
+end
+
+
 post "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new host: 'elasticsearch', port: 9200

@@ -8,7 +8,7 @@ class Indexes
   end
 
   def get_indexes type
-    @indexes[type]
+    return @indexes[type]
   end
 
   # def all_names
@@ -112,16 +112,34 @@ def clear_index client, index
 end
 
 
+def destroy_index client, index
+  if client.index_exists index
+    log.info "Deleting #{index}"
+    client.delete_index index
+  end
+  remove_index index
+end
+
+
 # should be inside Indexes, but uses *settings*
 def destroy_existing_indexes client
-  Indexes.instance.indexes.each do |type, indexes|
-    indexes.each do |groups, index|
-      index_name = index[:index]
-      if client.index_exists index_name
-        log.info "Deleting #{index_name}"
-        client.delete_index index_name
-      end
-      remove_index index_name
+  Indexes.instance.indexes.map do |type, indexes|
+    indexes.map do |groups, index|
+      destroy_index client, index[:index]
+      Indexes.instance.indexes[type].delete[groups]
+      index[:index]
+    end
+  end.flatten
+end
+
+
+def destroy_authorized_indexes client, allowed_groups, used_groups
+  Indexes.instance.indexes.map do |type, indexes|
+    index = indexes[allowed_groups]
+      Indexes.instance.indexes[type].delete[allowed_groups]
+    if index
+      destroy_index client, index[:index]
+      index[:index]
     end
   end
 end
@@ -148,6 +166,7 @@ def load_persisted_indexes types
     Indexes.instance.indexes[type] = load_indexes type
   end
 end
+
 
 def destroy_persisted_indexes client
   get_persisted_index_names().each do |result|
