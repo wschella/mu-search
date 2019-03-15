@@ -22,6 +22,16 @@ A component to integrate authorization-aware search via Elasticsearch into the m
 
 ## Using mu-elastic-search 
 
+### Memory Usage
+
+The Elasticsearch Docker image requires a lot of memory. This can be set locally:
+
+```
+sysctl -w vm.max_map_count=262144
+```
+
+### Setup
+
 First, add mu-elastic-search and Elasticsearch to your docker-compose file.  A link must be made to the folder containing the configuration file. (The current example is with a local build, since no image has been published yet on docker-hub.)
 
 ```
