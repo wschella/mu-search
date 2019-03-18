@@ -64,7 +64,7 @@ def configure_settings client, is_reload = nil
 
   # Eager Indexing
   eager_indexing_groups = configuration["eager_indexing_groups"] || []
-  
+
   # if configuration["eager_indexing_sparql_query"]
   #   query_result = query configuration["eager_indexing_sparql_query"]
   #   eager_indexing_groups += query_result.map { |key, value| value.to_s }
@@ -256,6 +256,7 @@ get "/:path/search" do |path|
   type = get_type_from_path path
 
   index = get_index_safe client, type
+  log.info "Searching index: #{index}"
 
   es_query = construct_es_query
   count_query = es_query.clone

@@ -114,7 +114,7 @@ end
 
 def destroy_index client, index
   if client.index_exists index
-    log.info "Deleting #{index}"
+    log.info "Deleting index: #{index}"
     client.delete_index index
   end
   remove_index index
@@ -172,7 +172,7 @@ def destroy_persisted_indexes client
   get_persisted_index_names().each do |result|
     index_name = result['index_name']
     if client.index_exists index_name
-      log.info "Deleting #{index_name}"
+      log.info "Deleting persisted index: #{index_name}"
       client.delete_index index_name
     end
     remove_index index_name

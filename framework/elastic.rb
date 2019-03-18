@@ -49,7 +49,15 @@ class Elastic
   def delete_index index
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Delete.new(uri)
-    run(uri, req)
+    begin
+      run(uri, req)
+    rescue
+      if !client.index_exists index
+        log.info "Index not deleted, does not exist: #{index}"
+      else
+        raise "Error deleting index: #{index}"
+      end
+    end
   end
 
   def refresh_index index
