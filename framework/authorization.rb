@@ -126,7 +126,7 @@ def destroy_existing_indexes client
   Indexes.instance.indexes.map do |type, indexes|
     indexes.map do |groups, index|
       destroy_index client, index[:index]
-      Indexes.instance.indexes[type].delete[groups]
+      Indexes.instance.indexes[type].delete groups 
       index[:index]
     end
   end.flatten
@@ -136,7 +136,7 @@ end
 def destroy_authorized_indexes client, allowed_groups, used_groups
   Indexes.instance.indexes.map do |type, indexes|
     index = indexes[allowed_groups]
-      Indexes.instance.indexes[type].delete[allowed_groups]
+      Indexes.instance.indexes[type].delete allowed_groups
     if index
       destroy_index client, index[:index]
       index[:index]
