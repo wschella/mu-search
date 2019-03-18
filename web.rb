@@ -190,7 +190,6 @@ post "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new host: 'elasticsearch', port: 9200
   allowed_groups, used_groups = get_request_groups
-
   # This method shouldn't be necessary... 
   # something wrong with how I'm using synchronize
   # and return values.
@@ -240,8 +239,10 @@ post "/:path/index" do |path|
         report.reduce([], :concat)
       else
         type = get_type_from_path path
-        Indexes.instance.get_indexes(type).map do |groups, index|
-          go client, index[:index], type, groups
+        if Indexes.instance.get_indexes(type)
+          Indexes.instance.get_indexes(type).map do |groups, index|
+            go client, index[:index], type, groups
+          end
         end
       end
     end

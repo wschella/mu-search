@@ -86,10 +86,10 @@ def make_property_query uuid, uri, properties
 
   properties.each do |key, predicate|
     select_variables_s += " ?#{key} " 
-    predicate_s = predicate.is_a?(String) ? predicate : predicate.join("/")
-    property_predicates.push " OPTIONAL { #{s} <#{predicate}> ?#{key} } "
+    predicate_s = predicate.is_a?(String) ? "<#{predicate}>" : predicate.map { |pred| "<#{pred}>"}.join("/")    
+    property_predicates.push " OPTIONAL { #{s} #{predicate_s} ?#{key} } "
   end
-
+  log.info "PREDS QUERY: #{property_predicates}"
   property_predicates_s = property_predicates.join(" ")
 
   <<SPARQL
