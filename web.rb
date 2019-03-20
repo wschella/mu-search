@@ -45,7 +45,7 @@ def configure_settings client, is_reload = nil
         end
       ]
 
-  while !sparql_up
+  while !(sparql_up and client.up)
     sleep 0.5
   end
 

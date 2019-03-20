@@ -24,6 +24,18 @@ class Elastic
     end
   end
 
+  def up
+    uri = URI("http://#{@host}:#{@port_s}/_cluster/health")
+    req = Net::HTTP::Get.new(uri)
+
+    begin
+      result = JSON.parse run(uri, req)
+      result["status"] == "yellow"
+    rescue
+      false
+    end
+  end
+
   def index_exists index
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Head.new(uri)
