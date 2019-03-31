@@ -30,7 +30,8 @@ class Elastic
 
     begin
       result = JSON.parse run(uri, req)
-      result["status"] == "yellow"
+      result["status"] == "yellow" or
+        result["status"] == "green"
     rescue
       false
     end

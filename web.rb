@@ -45,8 +45,13 @@ def configure_settings client, is_reload = nil
         end
       ]
 
-  while !(sparql_up and client.up)
-    sleep 0.5
+  while !client.up
+    log.info "Waiting for ES"
+    sleep 1
+  end
+  while !sparql_up
+    log.info "Waiting for Virtuoso"
+    sleep 1
   end
 
   if settings.persist_indexes
@@ -87,7 +92,6 @@ end
 configure do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   configure_settings client
-
 
   if settings.dev
     listener = Listen.to('/config/') do |modified, added, removed|
