@@ -63,6 +63,8 @@ class Elastic
     req = Net::HTTP::Delete.new(uri)
     begin
       run(uri, req)
+      log.info "Deleted #{index}"
+      log.info "Status: #{index_exists index}"
     rescue
       if !client.index_exists index
         log.info "Index not deleted, does not exist: #{index}"

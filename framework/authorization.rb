@@ -259,6 +259,14 @@ def store_index type, index, allowed_groups, used_groups
 SPARQL
 end
 
+#   direct_query <<SPARQL
+# SELECT ?index_name WHERE {
+#     GRAPH <http://mu.semte.ch/authorization> {
+#         ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
+#                <http://mu.semte.ch/vocabularies/authorization/indexName> ?index_name
+#     }
+#   }
+# SPARQL
 
 def remove_index index_name
   direct_query <<SPARQL
