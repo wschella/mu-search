@@ -45,13 +45,19 @@ def configure_settings client, is_reload = nil
         end
       ]
 
-  while !client.up
+  if !client.up
     log.info "Waiting for ES"
-    sleep 1
+    while !client.up
+      log.info "."
+      sleep 1
+    end
   end
   while !sparql_up
     log.info "Waiting for Virtuoso"
-    sleep 1
+    while !sparql_up
+      log.info "."
+      sleep 1
+    end
   end
 
   if settings.persist_indexes
