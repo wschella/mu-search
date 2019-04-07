@@ -123,15 +123,15 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
     end
   
   result = query_result.first
-  has_attachments = false
+  pipeline = false
 
   document = Hash[
     properties.collect do |key, val|
       if val.is_a? Hash
-        if val["field_type"] == "attachment"
+        if val["attachment_pipeline"]
           filename = result[key]
           if filename
-            has_attachments = true
+            pipeline = val["attachment_pipeline"]
             file = File.open("/data/#{filename}", "rb")
             contents = Base64.strict_encode64 file.read
             [key, contents]
@@ -165,7 +165,7 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
     end
   ]          
 
-  return document, has_attachments
+  return document, pipeline
 end
 
 

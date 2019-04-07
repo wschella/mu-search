@@ -133,11 +133,11 @@ def update_document_all_types client, s, types
         rdf_type = settings.type_definitions[type]["rdf_type"]
         if is_authorized s, rdf_type, allowed_groups
           properties = settings.type_definitions[type]["properties"]
-          document, has_attachments =
+          document, attachment_pipeline =
             fetch_document_to_index uri: s, properties: properties, 
                                     allowed_groups: index[:allowed_groups]
-          if has_attachments
-            client.upload_attachment index, uuid, "attachment", "data", document
+          if attachment_pipeline
+            client.upload_attachment index, uuid, attachment_pipeline, document
           else
             begin
               client.update_document index[:index], get_uuid(s), document

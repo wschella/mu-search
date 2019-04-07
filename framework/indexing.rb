@@ -66,10 +66,10 @@ SPARQL
 
       query_result.each do |result|
         uuid = result[:id].to_s
-        document, has_attachments = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
+        document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
 
-        if has_attachments
-          client.upload_attachment index, uuid, "attachment", "data", document
+        if attachment_pipeline
+          client.upload_attachment index, uuid, attachment_pipeline, document
         else
           data.push({ index: { _id: uuid } })
           data.push document

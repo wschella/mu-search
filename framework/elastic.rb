@@ -144,7 +144,7 @@ class Elastic
     run(uri, req)    
   end
 
-  def upload_attachment index, id, pipeline, field, document
+  def upload_attachment index, id, pipeline, document
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}?pipeline=#{pipeline}")
     req = Net::HTTP::Put.new(uri)
     req.body = document.to_json

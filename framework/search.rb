@@ -30,13 +30,26 @@ def es_query_sort_statement
 end
 
 
-def construct_es_query
+def attachment_field type, field
+  properties = settings.type_definitions[type]["properties"]
+  if properties[field].is_a? Hash and properties[field]["attachment_pipeline"]
+    "attachment.content"
+  else
+    field
+  end
+end
+
+
+def construct_es_query type
   filters = params['filter'] && params['filter'].map do |field, val| 
     if field == '_all'
       { multi_match: { query: val } }
     else
       flag, field = split_filter field
       fields = split_fields field
+
+      fields = fields ? fields.map { |f| attachment_field type, f } : nil
+      field = attachment_field type, field
 
       unless flag
         if fields
