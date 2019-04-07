@@ -16,7 +16,7 @@ A component to integrate authorization-aware search via Elasticsearch into the m
   - [Eager Indexing](#eager-indexing)
   - [Automatic Index Invalidation](#automatic-index-invalidation)
   - [Automatic Index Updating](#automatic-index-updating)
-- [Indexing PDF Attachments](#indexing-pdf-attachments)
+- [Indexing Attachments](#indexing-attachments)
 - [Blocking and Queuing](#blocking-and-queuing)
 - [Examples](#examples)
 - [API](#api)
@@ -262,9 +262,10 @@ Also note this is not currently a blocking operation: an update will not lock th
 
 Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UPDATES`, or `automatic_index_updates` in the `config.json` file.
 
-## Indexing PDF Attachments
 
-Basic indexing of PDF attachments is provided using Elasticsearch's [Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html). Note that this is under development and liable to change.
+## Indexing Attachments
+
+Basic indexing of PDF, Word etc. attachments is provided using Elasticsearch's [Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html). Note that this is under development and liable to change.
 
 ### Create Attachment Pipeline
 
