@@ -33,7 +33,7 @@ end
 def construct_es_query
   filters = params['filter'] && params['filter'].map do |field, val| 
     if field == '_all'
-      { multi_match: { query: val, fields: ['*'] } }
+      { multi_match: { query: val } }
     else
       flag, field = split_filter field
       fields = split_fields field
