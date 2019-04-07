@@ -17,6 +17,7 @@ A component to integrate authorization-aware search via Elasticsearch into the m
   - [Automatic Index Invalidation](#automatic-index-invalidation)
   - [Automatic Index Updating](#automatic-index-updating)
 - [Blocking and Queuing](#blocking-and-queuing)
+- [Examples](#examples)
 - [API](#api)
 - [Environment Parameters](#environment-parameters)
 
@@ -264,6 +265,28 @@ Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UP
 ## Blocking and Queuing
 
 [To be completed: Notes on index building and re-building, the blocking model, request priority, which requests might be forced to wait and when...]
+
+## Examples
+
+Examples based on the sample `config.json`. More detailed search examples are given [below](#get-typesearch).
+
+Manually trigger (re)indexing:
+
+```
+curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"value\" : \"group1\"}]" "http://localhost:8888/documents/index"
+```
+
+Search `title` field:
+
+```
+curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"value\" : \"group1\"}]" "http://localhost:8888/documents/search?filter\[title\]=schappen"
+```
+
+Search for documents with version greater than 1, using [tags](#get-typesearch):
+
+```
+curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"value\" : \"group1\"}]" "http://localhost:8888/documents/search?filter\[:gt:document_version\]=1"
+```
 
 
 ## API

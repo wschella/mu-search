@@ -5,6 +5,7 @@ require 'request_store'
 require 'thin'
 require 'listen'
 require 'singleton'
+require 'base64'
 
 require_relative 'framework/elastic.rb'
 require_relative 'framework/sparql.rb'

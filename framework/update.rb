@@ -69,13 +69,11 @@ def invalidate_updates deltas
       settings.rdf_types[o].each { |type| invalidate_indexes s, type }
     else
       possible_types = settings.rdf_properties[p]
-      log.info "checking types: #{possible_types}"
       if possible_types
         possible_types.each do |type|
           rdf_type = settings.type_definitions[type]["rdf_type"]
 
           if is_type s, rdf_type
-            log.info "invalidating <s>: #{s} / #{type}"
             invalidate_indexes s, type
           end
         end
@@ -135,13 +133,17 @@ def update_document_all_types client, s, types
         rdf_type = settings.type_definitions[type]["rdf_type"]
         if is_authorized s, rdf_type, allowed_groups
           properties = settings.type_definitions[type]["properties"]
-          document =
+          document, has_attachments =
             fetch_document_to_index uri: s, properties: properties, 
                                     allowed_groups: index[:allowed_groups]
-          begin
-            client.update_document index[:index], get_uuid(s), document
-          rescue
-            client.put_document index[:index], get_uuid(s), document
+          if has_attachments
+            client.upload_attachment index, uuid, "attachment", "data", document
+          else
+            begin
+              client.update_document index[:index], get_uuid(s), document
+            rescue
+              client.put_document index[:index], get_uuid(s), document
+            end
           end
         else
           log.info "Not Authorized."

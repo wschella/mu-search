@@ -71,6 +71,15 @@ SPARQL
 end
 
 
+def make_predicate_string predicate
+  if predicate.is_a? String
+    "<#{predicate}>" 
+  else 
+    predicate.map { |pred| "<#{pred}>"}.join("/")    
+  end
+end
+
+
 def make_property_query uuid, uri, properties
   select_variables_s = ""
   property_predicates = []
@@ -86,7 +95,11 @@ def make_property_query uuid, uri, properties
 
   properties.each do |key, predicate|
     select_variables_s += " ?#{key} " 
-    predicate_s = predicate.is_a?(String) ? "<#{predicate}>" : predicate.map { |pred| "<#{pred}>"}.join("/")    
+    if predicate.is_a? Hash
+    end
+    predicate = predicate.is_a?(Hash) ? predicate["via"] : predicate
+    predicate_s = make_predicate_string predicate
+
     property_predicates.push " OPTIONAL { #{s} #{predicate_s} ?#{key} } "
   end
 
@@ -110,12 +123,49 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
     end
   
   result = query_result.first
+  has_attachments = false
 
   document = Hash[
     properties.collect do |key, val|
-      [key, result[key].to_s] # !! get right types!
+      if val.is_a? Hash
+        if val["field_type"] == "attachment"
+          filename = result[key]
+          if filename
+            has_attachments = true
+            file = File.open("/data/#{filename}", "rb")
+            contents = Base64.strict_encode64 file.read
+            [key, contents]
+          else
+            [key, nil]
+          end
+        end
+      else
+
+        case result[key]
+        when RDF::Literal::Integer
+          [key, result[key].to_i]
+        when RDF::Literal::Double
+          [key, result[key].to_f]
+        when RDF::Literal::Decimal
+          [key, result[key].to_f]
+        when RDF::Literal::Boolean
+          [key, result[key].to_s.downcase == 'true']
+        when RDF::Literal::Time
+          [key, result[key].to_s]
+        when RDF::Literal::Date
+          [key, result[key].to_s]
+        when RDF::Literal::DateTime
+          [key, result[key].to_s]
+        when RDF::Literal
+          [key, result[key].to_s]
+        else
+          [key, result[key].to_s]
+        end
+      end
     end
-  ]            
+  ]          
+
+  return document, has_attachments
 end
 
 

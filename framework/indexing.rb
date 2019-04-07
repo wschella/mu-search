@@ -28,8 +28,6 @@ def multiple_type_expand_subtypes types, properties
 end
 
 
-
-
 def index_documents client, type, index, allowed_groups = nil
   count_list = [] # for reporting
 
@@ -51,6 +49,7 @@ def index_documents client, type, index, allowed_groups = nil
     (0..(count/settings.batch_size)).each do |i|
       offset = i*settings.batch_size
       data = []
+      attachments = {}
       q = <<SPARQL
     SELECT DISTINCT ?id WHERE {
       ?doc a <#{rdf_type}>;
@@ -67,13 +66,17 @@ SPARQL
 
       query_result.each do |result|
         uuid = result[:id].to_s
-        document = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
-        data.push({ index: { _id: uuid } })
-        data.push document
+        document, has_attachments = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
+
+        if has_attachments
+          client.upload_attachment index, uuid, "attachment", "data", document
+        else
+          data.push({ index: { _id: uuid } })
+          data.push document
+        end
       end
 
       client.bulk_update_document index, data unless data.empty?
-
     end
   end
 

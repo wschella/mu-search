@@ -144,6 +144,13 @@ class Elastic
     run(uri, req)    
   end
 
+  def upload_attachment index, id, pipeline, field, document
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}?pipeline=#{pipeline}")
+    req = Net::HTTP::Put.new(uri)
+    req.body = document.to_json
+    run(uri, req)
+  end
+
   def count index:, query_string: nil, query: nil, sort: nil
     if query_string
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count?q=#{query_string}&sort=#{sort}")
