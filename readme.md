@@ -282,7 +282,7 @@ Search `title` field:
 curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"value\" : \"group1\"}]" "http://localhost:8888/documents/search?filter\[title\]=schappen"
 ```
 
-Search for documents with version greater than 1, using [tags](#get-typesearch):
+Search for documents with version greater than 1, using [tags](#other-search-methods):
 
 ```
 curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"value\" : \"group1\"}]" "http://localhost:8888/documents/search?filter\[:gt:document_version\]=1"
