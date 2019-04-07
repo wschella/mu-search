@@ -16,6 +16,7 @@ A component to integrate authorization-aware search via Elasticsearch into the m
   - [Eager Indexing](#eager-indexing)
   - [Automatic Index Invalidation](#automatic-index-invalidation)
   - [Automatic Index Updating](#automatic-index-updating)
+- [Indexing PDF Attachments](#indexing-pdf-attachments)
 - [Blocking and Queuing](#blocking-and-queuing)
 - [Examples](#examples)
 - [API](#api)
@@ -260,6 +261,53 @@ When a corresponding delta is received (see previous section), the document corr
 Also note this is not currently a blocking operation: an update will not lock the index, so that a simultaneously received search request might be run on the un-updated index.
 
 Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UPDATES`, or `automatic_index_updates` in the `config.json` file.
+
+## Indexing PDF Attachments
+
+Basic indexing of PDF attachments is provided using Elasticsearch's [Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html). Note that this is under development and liable to change.
+
+### Create Attachment Pipeline
+
+Attachment pipelines need to be created in Elasticsearch. A default pipeline called "attachment" is created at build time.
+
+### Data
+
+Currently, only indexing of local files is supported. Files must be present in the docker volume `/data`, as in this excerpt from the docker-compose file:
+
+```
+    volumes:
+      - ./data/files:/data
+```
+
+and the pathname specified in the RDF data:
+
+```
+  <DOCUMENT> mu:filename "pdf-sample.pdf"
+```
+
+This should be extended to reflect URIs and other data storage practices.
+
+### Configuration
+
+In the configuration, a field is defined as an attachment as follows:
+
+```
+             "data" : {
+                 "via" : "http://mu.semte.ch/vocabularies/core/filename",
+                 "attachment_pipeline" : "attachment"
+             }
+```
+
+Note that `via` can be a predicate or list of predicates, as with regular definitions.
+
+### Searching
+
+Searching is done on the defined field name, as any other field:
+
+```
+/documents/search?filter\[data\]=Adobe"
+```
+
 
 
 ## Blocking and Queuing
