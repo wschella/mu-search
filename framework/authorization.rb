@@ -223,6 +223,7 @@ SPARQL
 end
 
 
+# also used in config, calling find_matching_index directly
 def get_request_index type
   allowed_groups, used_groups = get_request_groups
   Indexes.instance.find_matching_index type, allowed_groups, used_groups

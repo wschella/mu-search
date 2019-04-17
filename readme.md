@@ -9,6 +9,7 @@ A component to integrate authorization-aware search via Elasticsearch into the m
 - [Configuration](#configuration)
   - [Simple Types](#simple-types)
   - [Property Paths](#property-paths)
+  - [Nested Objects](#nested-objects)
   - [Multi-types](#multi-types)
   - [Elasticsearch Mappings](#elasticsearch-mappings)
 - [Index Lifecycle](#index-lifecycle)
@@ -124,6 +125,31 @@ Properties can also be mapped to lists of predicates, corresponding to a propert
             }
         }
 ```
+
+### Nested Objects
+
+Objects can be nested to arbitrary depth, using the `"via"` field:
+
+```
+        {
+            "type" : "document",
+            "on_path" : "documents",
+            "rdf_type" : "http://mu.semte.ch/vocabularies/core/Document",
+            "properties" : {
+                "title" : "http://purl.org/dc/elements/1.1/title",
+                "description" : "http://purl.org/dc/elements/1.1/description",
+                "author" : {
+                  "via" : "http://purl.org/dc/elements/1.1/creator",
+                  "rdf_type" : "http://xmlns.com/foaf/0.1/Person",
+                  "properties" : {
+                     "name" : ...
+                  }
+                }
+            }
+        }
+```
+
+Note that nested objects cannot contain file attachments.
 
 ### Multi-types
 

@@ -95,8 +95,7 @@ def make_property_query uuid, uri, properties
 
   properties.each do |key, predicate|
     select_variables_s += " ?#{key} " 
-    if predicate.is_a? Hash
-    end
+
     predicate = predicate.is_a?(Hash) ? predicate["via"] : predicate
     predicate_s = make_predicate_string predicate
 
@@ -128,6 +127,7 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
   document = Hash[
     properties.collect do |key, val|
       if val.is_a? Hash
+        # file attachment
         if val["attachment_pipeline"]
           filename = result[key]
           if filename
@@ -137,6 +137,15 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
             [key, contents]
           else
             [key, nil]
+          end
+        # nested object
+        elsif val["rdf_type"]
+          link_uri = result[key]
+          if link_uri
+            linked_document, attachments = fetch_document_to_index uri: link_uri, properties: val['properties'], allowed_groups: allowed_groups
+            [key, linked_document]
+          else
+            [key, link_uri]
           end
         end
       else
