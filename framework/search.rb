@@ -42,6 +42,36 @@ end
 
 def construct_es_query type
   filters = params['filter'] && params['filter'].map do |field, val| 
+    term = construct_es_query_term type, field, val
+    term
+  end.flatten
+
+ if filters.length == 1
+    { query: filters.first }
+  else
+    {
+      query: {
+        bool: {
+          must: filters
+        }
+      }
+    }
+  end
+end
+
+
+def construct_es_query_path field, val
+  if val.is_a? Hash
+    val.map do |k, v|
+      construct_es_query_path "#{field}.#{k}",  v
+    end
+  else
+    { match: { field => val } }
+  end
+end
+
+
+def construct_es_query_term type, field, val
     if field == '_all'
       { multi_match: { query: val } }
     else
@@ -51,7 +81,10 @@ def construct_es_query type
       fields = fields ? fields.map { |f| attachment_field type, f } : nil
       field = attachment_field type, field
 
-      unless flag
+      if val.is_a? Hash
+        t = construct_es_query_path field, val
+        t
+      elsif not flag
         if fields
           { multi_match: { query: val, fields: fields } }
         else
@@ -84,19 +117,6 @@ def construct_es_query type
         end
       end
     end
-  end
-
-  if filters.length == 1
-    { query: filters.first }
-  else
-    {
-      query: {
-        bool: {
-          must: filters
-        }
-      }
-    }
-  end
 end
 
 

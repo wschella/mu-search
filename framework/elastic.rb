@@ -53,7 +53,7 @@ class Elastic
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Put.new(uri)
     if mappings
-      req.body = { mappings: { _doc: { properties: mappings } } }.to_json
+      req.body = { mappings: { _doc: mappings } }.to_json
     end
 
     run(uri, req)

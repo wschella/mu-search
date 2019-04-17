@@ -321,7 +321,7 @@ def create_request_index client, type, allowed_groups = nil, used_groups = nil
   Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
 
   begin
-    client.create_index index, settings.type_definitions[type]["es_mappings"]
+    client.create_index index, settings.type_definitions[type]["mappings"]
   rescue
     if client.index_exists index
       log.info "Index not created, already exists: #{index}"

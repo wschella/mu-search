@@ -270,6 +270,7 @@ get "/:path/search" do |path|
   log.info "Searching index: #{index}"
 
   es_query = construct_es_query type
+
   count_query = es_query.clone
 
   sort_statement = es_query_sort_statement
