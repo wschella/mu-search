@@ -71,11 +71,19 @@ SPARQL
 end
 
 
+def predicate_string_term predicate
+  if predicate[0] == '^'
+    "^<#{predicate[1..predicate.length-1]}>" 
+  else
+    "<#{predicate}>" 
+  end
+end
+
 def make_predicate_string predicate
   if predicate.is_a? String
-    "<#{predicate}>" 
+    predicate_string_term predicate
   else 
-    predicate.map { |pred| "<#{pred}>"}.join("/")    
+    predicate.map { |pred| predicate_string_term pred }.join("/")    
   end
 end
 
@@ -129,11 +137,14 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
       if val.is_a? Hash
         # file attachment
         if val["attachment_pipeline"]
-          filename = result[key]
-          if filename
+          file_path = result[key]
+          s = file_path.to_s
+          if file_path 
+            file_path = file_path.to_s.sub("share://","")
             pipeline = val["attachment_pipeline"]
-            file = File.open("/data/#{filename}", "rb")
+            file = File.open("/data/#{file_path}", "rb")
             contents = Base64.strict_encode64 file.read
+
             [key, contents]
           else
             [key, nil]

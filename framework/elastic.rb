@@ -151,6 +151,23 @@ class Elastic
     run(uri, req)
   end
 
+  def create_attachment_pipeline pipeline, field
+    uri = URI("http://#{@host}:#{@port_s}/_ingest/pipeline/#{pipeline}")
+    req = Net::HTTP::Put.new(uri)
+    req.body = {
+      description: "Extract attachment information",
+      processors: [
+        {
+          attachment: {
+            field: field
+          }
+        }
+      ]
+    }.to_json
+    run(uri, req)
+  end
+
+
   def count index:, query_string: nil, query: nil, sort: nil
     if query_string
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count?q=#{query_string}&sort=#{sort}")

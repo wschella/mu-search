@@ -46,7 +46,17 @@ def index_documents client, type, index, allowed_groups = nil
     count_list.push({type: type_def["type"], count: count})
     properties = type_def["properties"]
 
-    (0..(count/settings.batch_size)).each do |i|
+    log.info "Indexing #{count} documents of type: #{type_def["type"]}"
+
+    batches = 
+      if settings.max_batches
+        [settings.max_batches, count/settings.batch_size].min
+      else
+        count/settings.batch_size
+      end
+
+    (0..batches).each do |i|
+      log.info "indexing batch #{i} of #{count/settings.batch_size}"
       offset = i*settings.batch_size
       data = []
       attachments = {}
@@ -54,7 +64,7 @@ def index_documents client, type, index, allowed_groups = nil
     SELECT DISTINCT ?id WHERE {
       ?doc a <#{rdf_type}>;
            <http://mu.semte.ch/vocabularies/core/uuid> ?id
-    } LIMIT 100 OFFSET #{offset}
+    } LIMIT #{settings.batch_size} OFFSET #{offset}
 SPARQL
 
     query_result =
@@ -69,7 +79,11 @@ SPARQL
         document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
 
         if attachment_pipeline
-          client.upload_attachment index, uuid, attachment_pipeline, document
+          begin
+            client.upload_attachment index, uuid, attachment_pipeline, document
+          rescue
+            log.info "Failed to upload attachment for document uuid: #{uuid}"
+          end
         else
           data.push({ index: { _id: uuid } })
           data.push document

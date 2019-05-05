@@ -27,6 +27,8 @@ def configure_settings client, is_reload = nil
 
   set :batch_size, (ENV['BATCH_SIZE'] || configuration["batch_size"] || 100)
 
+  set :max_batches, (ENV['MAX_BATCHES'] || configuration["max_batches"])
+
   set :persist_indexes, ENV['PERSIST_INDEXES'] || configuration["persist_indexes"]
 
   set :common_terms_cutoff_frequency, (ENV['COMMON_TERMS_CUTOFF_FREQUENCY'] || configuration["common_terms_cutoff_frequency"] || 0.001)
@@ -98,6 +100,7 @@ end
 
 configure do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
+  client.create_attachment_pipeline "attachment", "data"
   configure_settings client
 
   if settings.dev
@@ -106,6 +109,7 @@ configure do
         log.info 'Reloading configuration'
         destroy_existing_indexes client
         configure_settings client, true
+        log.info '== Configuration reloaded'
       end
     end
 
@@ -289,6 +293,13 @@ get "/:path/search" do |path|
 
   es_query["from"] = page * size
   es_query["size"] = size
+
+  # hard-coded example
+  # question: how to specify which fields are included/excluded?
+  # or should we simply exclued all attachment fields?
+  es_query["_source"] = {
+    excludes: ["data","attachment"]
+  }
 
   while Indexes.instance.status index == :updating
     sleep 0.5
