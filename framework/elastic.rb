@@ -52,11 +52,21 @@ class Elastic
   def create_index index, mappings = nil
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Put.new(uri)
-    if mappings
-      req.body = { mappings: { _doc: mappings } }.to_json
-    end
 
-    run(uri, req)
+    req.body = {
+      settings: {
+        analysis: {
+          analyzer: {
+            dutchanalyzer: {
+              tokenizer: "standard",
+              filter: ["lowercase", "dutchstemmer"] } },
+          filter: {
+            dutchstemmer: {
+              type: "stemmer",
+              name: "dutch" } } } }
+    }.to_json
+
+    result = run(uri, req)
   end
 
   def delete_index index
