@@ -1,3 +1,5 @@
+require 'parallel'
+
 def is_multiple_type? type_definition
   type_definition["composite_types"].is_a?(Array)
 end
@@ -74,7 +76,7 @@ SPARQL
         request_authorized_query q
       end
 
-      query_result.each do |result|
+      Parallel.each( query_result, in_threads: 16 ) do |result|
         uuid = result[:id].to_s
         document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
 
