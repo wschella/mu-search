@@ -171,6 +171,11 @@ class Elastic
           attachment: {
             field: field
           }
+        },
+        {
+          remove: {
+            field: field
+          }
         }
       ]
     }.to_json
