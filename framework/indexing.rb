@@ -50,8 +50,8 @@ def index_documents client, type, index, allowed_groups = nil
 
     log.info "Indexing #{count} documents of type: #{type_def["type"]}"
 
-    batches = 
-      if settings.max_batches
+    batches =
+      if settings.max_batches and settings.max_batches != 0
         [settings.max_batches, count/settings.batch_size].min
       else
         count/settings.batch_size
