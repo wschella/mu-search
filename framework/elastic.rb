@@ -169,7 +169,8 @@ class Elastic
       processors: [
         {
           attachment: {
-            field: field
+            field: field,
+            indexed_chars: -1
           }
         },
         {
