@@ -20,7 +20,7 @@ def configure_settings client, is_reload = nil
   configuration = JSON.parse File.read('/config/config.json')
 
   set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', {})
-  
+
   set :master_mutex, Mutex.new
 
   set :dev, (ENV['RACK_ENV'] == 'development')
@@ -33,7 +33,7 @@ def configure_settings client, is_reload = nil
 
   set :common_terms_cutoff_frequency, (ENV['COMMON_TERMS_CUTOFF_FREQUENCY'] || configuration["common_terms_cutoff_frequency"] || 0.001)
 
-  set :automatic_index_updates,  
+  set :automatic_index_updates,
       (ENV["AUTOMATIC_INDEX_UPDATES"] || configuration["automatic_index_updates"])
 
   set :type_paths, Hash[
@@ -88,10 +88,15 @@ def configure_settings client, is_reload = nil
     settings.master_mutex.synchronize do
       eager_indexing_groups.each do |groups|
         settings.type_definitions.keys.each do |type|
-          index = Indexes.instance.find_matching_index type, groups, groups 
-          index = index || create_request_index(client, type, groups, groups)
-          clear_index client, index
-          index_documents client, type, index, groups
+          index = Indexes.instance.find_matching_index type, groups, groups
+
+          unless settings.persist_indexes and index and client.index_exists index
+            index = index || create_request_index(client, type, groups, groups)
+            clear_index client, index
+            index_documents client, type, index, groups
+          else
+            log.info "Using persisted index: #{index}"
+          end
         end
       end
     end
@@ -136,7 +141,7 @@ post "/:path/invalidate" do |path|
           Indexes.instance.invalidate_all
         else
           Indexes.instance.invalidate_all_authorized allowed_groups, used_groups
-        end 
+        end
       { indexes: indexes_invalidated, status: "invalid" }.to_json
     end
   else
@@ -171,7 +176,7 @@ delete "/:path" do |path|
           destroy_existing_indexes client
         else
           destroy_authorized_indexes client, allowed_groups, used_groups
-        end 
+        end
       { indexes: indexes_deleted, status: "deleted" }.to_json
     end
   else
@@ -205,7 +210,7 @@ post "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new host: 'elasticsearch', port: 9200
   allowed_groups, used_groups = get_request_groups
-  # This method shouldn't be necessary... 
+  # This method shouldn't be necessary...
   # something wrong with how I'm using synchronize
   # and return values.
   def sync client, type
@@ -231,7 +236,7 @@ post "/:path/index" do |path|
     end
   end
 
-  report = 
+  report =
     if !allowed_groups.empty?
       if path == '_all'
         Indexes.instance.types.map do |type|
@@ -245,7 +250,7 @@ post "/:path/index" do |path|
       end
     else
       if path == '_all'
-        report = 
+        report =
           Indexes.instance.indexes.map do |type, indexes|
             indexes.map do |groups, index|
               go client, index[:index], type, groups
@@ -357,20 +362,19 @@ end
 
 post "/settings/automatic_updates" do
   settings.automatic_index_updates = true
-end 
+end
 
 
 delete "/settings/automatic_updates" do
   settings.automatic_index_updates = false
-end 
+end
 
 
 post "/settings/persist_indexes" do
   settings.persist_indexes = true
-end 
+end
 
 
 delete "/settings/persist_indexes" do
   settings.persist_indexes = false
-end 
-
+end
