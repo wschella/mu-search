@@ -64,7 +64,7 @@ end
 def get_uuid s
   query_result = direct_query <<SPARQL
 SELECT ?uuid WHERE {
-   <#{s}> <http://mu.semte.ch/vocabularies/core/uuid> ?uuid 
+   <#{s}> <http://mu.semte.ch/vocabularies/core/uuid> ?uuid
 }
 SPARQL
   uuid = query_result && query_result.first && query_result.first["uuid"]
@@ -73,17 +73,17 @@ end
 
 def predicate_string_term predicate
   if predicate[0] == '^'
-    "^<#{predicate[1..predicate.length-1]}>" 
+    "^<#{predicate[1..predicate.length-1]}>"
   else
-    "<#{predicate}>" 
+    "<#{predicate}>"
   end
 end
 
 def make_predicate_string predicate
   if predicate.is_a? String
     predicate_string_term predicate
-  else 
-    predicate.map { |pred| predicate_string_term pred }.join("/")    
+  else
+    predicate.map { |pred| predicate_string_term pred }.join("/")
   end
 end
 
@@ -92,7 +92,7 @@ def make_property_query uuid, uri, properties
   select_variables_s = ""
   property_predicates = []
 
-  id_line = 
+  id_line =
     if uuid
       "?doc <http://mu.semte.ch/vocabularies/core/uuid> \"#{uuid}\". "
     else
@@ -102,7 +102,7 @@ def make_property_query uuid, uri, properties
   s = uuid ? "?doc" : "<#{uri}>"
 
   properties.each do |key, predicate|
-    select_variables_s += " ?#{key} " 
+    select_variables_s += " ?#{key} "
 
     predicate = predicate.is_a?(Hash) ? predicate["via"] : predicate
     predicate_s = make_predicate_string predicate
@@ -113,9 +113,9 @@ def make_property_query uuid, uri, properties
   property_predicates_s = property_predicates.join(" ")
 
   <<SPARQL
-    SELECT #{select_variables_s} WHERE { 
+    SELECT #{select_variables_s} WHERE {
      #{id_line}
-     #{property_predicates_s}     
+     #{property_predicates_s}
     }
 SPARQL
 end
@@ -128,7 +128,7 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
     else
       request_authorized_query make_property_query(uuid, uri, properties)
     end
-  
+
   result = query_result.first
   pipeline = false
 
@@ -139,13 +139,17 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
         if val["attachment_pipeline"]
           file_path = result[key]
           s = file_path.to_s
-          if file_path 
+          if file_path
             file_path = file_path.to_s.sub("share://","")
             pipeline = val["attachment_pipeline"]
-            file = File.open("/data/#{file_path}", "rb")
-            contents = Base64.strict_encode64 file.read
-
-            [key, contents]
+            begin
+              file = File.open("/data/#{file_path}", "rb")
+              contents = Base64.strict_encode64 file.read
+              [key, contents]
+            rescue Errno::ENOENT, IOError => e
+              log.info "Error reading \"/data/#{file_path}\": #{e.inspect}"
+              [key, nil]
+            end
           else
             [key, nil]
           end
@@ -183,7 +187,7 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
         end
       end
     end
-  ]          
+  ]
 
   return document, pipeline
 end
@@ -192,7 +196,7 @@ end
 
 
 def sparql_up
-  begin 
+  begin
     direct_query "ASK { ?s ?p ?o }"
   rescue
     false
