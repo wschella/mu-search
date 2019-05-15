@@ -15,6 +15,7 @@ A component to integrate authorization-aware search via Elasticsearch into the m
 - [Index Lifecycle](#index-lifecycle)
   - [Persistent Indexes](#persistent-indexes)
   - [Eager Indexing](#eager-indexing)
+  - [Additive Indexes](#additive-indexes)
   - [Automatic Index Invalidation](#automatic-index-invalidation)
   - [Automatic Index Updating](#automatic-index-updating)
 - [Indexing Attachments](#indexing-attachments)
@@ -242,6 +243,26 @@ Currently, this is done by specifying a list of `eager_indexing_groups` in the `
 In the future, it will also be possible to specify them via a SPARQL query
 
 
+### Additive Indexes
+
+Indexes can be configured to be additive by setting `additive_indexes` to `true` in the configuration file or as a Docker parameter. In this mode, one index will be created per type and authorization group, and searches with headers containing multiple authorization groups will be effectuated on the combination of those indexes. This presumes that the contents  the authorization groups are mutually exclusive, or there will be duplicate results.
+
+To be consistent, `eager_indexing_groups` are still listed as lists of lists of groups, even though each list is a singleton:
+
+```
+  "eager_indexing_groups" : [[{"name" : "documents", "variables" : ["human"]}],
+                             [{"name" : "documents", "variables" : ["chicken"]}]],
+```
+
+This configuration specifies that, for a given document type, two indexes will be created at startup, one for each group. Then the following search will be effectuated on the combination of those two indexes, not on a third combined index, as is the case in the default mode:
+
+```
+curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"name\" : \"documents\", \"variables\" : [\"human\"]}, {\"name\" : \"documents\", \"variables\" : [\"chicken\"]}]" "http://localhost:8888/documents/index"
+```
+
+See more: https://www.elastic.co/guide/en/elasticsearch/reference/current/multi-index.html
+
+
 ### Automatic Index Invalidation
 
 When used with the Delta Service, mu-elastic-search can automatically invalidate or update indexes when notified of relevant changes in the data.
@@ -348,19 +369,19 @@ Examples based on the sample `config.json`. More detailed search examples are gi
 Manually trigger (re)indexing:
 
 ```
-curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"value\" : \"group1\"}]" "http://localhost:8888/documents/index"
+curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"name\" : \"documents\", \"variables\" : [\"human\"]}]" "http://localhost:8888/documents/index"
 ```
 
 Search `title` field:
 
 ```
-curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"value\" : \"group1\"}]" "http://localhost:8888/documents/search?filter\[title\]=schappen"
+curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"name\" : \"documents\", \"variables\" : [\"human\"]}]" "http://localhost:8888/documents/search?filter\[title\]=schappen"
 ```
 
 Search for documents with version greater than 1, using [tags](#other-search-methods):
 
 ```
-curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"value\" : \"group1\"}]" "http://localhost:8888/documents/search?filter\[:gt:document_version\]=1"
+curl -H "MU_AUTH_ALLOWED_GROUPS: [{\"name\" : \"documents\", \"variables\" : [\"human\"]}]" "http://localhost:8888/documents/search?filter\[:gt:document_version\]=1"
 ```
 
 
