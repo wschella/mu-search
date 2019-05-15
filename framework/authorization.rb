@@ -41,6 +41,10 @@ class Indexes
     @status[index] = status
   end
 
+  def delete_status index
+    @status.delete index
+  end
+
   def status index
     @status[index]
   end
@@ -90,6 +94,8 @@ class Indexes
   end
 
 
+  # Note that used_groups are currently NOT used in lookup...
+  # maybe a confusion in the specs?
   def find_matching_index type, allowed_groups, used_groups
     index = @indexes[type] && @indexes[type][allowed_groups]
     index and index[:index]
@@ -119,7 +125,10 @@ def destroy_index client, index
     log.info "Deleting index: #{index}"
     client.delete_index index
   end
-  remove_index index
+
+  Indexes.instance.delete_status index
+
+  remove_persisted_index index
 end
 
 
@@ -138,7 +147,7 @@ end
 def destroy_authorized_indexes client, allowed_groups, used_groups
   Indexes.instance.indexes.map do |type, indexes|
     index = indexes[allowed_groups]
-      Indexes.instance.indexes[type].delete allowed_groups
+    Indexes.instance.indexes[type].delete allowed_groups
     if index
       destroy_index client, index[:index]
       index[:index]
@@ -177,7 +186,8 @@ def destroy_persisted_indexes client
       log.info "Deleting persisted index: #{index_name}"
       client.delete_index index_name
     end
-    remove_index index_name
+
+    remove_persisted_index index_name
   end
 end
 
@@ -226,12 +236,20 @@ SPARQL
 end
 
 
-# also used in config, calling find_matching_index directly
-def get_request_index type
+# Also used in config, calling find_matching_index directly
+# Note that used_groups are currently NOT used in lookup...
+# maybe a confusion in the specs?
+def get_request_indexes type
   allowed_groups, used_groups = get_request_groups
-  Indexes.instance.find_matching_index type, allowed_groups, used_groups
-end
 
+  unless settings.additive_indexes
+    [Indexes.instance.find_matching_index(type, allowed_groups, used_groups)]
+  else
+    allowed_groups.map do |group|
+      Indexes.instance.find_matching_index type, [group], used_groups
+    end
+  end
+end
 
 
 #   direct_query <<SPARQL
@@ -243,7 +261,7 @@ end
 #   }
 # SPARQL
 
-def remove_index index_name
+def remove_persisted_index index_name
   direct_query <<SPARQL
 DELETE {
   GRAPH <http://mu.semte.ch/authorization> {
@@ -278,75 +296,101 @@ def get_request_groups
 end
 
 
-# * to do: check if index exists before creating it
-# * to do: how to name indexes?
-def create_request_index client, type, allowed_groups = nil, used_groups = nil
-  unless allowed_groups
-    allowed_groups, used_groups = get_request_groups
-  end
+def create_request_indexes client, type
+  allowed_groups, used_groups = get_request_groups
 
-  index = Digest::MD5.hexdigest (type + "-" + allowed_groups.map { |g| g.to_json }.join("-"))
-  uri =  store_index type, index, allowed_groups, used_groups    
-
-  index_definition =   {
-    index: index,
-    uri: uri,
-    allowed_groups: allowed_groups,
-    used_groups: used_groups 
-  }
-  
-  
-  Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
-
-  begin
-    client.create_index index, settings.type_definitions[type]["mappings"]
-  rescue
-    if client.index_exists index
-      log.info "Index not created, already exists: #{index}"
-      # Is this an error??
-    else
-      raise "Error creating index: #{index}"
+  unless settings.additive_indexes
+    [create_index( client, type, allowed_groups, used_groups)]
+  else
+    allowed_groups.map do |group|
+      create_index client, type, [group], used_groups
     end
   end
+end
 
-  index
+# * to do: check if index exists before creating it
+# * to do: how to name indexes?
+def create_index client, type, allowed_groups, used_groups
+  index = Digest::MD5.hexdigest (type + "-" + allowed_groups.map { |g| g.to_json }.join("-"))
+
+  if client.index_exists index
+    log.info "Index not created, already exists: #{index}"
+    index
+  else
+    uri =  store_index type, index, allowed_groups, used_groups    
+
+    index_definition =   {
+      index: index,
+      uri: uri,
+      allowed_groups: allowed_groups,
+      used_groups: used_groups 
+    }
+    
+    Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
+
+    begin
+      client.create_index index, settings.type_definitions[type]["mappings"]
+    rescue StandardError => e
+      log.info "Error (create_index): #{e.inspect}"
+      raise "Error creating index: #{index}"
+    end
+
+    index
+  end
 end
 
 
-def get_index_safe client, type
+def get_indexes_safe client, type
   def sync client, type
     settings.master_mutex.synchronize do
-      index = get_request_index type
-      if index
-        if Indexes.instance.status(index) == :invalid
-          Indexes.instance.set_status index, :updating
-          return index, true
-        else
-          return index, false
+      indexes = get_request_indexes type
+
+      if indexes.all?
+        update_statuses = indexes.map do |index|
+          if Indexes.instance.status(index) == :invalid
+            Indexes.instance.set_status index, :updating
+            true
+          else
+            false
+          end
         end
+
+        return indexes, update_statuses
       else
-        index = create_request_index client, type
-        Indexes.instance.set_status index, :updating
-        return index, true
+        indexes = create_request_indexes client, type
+
+        update_statuses = indexes.map do |index|
+          if Indexes.instance.status(index) == :valid
+            false
+          else
+            Indexes.instance.set_status index, :updating
+            true
+          end
+        end
+        
+        return indexes, update_statuses
       end
     end
   end
 
-  index, update_index = sync client, type
-  if update_index
-    Indexes.instance.mutex(index).synchronize do
-      begin
-        clear_index client, index
-        index_documents client, type, index
-        client.refresh_index index
-        Indexes.instance.set_status index, :valid
-      rescue
-        Indexes.instance.set_status index, :invalid
+  indexes, update_statuses = sync client, type
+
+  indexes.zip(update_statuses).each do |index, update_index|
+    if update_index
+      Indexes.instance.mutex(index).synchronize do
+        begin
+          clear_index client, index
+          index_documents client, type, index
+          client.refresh_index index
+          Indexes.instance.set_status index, :valid
+        rescue
+          Indexes.instance.set_status index, :invalid
+        end
       end
     end
   end
 
-  index
+  indexes
 end
 
 

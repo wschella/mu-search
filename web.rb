@@ -31,6 +31,8 @@ def configure_settings client, is_reload = nil
 
   set :persist_indexes, ENV['PERSIST_INDEXES'] || configuration["persist_indexes"]
 
+  set :additive_indexes, ENV['ADDITIVE_INDEXES'] || configuration["additive_indexes"]
+
   set :common_terms_cutoff_frequency, (ENV['COMMON_TERMS_CUTOFF_FREQUENCY'] || configuration["common_terms_cutoff_frequency"] || 0.001)
 
   set :automatic_index_updates,
@@ -91,9 +93,10 @@ def configure_settings client, is_reload = nil
           index = Indexes.instance.find_matching_index type, groups, groups
 
           unless settings.persist_indexes and index and client.index_exists index
-            index = index || create_request_index(client, type, groups, groups)
+            index = index || create_index(client, type, groups, groups)
             clear_index client, index
             index_documents client, type, index, groups
+            Indexes.instance.set_status index, :valid
           else
             log.info "Using persisted index: #{index}"
           end
@@ -152,11 +155,15 @@ post "/:path/invalidate" do |path|
           Indexes.instance.invalidate_all_by_type type
         { indexes: indexes_invalidated, status: "invalid" }.to_json
       else
-        index = get_request_index type
-        Indexes.instance.mutex(index).synchronize do
-          Indexes.instance.set_status index, :invalid
+        indexes = get_request_indexes type
+
+        indexes.each do |index|
+          Indexes.instance.mutex(index).synchronize do
+            Indexes.instance.set_status index, :invalid
+          end
         end
-        { index: index, status: "invalid" }.to_json
+
+        { indexes: indexes, status: "invalid" }.to_json
       end
     end
   end
@@ -184,22 +191,24 @@ delete "/:path" do |path|
       if allowed_groups.empty?
         type = get_type_from_path path
 
-        indexes_deleted =
-          Indexes.instance.get_indexes(type).map do |groups, index|
+        indexes_deleted = Indexes.instance.get_indexes(type).map do |groups, index|
           destroy_index client, index[:index]
           Indexes.instance.indexes[type].delete(groups)
           index[:index]
         end
 
-        { indexes: indexes_deleted, status: "invalid" }.to_json
+        { indexes: indexes_deleted, status: "deleted" }.to_json
       else
-        index = get_request_index type
-        Indexes.instance.mutex(index).synchronize do
-          destroy_index client, index
-          Indexes.instance.indexes[type].delete(allowed_groups)
+        indexes = get_request_indexes type
+
+        indexes.each do |index|
+          Indexes.instance.mutex(index).synchronize do
+            destroy_index client, index
+            Indexes.instance.indexes[type].delete(allowed_groups)
+          end
         end
 
-        { index: index, status: "deleted" }.to_json
+        { indexes: indexes, status: "deleted" }.to_json
       end
     end
   end
@@ -215,14 +224,17 @@ post "/:path/index" do |path|
   # and return values.
   def sync client, type
     settings.master_mutex.synchronize do
-      index = get_request_index type
+      indexes = get_request_indexes type
 
-      unless index
-        index = create_request_index client, type
+      unless indexes
+        indexes = create_request_indexes client, type
       end
 
-      Indexes.instance.set_status index, :updating
-      return index
+      indexes.each do |index|
+        Indexes.instance.set_status index, :updating
+      end
+
+      return indexes
     end
   end
 
@@ -275,8 +287,10 @@ get "/:path/search" do |path|
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
 
-  index = get_index_safe client, type
-  log.info "Searching index: #{index}"
+  indexes = get_indexes_safe client, type
+  index_string = indexes.join(',')
+
+  log.info "Searching index(es): #{indexes}"
 
   es_query = construct_es_query type
 
@@ -306,13 +320,15 @@ get "/:path/search" do |path|
     excludes: ["data","attachment"]
   }
 
-  while Indexes.instance.status index == :updating
+  # while Indexes.instance.status index == :updating
+
+  while indexes.map { |index| Indexes.instance.status index == :updating }.any?
     sleep 0.5
   end
 
-  count_result = JSON.parse(client.count index: index, query: count_query)
+  count_result = JSON.parse(client.count index: index_string, query: count_query)
   count = count_result["count"]
-  results = client.search index: index, query: es_query
+  results = client.search index: index_string, query: es_query
 
   format_results(type, count, page, size, results).to_json
 end
