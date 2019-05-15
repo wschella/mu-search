@@ -10,16 +10,16 @@ def multiple_type_expand_subtypes types, properties
     source_type_def = settings.type_definitions[type]
     rdf_type = source_type_def["rdf_type"]
 
-    { 
+    {
       "type" => type,
       "rdf_type" => rdf_type,
       "properties" => Hash[
         properties.map do |property|
           property_name = property["name"]
-          mapped_name = 
+          mapped_name =
             if property["mappings"]
               property["mappings"][type] || property_name
-            else 
+            else
               property_name
             end
           [property_name, source_type_def["properties"][mapped_name]]
@@ -57,8 +57,10 @@ def index_documents client, type, index, allowed_groups = nil
         count/settings.batch_size
       end
 
+    log.info "Number of batches: #{batches}"
+
     (0..batches).each do |i|
-      log.info "indexing batch #{i} of #{count/settings.batch_size}"
+      log.info "Indexing batch #{i} of #{count/settings.batch_size}"
       offset = i*settings.batch_size
       data = []
       attachments = {}
@@ -69,33 +71,47 @@ def index_documents client, type, index, allowed_groups = nil
     } LIMIT #{settings.batch_size} OFFSET #{offset}
 SPARQL
 
-    query_result =
-      if allowed_groups
-        authorized_query q, allowed_groups
-      else
-        request_authorized_query q
-      end
-
-      Parallel.each( query_result, in_threads: 16 ) do |result|
-        uuid = result[:id].to_s
-        document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
-
-        if attachment_pipeline
-          begin
-            client.upload_attachment index, uuid, attachment_pipeline, document
-          rescue
-            log.info "Failed to upload attachment for document uuid: #{uuid}"
-          end
+      query_result =
+        if allowed_groups
+          authorized_query q, allowed_groups
         else
-          data.push({ index: { _id: uuid } })
-          data.push document
+          request_authorized_query q
         end
-      end
 
+      # log.info query_result
+
+      # Parallel.each( query_result, in_threads: 16 ) do |result|
+      # query_result.each do |result|
+      query_result.each do |result|
+        # fork do
+          uuid = result[:id].to_s
+          begin
+            document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
+
+            log.info "Uploading document #{uuid} - batch #{i}"
+
+            if attachment_pipeline
+              begin
+                client.upload_attachment index, uuid, attachment_pipeline, document
+              rescue StandardError => e
+                log.info "Failed to upload attachment for document uuid: #{uuid}"
+                log.info "Error was #{e.inspect}"
+              end
+            else
+              data.push({ index: { _id: uuid } })
+              data.push document
+            end
+          rescue StandardError => e
+            log.info "Failed to fetch document or upload it or somesuch.  ID #{uuid} error #{e.inspect}"
+          end
+        # end
+      end
+      # Process.waitall
+      log.info "Bulk updating document for batch #{i}"
       client.bulk_update_document index, data unless data.empty?
+      log.info "Bulk updated document for batch #{i}"
     end
   end
 
   { index: index, document_types: count_list }
 end
-
