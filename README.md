@@ -1,4 +1,4 @@
-# mu-elastic-search
+# mu-search
 
 A component to integrate authorization-aware search via Elasticsearch into the mu.semte.ch stack.
 
