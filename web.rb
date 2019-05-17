@@ -14,7 +14,9 @@ require_relative 'framework/indexing.rb'
 require_relative 'framework/search.rb'
 require_relative 'framework/update.rb'
 
-
+before do
+  request.path_info.chomp!('/')
+end
 
 def configure_settings client, is_reload = nil
   configuration = JSON.parse File.read('/config/config.json')
