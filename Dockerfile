@@ -1,3 +1,3 @@
-FROM semtech/mu-ruby-template
+FROM semtech/mu-ruby-template:2.10.0
 
-MAINTAINER "Nathaniel Rudavsky-Brody <nathaniel.rudavsky@gmail.com>"
+LABEL maintainer="Nathaniel Rudavsky-Brody <nathaniel.rudavsky@gmail.com>"
