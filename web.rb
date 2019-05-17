@@ -110,6 +110,12 @@ end
 
 configure do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
+
+  while !client.up
+    log.info "...waiting for elasticsearch..."
+    sleep 1
+  end
+
   client.create_attachment_pipeline "attachment", "data"
   configure_settings client
 
