@@ -21,7 +21,9 @@ end
 def configure_settings client, is_reload = nil
   configuration = JSON.parse File.read('/config/config.json')
 
-  set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', {})
+  # set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', {})
+  set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', { headers: { 'mu-auth-sudo': 'true' } } )
+
 
   set :master_mutex, Mutex.new
 
@@ -272,10 +274,10 @@ post "/:path/index" do |path|
       if path == '_all'
         report =
           Indexes.instance.indexes.map do |type, indexes|
-            indexes.map do |groups, index|
-              go client, index[:index], type, groups
-            end
+          indexes.map do |groups, index|
+            go client, index[:index], type, groups
           end
+        end
         report.reduce([], :concat)
       else
         type = get_type_from_path path
@@ -291,6 +293,8 @@ end
 
 
 get "/:path/search" do |path|
+  log.info "Got allowed groups #{request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]}"
+
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path

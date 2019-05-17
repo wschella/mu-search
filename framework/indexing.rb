@@ -31,6 +31,8 @@ end
 
 
 def index_documents client, type, index, allowed_groups = nil
+  log.info "Allowed groups in index #{allowed_groups}"
+
   count_list = [] # for reporting
 
   type_def = settings.type_definitions[type]
@@ -71,6 +73,8 @@ def index_documents client, type, index, allowed_groups = nil
     } LIMIT #{settings.batch_size} OFFSET #{offset}
 SPARQL
 
+      log.info "selecting documents for batch #{i}"
+
       query_result =
         if allowed_groups
           authorized_query q, allowed_groups
@@ -78,13 +82,16 @@ SPARQL
           request_authorized_query q
         end
 
-      # log.info query_result
+      log.info "Discovered identifiers for this batch: #{query_result}"
 
       # Parallel.each( query_result, in_threads: 16 ) do |result|
       # query_result.each do |result|
       query_result.each do |result|
         # fork do
           uuid = result[:id].to_s
+
+          log.info "Fetching document for uuid #{uuid}"
+
           begin
             document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
 

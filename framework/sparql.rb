@@ -3,15 +3,21 @@ def query_with_headers query, headers
 end
 
 
-def authorized_query query, allowed_groups
-  allowed_groups_object = allowed_groups.map { |group| { value: group } }.to_json
-  sparql_client.query query, { headers: { MU_AUTH_ALLOWED_GROUPS: allowed_groups_object } }
+def authorized_query query_string, allowed_groups
+  allowed_groups_object = allowed_groups.map { |group| group }.to_json
+
+  log.info "Authorized query with allowed groups object #{allowed_groups_object}"
+
+  options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object } }
+
+  my_sparql_client = SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], options)
+  my_sparql_client.query query_string, options
 end
 
 
 # Shouldn't be necessary: ruby template should pass headers on
-def request_authorized_query query
-  sparql_client.query query, { headers: { MU_AUTH_ALLOWED_GROUPS: request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"] } }
+def request_authorized_query query_string
+  query query_string
 end
 
 
@@ -27,6 +33,8 @@ def count_documents rdf_type, allowed_groups = nil
       }
 SPARQL
 
+  log.info "Counting documents for #{allowed_groups}"
+
   query_result =
     if allowed_groups
       authorized_query sparql_query, allowed_groups
@@ -34,7 +42,11 @@ SPARQL
       request_authorized_query sparql_query
     end
 
-  query_result.first["count"].to_i
+  documents_count = query_result.first["count"].to_i
+
+  puts "Found #{documents_count} documents for #{allowed_groups}."
+
+  documents_count
 end
 
 
@@ -128,6 +140,8 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
     else
       request_authorized_query make_property_query(uuid, uri, properties)
     end
+
+  log.info "Found document properties to index #{query_result}"
 
   result = query_result.first
   pipeline = false

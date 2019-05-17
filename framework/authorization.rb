@@ -13,12 +13,12 @@ class Indexes
 
   # def all_names
   #   @indexes.values.reduce([]) do |result, indexes|
-  #     result + indexes.values.reduce([]) { |r, definition| l + [definition[:index]] } 
+  #     result + indexes.values.reduce([]) { |r, definition| l + [definition[:index]] }
   #   end
   # end
 
   # def all_authorized allowed_groups, used_groups
-  #   @indexes.values.reduce([]) do |result, indexes| 
+  #   @indexes.values.reduce([]) do |result, indexes|
   #     if indexes[allowed_groups]
   #       result + [indexes[allowed_groups][:index]]
   #     else
@@ -49,7 +49,7 @@ class Indexes
     @status[index]
   end
 
-  def invalidate_all 
+  def invalidate_all
     indexes_invalidated = []
 
     @indexes.each do |type, indexes|
@@ -81,7 +81,7 @@ class Indexes
     indexes_invalidated = []
     indexes = @indexes[type]
 
-    if indexes 
+    if indexes
       @indexes.each do |type, indexes|
         indexes.each do |groups, index_definition|
           index = index_definition[:index]
@@ -137,7 +137,7 @@ def destroy_existing_indexes client
   Indexes.instance.indexes.map do |type, indexes|
     indexes.map do |groups, index|
       destroy_index client, index[:index]
-      Indexes.instance.indexes[type].delete groups 
+      Indexes.instance.indexes[type].delete groups
       index[:index]
     end
   end.flatten
@@ -157,12 +157,12 @@ end
 
 
 def invalidate_indexes s, type
-  Indexes.instance.indexes[type].each do |key, index| 
+  Indexes.instance.indexes[type].each do |key, index|
     allowed_groups = index[:allowed_groups]
     rdf_type = settings.type_definitions[type]["rdf_type"]
     if is_authorized s, rdf_type, allowed_groups
       Indexes.instance.mutex(index[:index]).synchronize do
-        Indexes.instance.set_status index[:index], :invalid 
+        Indexes.instance.set_status index[:index], :invalid
       end
     else
       log.info "Not Authorized, nothing doing."
@@ -200,12 +200,12 @@ def store_index type, index, allowed_groups, used_groups
     if groups.empty?
       ""
     else
-      
+
       group_set = groups.map { |g| sparql_escape_string g.to_json }.join(",")
       " <#{predicate}> #{group_set}; "
     end
   end
-  
+
   allowed_group_statement = group_statement "http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup", allowed_groups
   used_group_statement = group_statement "http://mu.semte.ch/vocabularies/authorization/hasUsedGroup", used_groups
 
@@ -216,7 +216,7 @@ def store_index type, index, allowed_groups, used_groups
                <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
                <http://mu.semte.ch/vocabularies/authorization/objectType> "#{type}";
                #{used_group_statement}
-               #{allowed_group_statement}        
+               #{allowed_group_statement}
                <http://mu.semte.ch/vocabularies/authorization/indexName> "#{index}"
     }
   }
@@ -224,7 +224,7 @@ SPARQL
 end
 
 
-def get_persisted_index_names 
+def get_persisted_index_names
   direct_query <<SPARQL
 SELECT ?index_name WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
@@ -283,10 +283,18 @@ def sort_groups groups
 end
 
 
+def get_allowed_groups
+  allowed_groups = get_request_groups[0]
+
+  log.info "Found groups #{allowed_groups} in get_allowed_groups"
+
+  allowed_groups
+end
+
 def get_request_groups
   allowed_groups_s = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
-  allowed_groups = 
-    allowed_groups_s ? JSON.parse(allowed_groups_s) : [] 
+  allowed_groups =
+    allowed_groups_s ? JSON.parse(allowed_groups_s) : []
 
   used_groups_s = request.env["HTTP_MU_AUTH_USED_GROUPS"]
   used_groups = used_groups_s ? JSON.parse(used_groups_s) : []
@@ -317,15 +325,15 @@ def create_index client, type, allowed_groups, used_groups
     log.info "Index not created, already exists: #{index}"
     index
   else
-    uri =  store_index type, index, allowed_groups, used_groups    
+    uri =  store_index type, index, allowed_groups, used_groups
 
     index_definition =   {
       index: index,
       uri: uri,
       allowed_groups: allowed_groups,
-      used_groups: used_groups 
+      used_groups: used_groups
     }
-    
+
     Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
 
     begin
@@ -367,7 +375,7 @@ def get_indexes_safe client, type
             true
           end
         end
-        
+
         return indexes, update_statuses
       end
     end
@@ -380,7 +388,7 @@ def get_indexes_safe client, type
       Indexes.instance.mutex(index).synchronize do
         begin
           clear_index client, index
-          index_documents client, type, index
+          index_documents client, type, index, get_allowed_groups
           client.refresh_index index
           Indexes.instance.set_status index, :valid
         rescue
@@ -429,11 +437,11 @@ SPARQL
 
       index_name = result["index_name"].to_s
 
-      indexes[allowed_groups] = { 
+      indexes[allowed_groups] = {
         uri: uri,
         index: index_name,
-        allowed_groups: allowed_groups, 
-        used_groups: used_groups 
+        allowed_groups: allowed_groups,
+        used_groups: used_groups
       }
 
       Indexes.instance.new_mutex index_name

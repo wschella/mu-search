@@ -143,15 +143,16 @@ class Elastic
 
   def search index:, query_string: nil, query: nil, sort: nil
     if query_string
+      log.info "Searching elastic search for #{query_string} on #{index}"
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_search?q=#{query_string}&sort=#{sort}")
       req = Net::HTTP::Post.new(uri)
-    else 
+    else
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_search")
       req = Net::HTTP::Post.new(uri)
       req.body = query.to_json
     end
 
-    run(uri, req)    
+    run(uri, req)
   end
 
   def upload_attachment index, id, pipeline, document
@@ -188,12 +189,12 @@ class Elastic
     if query_string
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count?q=#{query_string}&sort=#{sort}")
       req = Net::HTTP::Get.new(uri)
-    else 
+    else
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count")
       req = Net::HTTP::Get.new(uri)
       req.body = query.to_json
     end
 
-    run(uri, req)    
+    run(uri, req)
   end
 end
