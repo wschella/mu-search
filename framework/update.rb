@@ -1,3 +1,7 @@
+# This file contains information regarding updates retrieved through
+# the delta service.
+
+# TODO I'm not sure what this does.
 def configure_properties_types_lookup_tables configuration
   rdf_properties = {}
   rdf_types = {}
@@ -12,7 +16,7 @@ def configure_properties_types_lookup_tables configuration
 
       type_def["properties"].each do |property|
         type_def["composite_types"].each do |source_type|
-          property_name = 
+          property_name =
             if property["mappings"]
               property["mappings"][source_type] || property["name"]
             else
@@ -43,6 +47,15 @@ def configure_properties_types_lookup_tables configuration
   return rdf_properties, rdf_types
 end
 
+# Parses the delta's as received from the delta service.
+#
+#   - raw_deltas: JSON parsed delta content.  Assumes to receive an
+#     object with { delta: { inserts: [], deletes: [] } } which is
+#     close to the 0.0.0-genesis format.
+#
+# Yields back contents in a format used internally.
+#
+# TODO: Consider using the current latest delta-notifier format.
 def parse_deltas raw_deltas
   unless raw_deltas.empty?
     # Assumes there is only one application graph
@@ -51,16 +64,26 @@ def parse_deltas raw_deltas
     end
 
     inserts = raw_deltas["delta"]["inserts"] || []
-    inserts = inserts && inserts.map { |t| [:+, t["s"], t["p"], t["o"]] } 
+    inserts = inserts && inserts.map { |t| [:+, t["s"], t["p"], t["o"]] }
 
     deletes = raw_deltas["delta"]["deletes"] || []
-    deletes = deletes && deletes.map { |t| [:-, t["s"], t["p"], t["o"]] } 
+    deletes = deletes && deletes.map { |t| [:-, t["s"], t["p"], t["o"]] }
 
     inserts + deletes
   end
 end
 
-
+# Invalidates the updates as received by the parsed delta's.
+#
+#   - deltas: Delta's as converted by #parse_deltas.
+#
+# TODO: Update the specific documents rather than invalidating the
+# full index.  It seems index invalidation makes subsequent queries
+# take a substantial amount of time (that, or something went wrong).
+#
+# TODO: Find a way to capture changes occurring in in-between objects
+# which may be found when subject paths are supplied in the
+# configuration.
 def invalidate_updates deltas
   deltas.each do |triple|
     delta, s, p, o = triple
@@ -82,6 +105,16 @@ def invalidate_updates deltas
   end
 end
 
+# Consumes parsed delta's and acts on instance types in order to
+# figure out which documents to update and which documents to remove.
+# Assumes that it is safe to remove objects for which the type was
+# removed and that it needs to update the documents for inserts of the
+# type.
+#
+#   - deltas: Delta's as parsed by #parse_deltas
+#
+# TODO: Consider coping with intermediate objects as introduced by
+# array arrays in the subject configuration.
 def tabulate_updates deltas
   docs_to_update = {}
   docs_to_delete = {}
@@ -93,7 +126,7 @@ def tabulate_updates deltas
       types = settings.rdf_types[o]
       if types
         types.each do |type|
-          if delta == :- 
+          if delta == :-
             docs_to_update[s] = false
             triple_types = docs_to_delete[s] || Set[]
             docs_to_delete[s] = triple_types.add(type)
@@ -123,7 +156,12 @@ def tabulate_updates deltas
   return docs_to_update, docs_to_delete
 end
 
-
+# Update all documents relating to a particular uri and a series of
+# types.
+#
+#   - client: ElasticSearch client in which updates need to occur.
+#   - s: String URI of the entity which needs changing.
+#   - types: Array of types for which the document needs updating.
 def update_document_all_types client, s, types
   if types
     types.each do |type|
@@ -134,7 +172,7 @@ def update_document_all_types client, s, types
         if is_authorized s, rdf_type, allowed_groups
           properties = settings.type_definitions[type]["properties"]
           document, attachment_pipeline =
-            fetch_document_to_index uri: s, properties: properties, 
+            fetch_document_to_index uri: s, properties: properties,
                                     allowed_groups: index[:allowed_groups]
           if attachment_pipeline
             begin
@@ -159,7 +197,12 @@ def update_document_all_types client, s, types
   end
 end
 
-
+# Deletes all decoments relating to a particular uri and a series of
+# types.
+#
+#   - client: ElasticSearch client in which the updates need to occur.
+#   - s: String URI of the entity which needs changing.
+#   - types: Array of types for which the document needs updating.
 def delete_document_all_types client, s, types
   types.each do |type|
     uuid = get_uuid s

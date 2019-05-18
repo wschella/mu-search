@@ -3,12 +3,21 @@
 # * does not follow the standard API
 # * see: https://github.com/mu-semtech/mu-ruby-template/issues/16
 class Elastic
+
+  # Sets up the ElasticSearch instance
   def initialize(host: 'localhost', port: 9200)
     @host = host
     @port = port
     @port_s = port.to_s
   end
 
+  # Sends a raw request to ElasticSearch
+  #
+  #   - uri: URI instance representing the elasticSearch host
+  #   - req: The request object
+  #
+  # Responds with the body on success, or the failure value on
+  # failure.
   def run(uri, req)
     req['content-type'] = 'application/json'
 
@@ -24,6 +33,10 @@ class Elastic
     end
   end
 
+  # Checks mhether or not ElasticSearch is up
+  #
+  # Executes a health check and accepts either "green" or "yellow".
+  # Yields false on anything else.
   def up
     uri = URI("http://#{@host}:#{@port_s}/_cluster/health")
     req = Net::HTTP::Get.new(uri)
@@ -37,6 +50,12 @@ class Elastic
     end
   end
 
+  # Checks whether or not the supplied index exists.
+  #
+  # Executes a HEAD request.  If that succeeds we can assume the index
+  # exists.
+  #
+  #   - index: string name of the index
   def index_exists index
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Head.new(uri)
@@ -49,6 +68,15 @@ class Elastic
     end
   end
 
+  # Creates an index in the elasticSearch instance..
+  #
+  #   - index: Index to be created
+  #   - mappings: currently not used
+  #
+  # TODO: the settings for creating the index have been hardwired for
+  # now.  We should move them to the configuration.
+  #
+  # TODO: describe and add support for the mappings argument
   def create_index index, mappings = nil
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Put.new(uri)
@@ -69,6 +97,11 @@ class Elastic
     result = run(uri, req)
   end
 
+  # Deletes an index from ElasticSearch
+  #
+  #   - index: Name of the index to be removed
+  #
+  # Throws an error if the index exists but could not be removed.
   def delete_index index
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Delete.new(uri)
@@ -85,18 +118,39 @@ class Elastic
     end
   end
 
+  # Refreshes an ElasticSearch index, making documents available for
+  # search.
+  #
+  # When we store documents in ElasticSearch, they are not necessarily
+  # available immediately.  It requires a refresh of the index.  This
+  # operation happens once every second.  When we build an index to
+  # query it immediately, we should ensure to refresh the index before
+  # querying.
+  #
+  #   - index: Name of the index which will be refreshed.
   def refresh_index index
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_refresh")
     req = Net::HTTP::Post.new(uri)
     run(uri, req)
   end
 
+  # Gets a single document from an index, based on its ElasticSearch
+  # id.
+  #
+  #   - index: Index to retrieve the document from.
+  #   - id: ElasticSearch ID of the document.
   def get_document index, id
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}")
     req = Net::HTTP::Get.new(uri)
     run(uri, req)
   end
 
+  # Puts a new document in an index.
+  #
+  #   - index: Index to store the document in.
+  #   - id: ElasticSearch identifier to store the document under.
+  #   - document: Document contents (as a ruby json object) to be
+  #     stored.
   def put_document index, id, document
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}")
     req = Net::HTTP::Put.new(uri)
@@ -104,6 +158,14 @@ class Elastic
     run(uri, req)
   end
 
+  # Updates a document in ElasticSearch by id
+  #
+  #   - index: Index to update the document in
+  #   - id: ElasticSearch identifier of the document
+  #   - document: New document contents
+  #
+  # TODO: describe if this is a full replace, or if this updates the
+  # document partially.
   def update_document index, id, document
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}/_update")
     req = Net::HTTP::Post.new(uri)
@@ -111,7 +173,10 @@ class Elastic
     run(uri, req)
   end
 
-  # data is an array of json/hashes, ordered according to
+  # Bulk updates a set of documents
+  #
+  #   - index: Index to update the documents in.
+  #   - data: An array of json/hashes, ordered according to
   # https://www.elastic.co/guide/en/elasticsearch/reference/6.4/docs-bulk.html
   def bulk_update_document index, data
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_bulk")
@@ -126,12 +191,26 @@ class Elastic
     run(uri, req)
   end
 
+  # Deletes a document from ElasticSearch
+  #
+  #   - index: Index to remove the document from
+  #   - id: ElasticSearch identifier of the document
   def delete_document index, id
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}")
     req = Net::HTTP::Delete.new(uri)
     run(uri, req)
   end
 
+  # Deletes all documents which match a certain query
+  #
+  #   - index: Index to delete the documents from
+  #   - query: ElasticSearch query used for selecting documents
+  #   - conflicts_proceed: boolean indicating we should delete if
+  #     other operations are occurring on the same document or not.
+  #
+  # TODO: Verify description of conflicts_proceed.
+  #
+  # TODO: Provide reference to query format.
   def delete_by_query index, query, conflicts_proceed
     conflicts = conflicts_proceed ? 'conflicts=proceed' : ''
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_delete_by_query?#{conflicts}")
@@ -141,6 +220,15 @@ class Elastic
     run(uri, req)
   end
 
+  # Searches for documents in an index
+  #
+  #   - index: Index to be searched
+  #   - query_string: ElasticSearch query string in a URL-escaped
+  #     manner
+  #   - query: ElasticSearch query JSON object in ruby format (used
+  #     only when no query_string is supplied)
+  #   - sort: ElasticSearch sort string in URL-escaped manner (used
+  #     only when query_string is provided)
   def search index:, query_string: nil, query: nil, sort: nil
     if query_string
       log.info "Searching elastic search for #{query_string} on #{index}"
@@ -155,6 +243,19 @@ class Elastic
     run(uri, req)
   end
 
+  # Uploads an attachment to the index to be processed by a specific
+  # pipeline.
+  #
+  #   - index: Index to which the attachment should be stored.
+  #   - id: id of the document to which the attachment will be stored.
+  #   - pipeline: Name of the pipeline which should run for the
+  #     attachment.
+  #   - document: JSON body representing the attachment.
+  #
+  # TODO: Describe the value of the pipeline and/or where to find
+  # reasonable values.
+  #
+  # TODO: Describe the format of the document's body.
   def upload_attachment index, id, pipeline, document
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}?pipeline=#{pipeline}")
     req = Net::HTTP::Put.new(uri)
@@ -162,6 +263,14 @@ class Elastic
     run(uri, req)
   end
 
+  # Creates an attachment pipeline and configures it to operate on a
+  # specific field.
+  #
+  #   - pipeline: name of the new attachment pipeline.
+  #   - field: Field on which to operate.
+  #
+  # Creates a new attachment pipeline, scanning all characters of the
+  # supplied field (no character limit).
   def create_attachment_pipeline pipeline, field
     uri = URI("http://#{@host}:#{@port_s}/_ingest/pipeline/#{pipeline}")
     req = Net::HTTP::Put.new(uri)
@@ -184,7 +293,19 @@ class Elastic
     run(uri, req)
   end
 
-
+  # Executes a count query for a particular string
+  #
+  # Arguments behave similarly to Elastic#search
+  #
+  #   - index: Index on which to execute the count qurey.
+  #   - query_string: ElasticSearch query string in a URL-escaped
+  #     manner
+  #   - query: ElasticSearch query JSON object in ruby format (used
+  #     only when no query_string is supplied)
+  #   - sort: ElasticSearch sort string in URL-escaped manner (used
+  #     only when query_string is provided)
+  #
+  # TODO: why do we have a sort here?
   def count index:, query_string: nil, query: nil, sort: nil
     if query_string
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count?q=#{query_string}&sort=#{sort}")

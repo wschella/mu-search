@@ -1,10 +1,13 @@
 require 'parallel'
 
+# This file contains helpers for indexing documents.
+
+# TODO: Describe this method.  I don't know what it means.
 def is_multiple_type? type_definition
   type_definition["composite_types"].is_a?(Array)
 end
 
-
+# TODO: Describe this method.  I don't know what it means.
 def multiple_type_expand_subtypes types, properties
   types.map do |type|
     source_type_def = settings.type_definitions[type]
@@ -29,7 +32,20 @@ def multiple_type_expand_subtypes types, properties
   end
 end
 
-
+# Indexes documents in batches.  Ensuring the necessary indexes exist
+# and are up-to-date.
+#
+#   - client: ElasticSearch client to execute the indexing on.
+#   - type: Type of content which needs to be indexed
+#   - index: Index to push the indexed documents in
+#   - allowed_groups: Groups used for querying the database
+#
+# Documents are indexed in batches, thereby lowering the load on
+# ElasticSearch.  Our experiments show that a multi-core system barely
+# receives load in this setup.  We suppose this can be solved by
+# running these requests in parallel but that's not clear.
+#
+# TODO: Optimize this code so indexing can use more than 8 cores.
 def index_documents client, type, index, allowed_groups = nil
   log.info "Allowed groups in index #{allowed_groups}"
 

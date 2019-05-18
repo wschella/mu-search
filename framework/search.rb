@@ -1,3 +1,11 @@
+# This file contains helpers for processing the public search api and
+# converting it into ElasticSearch.
+
+# Filter for splitting the optional modifier from a search string.
+#
+#   - filter: the query parameter received as the search key.
+#
+# Yields two values: the modifier and the search property.
 def split_filter filter
   match = /(?:\:)([^ ]+)(?::)(\w+)/.match(filter)
   if match
@@ -7,7 +15,16 @@ def split_filter filter
   end
 end
 
-
+# Splits fields when multiple were given.
+#
+# It is possible to supply multiple fields in some queries.  They are
+# then split by a comma.  THis function splits the fields.
+#
+# TODO: I find it strange that this requires there to be more than one
+# field.  Perhaps I'm not interpreting this correctly.  I would assume
+# this to yield field.split(',') but it seems something else is
+# expected.  Perhaps the consuming code would better check on this
+# being more than one element long.
 def split_fields field
   fields = field.split(',')
   if fields.length > 1
@@ -17,7 +34,11 @@ def split_fields field
   end
 end
 
-
+# Converts the sort statement from the params into an ElasticSearch
+# sort statement.
+#
+# Yields an elasticSearch filter in the form of a Ruby native json
+# object.
 def es_query_sort_statement
   params['sort'] && params['sort'].collect do |field, val|
     flag, field = split_filter field
@@ -29,7 +50,15 @@ def es_query_sort_statement
   end
 end
 
-
+# Yields the attachment's field if a field contains an attachment, or
+# the field itself if it did not.
+#
+# Can be seen as a filter to pass a field through to translate to the
+# attachment field if necessary.
+#
+# TODO: This is named strangely.  Perhaps we should turn this into a
+# name that only indicates that we're translating the publicly visible
+# field name into the internal one.
 def attachment_field type, field
   properties = settings.type_definitions[type]["properties"]
   if properties[field].is_a? Hash and properties[field]["attachment_pipeline"]
@@ -39,9 +68,12 @@ def attachment_field type, field
   end
 end
 
-
+# Constructs an ElasticSearch query in ruby JSON format based on the
+# supplied filter parameters.
+#
+#   - type: Type of field which was queried.
 def construct_es_query type
-  filters = params['filter'] && params['filter'].map do |field, val| 
+  filters = params['filter'] && params['filter'].map do |field, val|
     term = construct_es_query_term type, field, val
     term
   end.flatten
@@ -60,6 +92,10 @@ def construct_es_query type
 end
 
 
+# Constructs an ElasticSearch query path for the given field and
+# value.
+#
+# TODO: I don't know what this means.  Please describe.
 def construct_es_query_path field, val
   if val.is_a? Hash
     val.map do |k, v|
@@ -70,7 +106,10 @@ def construct_es_query_path field, val
   end
 end
 
-
+# Constructs an ElasticSearch query term
+#
+# TODO: I don't really grok what this means either in detail either.
+# I see things I recognize, but didn't connect the dots yet.
 def construct_es_query_term type, field, val
     if field == '_all'
       { multi_match: { query: val } }
@@ -119,7 +158,14 @@ def construct_es_query_term type, field, val
     end
 end
 
-
+# Formats the ElasticSearch resurts in a JSONAPI like manner.
+#
+#   - type: Type of instance which was searched for.
+#   - count: Total amount of results that are available
+#   - page: Currently requested page (in terms of pagination)
+#   - size: Amount of results on a single page.
+#   - results: Actual results in the form of the ElasticSearch
+#     response.
 def format_results type, count, page, size, results
   last_page = count/size
   next_page = [page+1, last_page].min
@@ -140,7 +186,7 @@ def format_results type, count, page, size, results
     join uri, page_number_string, size_string
   end
 
-  { 
+  {
     count: count,
     data: JSON.parse(results)["hits"]["hits"].map do |result|
       {

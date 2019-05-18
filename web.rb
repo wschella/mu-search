@@ -18,12 +18,26 @@ before do
   request.path_info.chomp!('/')
 end
 
+# Applies basic configuration from environment variables and from
+# configuration file (environment variables win).  Ensures
+# elasticsearch is up and the database is set up.
+#
+# Called from the configure block.
+#
+# TODO is_reload is supplied but does not seem to be used.
+#
+# TODO This seems to contain both configuration as well as setup.  It
+# would make sense to split both.
 def configure_settings client, is_reload = nil
   configuration = JSON.parse File.read('/config/config.json')
 
   # set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', {})
-  set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', { headers: { 'mu-auth-sudo': 'true' } } )
 
+  # TODO provide more explicit abstraction to send out sudo calls. All
+  # calls that go through this endpoint (rather than the one provided
+  # by the mu-ruby-template seem to be mu-auth-sudo calls so it's easy
+  # to replace.
+  set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', { headers: { 'mu-auth-sudo': 'true' } } )
 
   set :master_mutex, Mutex.new
 
@@ -110,6 +124,8 @@ def configure_settings client, is_reload = nil
   end
 end
 
+# Configures the system and makes sure everything is up.  Heavily
+# relies on configure_settings.
 configure do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
@@ -136,11 +152,14 @@ configure do
 end
 
 
+# Provides the type which matches the given path based on the supplied
+# configuration.
 def get_type_from_path path
   settings.type_paths[path]
 end
 
-
+# Invalidates the indexes resulting them to be updated in a next
+# search query.
 post "/:path/invalidate" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
@@ -179,7 +198,8 @@ post "/:path/invalidate" do |path|
   end
 end
 
-
+# Deletes the indexes for :path requiring them to be fully recreated
+# the next time we make a search.
 delete "/:path" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
@@ -225,6 +245,7 @@ delete "/:path" do |path|
 end
 
 
+# TODO document the POST mothed on :path/index
 post "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new host: 'elasticsearch', port: 9200
@@ -292,6 +313,17 @@ post "/:path/index" do |path|
 end
 
 
+# Performs a regular search.
+#
+# Creates new indexes, updates older ones and keeps constructed ones
+# as necessary.  This is the standard entrypoint for your mu-search
+# queries.
+#
+# Check Readme.md for more information.
+#
+# TODO move this method up as it's the most common entrypoint
+#
+# TODO fleshen out functionality with respect to existing indexes
 get "/:path/search" do |path|
   log.info "Got allowed groups #{request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]}"
 
@@ -367,6 +399,13 @@ post "/:path/search" do |path|
 end
 
 
+# Processes an update from the delta system.  Consumes the genesis
+# delta format and invalidates the necessary indexes.
+#
+# TODO it seems this invalidates the full index, rather than trying to
+# add the respective document to all related indexes when
+# automatic_index_updates is set.  We may lack information to handle
+# invalidation when paths are being used to index contents.
 post "/update" do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
@@ -387,22 +426,25 @@ post "/update" do
   { message: "Thanks for all the updates." }.to_json
 end
 
-
+# Enables the automatic_updates setting on a live system
 post "/settings/automatic_updates" do
   settings.automatic_index_updates = true
 end
 
 
+# Disables the automatic_updates setting on a live system
 delete "/settings/automatic_updates" do
   settings.automatic_index_updates = false
 end
 
 
+# Enables the persistent indexes setting on a live system
 post "/settings/persist_indexes" do
   settings.persist_indexes = true
 end
 
 
+# Disables the persistent indexes setting on a live system
 delete "/settings/persist_indexes" do
   settings.persist_indexes = false
 end
