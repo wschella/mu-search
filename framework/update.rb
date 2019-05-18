@@ -137,7 +137,13 @@ def update_document_all_types client, s, types
             fetch_document_to_index uri: s, properties: properties, 
                                     allowed_groups: index[:allowed_groups]
           if attachment_pipeline
-            client.upload_attachment index, uuid, attachment_pipeline, document
+            begin
+              # TODO what is uuid supposed to be here?
+              # client.upload_attachment index, uuid, attachment_pipeline, document
+              client.upload_attachment index, get_uuid(s), attachment_pipeline, document
+            rescue
+              log.warn "Could not upload attachment #{s}"
+            end
           else
             begin
               client.update_document index[:index], get_uuid(s), document
