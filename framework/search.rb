@@ -111,51 +111,55 @@ end
 # TODO: I don't really grok what this means either in detail either.
 # I see things I recognize, but didn't connect the dots yet.
 def construct_es_query_term type, field, val
-    if field == '_all'
-      { multi_match: { query: val } }
-    else
-      flag, field = split_filter field
-      fields = split_fields field
+  if field == '_all'
+    { multi_match: { query: val } }
+  else
+    flag, field = split_filter field
+    fields = split_fields field
 
-      fields = fields ? fields.map { |f| attachment_field type, f } : nil
-      field = attachment_field type, field
+    fields = fields ? fields.map { |f| attachment_field type, f } : nil
+    field = attachment_field type, field
 
-      if val.is_a? Hash
-        t = construct_es_query_path field, val
-        t
-      elsif not flag
-        if fields
-          { multi_match: { query: val, fields: fields } }
-        else
-          { match: { field => val } }
-        end
+    if val.is_a? Hash
+      t = construct_es_query_path field, val
+      t
+    elsif not flag
+      if fields
+        { multi_match: { query: val, fields: fields } }
       else
-        case flag
-        when 'term', 'fuzzy', 'prefix', 'wildcard', 'regexp'
-          { flag => { field => val } }
-        when 'phrase', 'phrase_prefix'
-          { 'match_' + flag => { field => val } }
-        when "terms"
-          { terms: { field => val.split(',') } }
-        when 'gte', 'lte', 'gt', 'lt'
-          { range: { field => { flag => val } } }
-        when 'lte,gte', 'lt,gt', 'lt,gte', 'lte,gt'
-          flags = flag.split(',')
-          vals = val.split(',')
-          { range: { field => { flags[0] => vals[0], flags[1] => vals[1] } } }
-        when 'query'
-          { query_string: { default_field: field, query: val } }
-        when /common(,[0-9.]+){,2}/
-          flag, cutoff, min_match = flag.split(',')
-          cutoff = cutoff or settings.common_terms_cutoff_frequency
-          term = { common: { field => { query: val, cutoff_frequency: cutoff } } }
-          if min_match
-            term['minimum_should_match'] = min_match
-          end
-          term
+        { match: { field => val } }
+      end
+    else
+      case flag
+      when 'fuzzy_phrase'
+        make_fuzzy_phrase_match field, val
+      when 'fuzzy_match'
+        make_fuzzy_match field, val
+      when 'term', 'fuzzy', 'prefix', 'wildcard', 'regexp'
+        { flag => { field => val } }
+      when 'phrase', 'phrase_prefix'
+        { 'match_' + flag => { field => val } }
+      when "terms"
+        { terms: { field => val.split(',') } }
+      when 'gte', 'lte', 'gt', 'lt'
+        { range: { field => { flag => val } } }
+      when 'lte,gte', 'lt,gt', 'lt,gte', 'lte,gt'
+        flags = flag.split(',')
+        vals = val.split(',')
+        { range: { field => { flags[0] => vals[0], flags[1] => vals[1] } } }
+      when 'query'
+        { query_string: { default_field: field, query: val } }
+      when /common(,[0-9.]+){,2}/
+        flag, cutoff, min_match = flag.split(',')
+        cutoff = cutoff or settings.common_terms_cutoff_frequency
+        term = { common: { field => { query: val, cutoff_frequency: cutoff } } }
+        if min_match
+          term['minimum_should_match'] = min_match
         end
+        term
       end
     end
+  end
 end
 
 # Formats the ElasticSearch resurts in a JSONAPI like manner.
@@ -166,6 +170,10 @@ end
 #   - size: Amount of results on a single page.
 #   - results: Actual results in the form of the ElasticSearch
 #     response.
+#
+# TODO: it would be nice if we could somehow return the matched
+# section of the document.  In a perfect world, combined with some
+# context around it.
 def format_results type, count, page, size, results
   last_page = count/size
   next_page = [page+1, last_page].min
@@ -201,6 +209,46 @@ def format_results type, count, page, size, results
       last:  page_string(uri, last_page, size),
       prev:  page_string(uri, prev_page, size),
       next:  page_string(uri, next_page, size)
+    }
+  }
+end
+
+
+# Constructs a fuzzy phrase match as described at
+# https://stackoverflow.com/questions/38816955/elasticsearch-fuzzy-phrases#38823174
+#
+# TODO: this type of search does not seem to work at the moment.  We
+# should verify how to get this running with our version of
+# ElasticSearch as it may be a common way of searching.
+def make_fuzzy_phrase_match field, value
+  { "in_order" => true,
+    "slop" => 2,
+    "span_near" => {
+      "clauses" => value.split(" ").map do |word|
+        { "span_multi" => {
+            "match" => {
+              "fuzzy" => {
+                "#{field}" => {
+                  "fuzziness" => 2,
+                  "value" => word } } } } }
+      end
+    } }
+end
+
+# Fuzzy matcher trying to match within a sentence.  This essentially
+# accepts multiple words and verifies that they exist within the
+# document using a fuzzy search.
+#
+# This is merely a try to figure out how to create some form of usable
+# matching.
+def make_fuzzy_match field, value
+  {
+    "match" => {
+      "#{field}" => {
+        "query" => value,
+        "operator" => "and",
+        "fuzziness" => "AUTO"
+      }
     }
   }
 end
