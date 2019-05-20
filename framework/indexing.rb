@@ -78,6 +78,7 @@ def index_documents client, type, index, allowed_groups = nil
     log.info "Number of batches: #{batches}"
 
     (0..batches).each do |i|
+      batch_start_time = Time.now
       log.info "Indexing batch #{i} of #{count/settings.batch_size}"
       offset = i*settings.batch_size
       data = []
@@ -89,7 +90,7 @@ def index_documents client, type, index, allowed_groups = nil
     } LIMIT #{settings.batch_size} OFFSET #{offset}
 SPARQL
 
-      log.info "selecting documents for batch #{i}"
+      # log.info "selecting documents for batch #{i}"
 
       query_result =
         if allowed_groups
@@ -98,7 +99,7 @@ SPARQL
           request_authorized_query q
         end
 
-      log.info "Discovered identifiers for this batch: #{query_result}"
+      # log.info "Discovered identifiers for this batch: #{query_result}"
 
       # Parallel.each( query_result, in_threads: 16 ) do |result|
       # query_result.each do |result|
@@ -106,12 +107,12 @@ SPARQL
         # fork do
           uuid = result[:id].to_s
 
-          log.info "Fetching document for uuid #{uuid}"
+          # log.info "Fetching document for uuid #{uuid}"
 
           begin
             document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
 
-            log.info "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
+            # log.info "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
 
             if attachment_pipeline
               data.push({ index: { _id: uuid , pipeline: "attachment" } })
@@ -139,6 +140,8 @@ SPARQL
         log.warn "Failed to ingest batch for ids #{ids_as_string}"
         log.warn e
       end
+
+      log.info "Processed batch in #{(Time.now - batch_start_time).round} seconds"
     end
   end
 
