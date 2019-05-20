@@ -177,22 +177,23 @@ def update_document_all_types client, s, types
           # TODO what is uuid supposed to be here?  We abstract its meaning to be get_uuid(s) but are not sure
           uuid = get_uuid(s)
 
-          begin
-            log.info "Trying to update document with id #{uuid}"
-            client.update_document index[:index], uuid, document
-            log.info "Succeeded in updating document with id #{uuid}"
-          rescue
-            log.info "Failed to update document, trying to put new document #{uuid}"
-            client.put_document index[:index], uuid, document
-            log.info "Succeeded in putting new document #{uuid}"
-          end
-
           if attachment_pipeline
             begin
               # client.upload_attachment index, uuid, attachment_pipeline, document
               client.upload_attachment index, uuid, attachment_pipeline, document
             rescue
               log.warn "Could not upload attachment #{s}"
+              begin
+                client.update_document index[:index], uuid, document
+              rescue
+                client.put_document index[:index], uuid, document
+              end
+            end
+          else
+            begin
+              client.update_document index[:index], uuid, document
+            rescue
+              client.put_document index[:index], uuid, document
             end
           end
         else
