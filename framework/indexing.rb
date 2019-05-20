@@ -111,17 +111,11 @@ SPARQL
           begin
             document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
 
-            log.info "Uploading document #{uuid} - batch #{i}"
+            log.info "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
 
             if attachment_pipeline
-              begin
-                client.upload_attachment index, uuid, attachment_pipeline, document
-              rescue StandardError => e
-                data.push({ index: { _id: uuid } })
-                data.push document
-                log.info "Failed to upload attachment for document uuid: #{uuid}"
-                log.info "Error was #{e.inspect}"
-              end
+              data.push({ index: { _id: uuid , pipeline: "attachment" } })
+              data.push document
             else
               data.push({ index: { _id: uuid } })
               data.push document
@@ -132,9 +126,9 @@ SPARQL
         # end
       end
       # Process.waitall
-      log.info "Bulk updating document for batch #{i}"
+      log.info "Bulk updating documents for batch #{i} - index #{index} - data #{data.length}"
       client.bulk_update_document index, data unless data.empty?
-      log.info "Bulk updated document for batch #{i}"
+      log.info "Bulk updated documents for batch #{i}"
     end
   end
 
