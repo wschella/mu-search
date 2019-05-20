@@ -126,9 +126,19 @@ SPARQL
         # end
       end
       # Process.waitall
-      log.info "Bulk updating documents for batch #{i} - index #{index} - data #{data.length}"
-      client.bulk_update_document index, data unless data.empty?
-      log.info "Bulk updated documents for batch #{i}"
+      begin
+        log.info "Bulk updating documents for batch #{i} - index #{index} - data #{data.length}"
+        client.bulk_update_document index, data unless data.empty?
+        log.info "Bulk updated documents for batch #{i}"
+      rescue StandardError => e
+        ids_as_string =
+          data
+            .select { |d| d[:index] && d[:index][:_id] }
+            .map { |d| d[:index][:_id] }
+            .join( "," )
+        log.warn "Failed to ingest batch for ids #{ids_as_string}"
+        log.warn e
+      end
     end
   end
 
