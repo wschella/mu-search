@@ -108,7 +108,7 @@ def configure_settings client, is_reload = nil
     settings.master_mutex.synchronize do
       eager_indexing_groups.each do |groups|
         settings.type_definitions.keys.each do |type|
-          index = Indexes.instance.find_matching_index type, groups, groups
+          index = get_matching_index type, groups, groups
 
           unless settings.persist_indexes and index and client.index_exists index
             index = index || create_index(client, type, groups, groups)
@@ -265,7 +265,7 @@ post "/:path/index" do |path|
         Indexes.instance.set_status index, :updating
       end
 
-      return indexes
+      return indexes.map { |index| index[:index] }
     end
   end
 

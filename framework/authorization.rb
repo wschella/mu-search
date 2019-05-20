@@ -161,7 +161,7 @@ class Indexes
   # lookup...  maybe a confusion in the specs?]
   def find_matching_index type, allowed_groups, used_groups
     index = @indexes[type] && @indexes[type][allowed_groups]
-    index and index[:index]
+    index
   end
 
 
@@ -380,7 +380,7 @@ end
 # Also used in config, calling find_matching_index directly
 # Note that used_groups are currently NOT used in lookup...
 # maybe a confusion in the specs?
-def get_request_indexes type
+def get_request_indexes_raw type
   allowed_groups, used_groups = get_request_groups
 
   if settings.additive_indexes
@@ -390,6 +390,17 @@ def get_request_indexes type
   else
     [Indexes.instance.find_matching_index(type, allowed_groups, used_groups)]
   end
+end
+
+
+def get_request_indexes type
+  indexes = get_request_indexes_raw(type)
+  indexes and indexes.map { |index| index[:index] }
+end
+
+
+def get_matching_index type, allowed_groups, used_groups
+  Indexes.instance.find_matching_index(type, allowed_groups, used_groups)[:index]
 end
 
 
@@ -487,10 +498,10 @@ def create_request_indexes client, type
 
   if settings.additive_indexes
     allowed_groups.map do |group|
-      create_index client, type, [group], used_groups
+      create_index_full client, type, [group], used_groups
     end
   else
-    [create_index( client, type, allowed_groups, used_groups)]
+    [create_index_full( client, type, allowed_groups, used_groups)]
   end
 end
 
@@ -512,7 +523,7 @@ end
 #
 # * TODO: check if index exists before creating it <-- DONE?
 # * TODO: how to name indexes? <-- DONE?
-def create_index client, type, allowed_groups, used_groups
+def create_index_full client, type, allowed_groups, used_groups
   index = Digest::MD5.hexdigest (type + "-" + allowed_groups.map { |g| g.to_json }.join("-"))
 
   if client.index_exists index
@@ -537,8 +548,14 @@ def create_index client, type, allowed_groups, used_groups
       raise "Error creating index: #{index}"
     end
 
-    index
+    index_definition
   end
+end
+
+
+def create_index client, type, allowed_groups, used_groups
+  index = create_index_full client, type, allowed_groups, used_groups
+  index and index[:index]
 end
 
 
@@ -559,6 +576,9 @@ end
 # done with it.  Similar functionality, hopefully easier to
 # understand.  This is poken without caring about the mutexes, so
 # perhaps the solution here is an optimal one.
+#
+# WARNING: a quick bug fix has introduced some naming ambiguity
+# between indexes and indexs_name(s)
 def get_indexes_safe client, type
   # I doubt this takes care of additive indexes <-- this was from
   # experimentation, this code itself seems correct...
@@ -566,12 +586,13 @@ def get_indexes_safe client, type
   def sync client, type
     settings.master_mutex.synchronize do
       # yield all available indexes
-      indexes = get_request_indexes type
+      indexes = get_request_indexes_raw type
 
       if indexes.all?
         update_statuses = indexes.map do |index|
-          if Indexes.instance.status(index) == :invalid
-            Indexes.instance.set_status index, :updating
+          index_name = index[:index]
+          if Indexes.instance.status(index_name) == :invalid
+            Indexes.instance.set_status index_name, :updating
             true
           else
             false
@@ -583,11 +604,16 @@ def get_indexes_safe client, type
         indexes = create_request_indexes client, type
 
         update_statuses = indexes.map do |index|
-          if Indexes.instance.status(index) == :valid
+          if index.is_a? String # Hack! This means index already exists
             false
           else
-            Indexes.instance.set_status index, :updating
-            true
+            index_name = index[:index]
+            if Indexes.instance.status(index_name) == :valid
+              false
+            else
+              Indexes.instance.set_status index_name, :updating
+              true
+            end
           end
         end
 
@@ -599,21 +625,30 @@ def get_indexes_safe client, type
   indexes, update_statuses = sync client, type
 
   indexes.zip(update_statuses).each do |index, update_index|
-    if update_index
-      Indexes.instance.mutex(index).synchronize do
-        begin
-          clear_index client, index
-          index_documents client, type, index, get_allowed_groups
-          client.refresh_index index
-          Indexes.instance.set_status index, :valid
-        rescue
-          Indexes.instance.set_status index, :invalid
+    unless index.is_a? String # Hack! see above
+      index_name = index[:index]
+      if update_index
+        Indexes.instance.mutex(index_name).synchronize do
+          begin
+            clear_index client, index_name
+            index_documents client, type, index_name, index[:allowed_groups]
+            client.refresh_index index_name
+            Indexes.instance.set_status index_name, :valid
+          rescue
+            Indexes.instance.set_status index_name, :invalid
+          end
         end
       end
     end
   end
 
-  indexes
+  indexes.map do |index|
+    if index.is_a? String # hack
+      index
+    else
+      index[:index] 
+    end
+  end
 end
 
 
