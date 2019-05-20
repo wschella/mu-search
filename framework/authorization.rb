@@ -384,11 +384,13 @@ def get_request_indexes_raw type
   allowed_groups, used_groups = get_request_groups
 
   if settings.additive_indexes
-    allowed_groups.map do |group|
+    indexes = allowed_groups.map do |group|
       Indexes.instance.find_matching_index type, [group], used_groups
     end
+    indexes.select { |x| x }
   else
-    [Indexes.instance.find_matching_index(type, allowed_groups, used_groups)]
+    index = Indexes.instance.find_matching_index(type, allowed_groups, used_groups)
+    if index then [index] else [] end
   end
 end
 
@@ -400,7 +402,8 @@ end
 
 
 def get_matching_index type, allowed_groups, used_groups
-  Indexes.instance.find_matching_index(type, allowed_groups, used_groups)[:index]
+  index = Indexes.instance.find_matching_index(type, allowed_groups, used_groups)
+  if index then index[:index] else nil end
 end
 
 
