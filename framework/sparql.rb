@@ -248,9 +248,10 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
             file_path = file_path.to_s.sub("share://","")
             pipeline = val["attachment_pipeline"]
             begin
-              file = File.open("/data/#{file_path}", "rb")
-              contents = Base64.strict_encode64 file.read
-              [key, contents]
+              File.open("/data/#{file_path}", "rb") do |file|
+                contents = Base64.strict_encode64 file.read
+                [key, contents]
+              end
             rescue Errno::ENOENT, IOError => e
               log.info "Error reading \"/data/#{file_path}\": #{e.inspect}"
               [key, nil]
