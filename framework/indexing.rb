@@ -117,6 +117,8 @@ SPARQL
               begin
                 client.upload_attachment index, uuid, attachment_pipeline, document
               rescue StandardError => e
+                data.push({ index: { _id: uuid } })
+                data.push document
                 log.info "Failed to upload attachment for document uuid: #{uuid}"
                 log.info "Error was #{e.inspect}"
               end
