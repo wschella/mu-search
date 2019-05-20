@@ -180,7 +180,7 @@ def update_document_all_types client, s, types
           if attachment_pipeline
             begin
               # client.upload_attachment index, uuid, attachment_pipeline, document
-              client.upload_attachment index, uuid, attachment_pipeline, document
+              client.upload_attachment index[:index], uuid, attachment_pipeline, document
             rescue
               log.warn "Could not upload attachment #{s}"
               begin
