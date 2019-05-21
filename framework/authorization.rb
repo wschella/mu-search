@@ -4,6 +4,7 @@
 class Indexes
   attr_accessor :indexes
   include Singleton
+  include SinatraTemplate::Utils
 
   # The index_definition contains the following information:
   # - index: name of the index
