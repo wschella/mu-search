@@ -70,14 +70,14 @@ def configure_settings client, is_reload = nil
 
   if !client.up
     log.info "Waiting for ES"
-    while !client.up
+    while !client.up do
       log.info "."
       sleep 1
     end
   end
-  while !sparql_up
+  if !sparql_up
     log.info "Waiting for Virtuoso"
-    while !sparql_up
+    while !sparql_up do
       log.info "."
       sleep 1
     end
