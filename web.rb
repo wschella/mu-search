@@ -111,6 +111,7 @@ def configure_settings client, is_reload = nil
           index = get_matching_index type, groups, groups
 
           unless settings.persist_indexes and index and client.index_exists index
+            log.info "Clearing index for type #{type}."
             index = index || create_index(client, type, groups, groups)
             clear_index client, index
             index_documents client, type, index, groups
@@ -325,18 +326,26 @@ end
 #
 # TODO fleshen out functionality with respect to existing indexes
 get "/:path/search" do |path|
-  log.info "Got allowed groups #{request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]}"
+  log.debug "SEARCH Got allowed groups #{request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]}"
 
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
 
+  log.debug "SEARCH Found type #{type}"
+
   indexes = get_indexes_safe client, type
+
+  log.debug "SEARCH Found indexes #{indexes}"
+
   index_string = indexes.join(',')
 
-  log.info "Searching index(es): #{indexes}"
+  log.debug "SEARCH Searching index(es): #{index_string}"
 
   es_query = construct_es_query type
+
+  log.debug "SEARCH ElasticSearch query: #{es_query}"
+  log.debug "SEARCH ElasticSearch query as json: #{es_query.to_json}"
 
   count_query = es_query.clone
 
@@ -370,9 +379,15 @@ get "/:path/search" do |path|
     sleep 0.5
   end
 
+  log.debug "All indexes are up to date"
+
   count_result = JSON.parse(client.count index: index_string, query: count_query)
+  log.debug "Got #{count_result} results"
+
   count = count_result["count"]
   results = client.search index: index_string, query: es_query
+
+  log.debug "Got native results: #{results}"
 
   format_results(type, count, page, size, results).to_json
 end
@@ -410,6 +425,7 @@ post "/update" do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
   # [[d, s, p, o], ...] where d is :- or :+ for deletes/inserts respectively
+  log.debug "Received delta update #{@json_body}"
   deltas = parse_deltas @json_body
   # Tabulate first, to avoid duplicate updates
   # { <uri> => [type, ...] } or { <uri> => false } if document should be deleted
