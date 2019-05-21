@@ -3,6 +3,7 @@
 # * does not follow the standard API
 # * see: https://github.com/mu-semtech/mu-ruby-template/issues/16
 class Elastic
+  include SinatraTemplate::Utils
 
   # Sets up the ElasticSearch instance
   def initialize(host: 'localhost', port: 9200)
