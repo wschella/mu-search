@@ -3,6 +3,7 @@
 # * does not follow the standard API
 # * see: https://github.com/mu-semtech/mu-ruby-template/issues/16
 class Elastic
+  include SinatraTemplate::Utils
 
   # Sets up the ElasticSearch instance
   def initialize(host: 'localhost', port: 9200)
@@ -179,7 +180,7 @@ class Elastic
   #   - data: An array of json/hashes, ordered according to
   # https://www.elastic.co/guide/en/elasticsearch/reference/6.4/docs-bulk.html
   def bulk_update_document index, data
-#    Parallel.each( data.each_slice(4), in_threads: 64 ) do |data|
+    Parallel.each( data.each_slice(4), in_threads: 32 ) do |data|
       begin
         uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_bulk")
         req = Net::HTTP::Post.new(uri)
@@ -198,7 +199,7 @@ class Elastic
         log.warn( "Failed to upload document #{id} with length #{body.length}" )
         log.warn( "Falied document #{id} is not ginormous" ) if body.length < 100_000_000
       end
-#    end
+    end
   end
 
   # Deletes a document from ElasticSearch

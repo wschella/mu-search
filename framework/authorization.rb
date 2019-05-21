@@ -4,6 +4,7 @@
 class Indexes
   attr_accessor :indexes
   include Singleton
+  include SinatraTemplate::Utils
 
   # The index_definition contains the following information:
   # - index: name of the index
@@ -565,7 +566,11 @@ end
 
 def create_index client, type, allowed_groups, used_groups
   index = create_index_full client, type, allowed_groups, used_groups
-  index and index[:index]
+  if index and index.is_a?(Hash) and index.key?(:index)
+    index[:index]
+  else
+    index
+  end
 end
 
 

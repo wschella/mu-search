@@ -1,5 +1,5 @@
 require 'parallel'
-
+require 'concurrent'
 # This file contains helpers for indexing documents.
 
 # TODO: Describe this method.  I don't know what it means.
@@ -81,8 +81,7 @@ def index_documents client, type, index, allowed_groups = nil
       batch_start_time = Time.now
       log.info "Indexing batch #{i} of #{count/settings.batch_size}"
       offset = i*settings.batch_size
-      data = []
-      attachments = {}
+      data = Concurrent::Array.new
       q = <<SPARQL
     SELECT DISTINCT ?id WHERE {
       ?doc a <#{rdf_type}>;
@@ -101,10 +100,7 @@ SPARQL
 
       log.debug "Discovered identifiers for this batch: #{query_result}"
 
-      # Parallel.each( query_result, in_threads: 16 ) do |result|
-      # query_result.each do |result|
-      query_result.each do |result|
-        # fork do
+       Parallel.each( query_result, in_threads: 32 ) do |result|
           uuid = result[:id].to_s
 
           log.debug "Fetching document for uuid #{uuid}"
@@ -115,11 +111,9 @@ SPARQL
             log.debug "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
 
             if attachment_pipeline
-              data.push({ index: { _id: uuid , pipeline: "attachment" } })
-              data.push document
+              data.push({ index: { _id: uuid , pipeline: "attachment" } }, document)
             else
-              data.push({ index: { _id: uuid } })
-              data.push document
+              data.push({ index: { _id: uuid } }, document)
             end
           rescue StandardError => e
             log.warn "Failed to fetch document or upload it or somesuch.  ID #{uuid} error #{e.inspect}"
@@ -132,13 +126,13 @@ SPARQL
         client.bulk_update_document index, data unless data.empty?
         log.info "Bulk updated documents for batch #{i}"
       rescue StandardError => e
+        log.warn e
         ids_as_string =
           data
             .select { |d| d[:index] && d[:index][:_id] }
             .map { |d| d[:index][:_id] }
             .join( "," )
         log.warn "Failed to ingest batch for ids #{ids_as_string}"
-        log.warn e
       end
 
       log.info "Processed batch in #{(Time.now - batch_start_time).round} seconds"
