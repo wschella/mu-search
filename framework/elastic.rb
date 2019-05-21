@@ -179,16 +179,26 @@ class Elastic
   #   - data: An array of json/hashes, ordered according to
   # https://www.elastic.co/guide/en/elasticsearch/reference/6.4/docs-bulk.html
   def bulk_update_document index, data
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_bulk")
-    req = Net::HTTP::Post.new(uri)
+#    Parallel.each( data.each_slice(4), in_threads: 64 ) do |data|
+      begin
+        uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_bulk")
+        req = Net::HTTP::Post.new(uri)
+        body = ""
+        data.each do |datum|
+          body += datum.to_json + "\n"
+        end
+        req.body = body
 
-    body = ""
-    data.each do |datum|
-      body += datum.to_json + "\n"
-    end
+        req["Content-Type"] = "application/x-ndjson"
 
-    req.body = body
-    run(uri, req)
+        run(uri, req)
+      rescue StandardError => e
+        id = data[0] && data[0][:index] && data[0][:index][:_id]
+        log.warn( e )
+        log.warn( "Failed to upload document #{id} with length #{body.length}" )
+        log.warn( "Falied document #{id} is not ginormous" ) if body.length < 100_000_000
+      end
+#    end
   end
 
   # Deletes a document from ElasticSearch
@@ -235,6 +245,7 @@ class Elastic
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_search?q=#{query_string}&sort=#{sort}")
       req = Net::HTTP::Post.new(uri)
     else
+      log.debug "Searching elastic search index #{index} for body #{query}"
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_search")
       req = Net::HTTP::Post.new(uri)
       req.body = query.to_json
@@ -244,7 +255,7 @@ class Elastic
   end
 
   # Uploads an attachment to the index to be processed by a specific
-  # pipeline.
+  # pipeline and updates the full document.
   #
   #   - index: Index to which the attachment should be stored.
   #   - id: id of the document to which the attachment will be stored.
@@ -257,6 +268,14 @@ class Elastic
   #
   # TODO: Describe the format of the document's body.
   def upload_attachment index, id, pipeline, document
+    document_for_reporting = document.clone
+    document_for_reporting["data"] = document_for_reporting["data"] ? "[...#{document_for_reporting["data"].length} characters long]" : "none"
+
+    es_uri = "http://#{@host}:#{@port_s}/#{index}/_doc/#{id}?pipeline=#{pipeline}"
+
+    log.debug("Uploading attachment through call: #{es_uri}")
+    log.debug("Uploading approximate body: #{document_for_reporting}")
+
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}?pipeline=#{pipeline}")
     req = Net::HTTP::Put.new(uri)
     req.body = document.to_json
@@ -308,9 +327,11 @@ class Elastic
   # TODO: why do we have a sort here?
   def count index:, query_string: nil, query: nil, sort: nil
     if query_string
+      log.debug "Counting query on #{index}, being #{query_string}"
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count?q=#{query_string}&sort=#{sort}")
       req = Net::HTTP::Get.new(uri)
     else
+      log.debug "Counting query on #{index}, with body #{query}"
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count")
       req = Net::HTTP::Get.new(uri)
       req.body = query.to_json

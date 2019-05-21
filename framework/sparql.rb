@@ -20,7 +20,7 @@ end
 def authorized_query query_string, allowed_groups
   allowed_groups_object = allowed_groups.map { |group| group }.to_json
 
-  log.info "Authorized query with allowed groups object #{allowed_groups_object}"
+  log.debug "Authorized query with allowed groups object #{allowed_groups_object}"
 
   options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object } }
 
@@ -65,7 +65,7 @@ def count_documents rdf_type, allowed_groups = nil
       }
 SPARQL
 
-  log.info "Counting documents for #{allowed_groups}"
+  log.debug "Counting documents for #{allowed_groups}"
 
   query_result =
     if allowed_groups
@@ -232,7 +232,7 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
       request_authorized_query make_property_query(uuid, uri, properties)
     end
 
-  log.info "Found document properties to index #{query_result}"
+  log.debug "Found document properties to index #{query_result}"
 
   result = query_result.first
   pipeline = false
@@ -253,7 +253,7 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
                 [key, contents]
               end
             rescue Errno::ENOENT, IOError => e
-              log.info "Error reading \"/data/#{file_path}\": #{e.inspect}"
+              log.warn "Error reading \"/data/#{file_path}\": #{e.inspect}"
               [key, nil]
             end
           else

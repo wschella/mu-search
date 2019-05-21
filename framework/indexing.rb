@@ -47,7 +47,7 @@ end
 #
 # TODO: Optimize this code so indexing can use more than 8 cores.
 def index_documents client, type, index, allowed_groups = nil
-  log.info "Allowed groups in index #{allowed_groups}"
+  log.debug "Allowed groups in index #{allowed_groups}"
 
   count_list = [] # for reporting
 
@@ -90,7 +90,7 @@ def index_documents client, type, index, allowed_groups = nil
     } LIMIT #{settings.batch_size} OFFSET #{offset}
 SPARQL
 
-      # log.info "selecting documents for batch #{i}"
+      log.debug "selecting documents for batch #{i}"
 
       query_result =
         if allowed_groups
@@ -99,7 +99,7 @@ SPARQL
           request_authorized_query q
         end
 
-      # log.info "Discovered identifiers for this batch: #{query_result}"
+      log.debug "Discovered identifiers for this batch: #{query_result}"
 
       # Parallel.each( query_result, in_threads: 16 ) do |result|
       # query_result.each do |result|
@@ -107,12 +107,12 @@ SPARQL
         # fork do
           uuid = result[:id].to_s
 
-          # log.info "Fetching document for uuid #{uuid}"
+          log.debug "Fetching document for uuid #{uuid}"
 
           begin
             document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
 
-            # log.info "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
+            log.debug "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
 
             if attachment_pipeline
               data.push({ index: { _id: uuid , pipeline: "attachment" } })
@@ -122,7 +122,7 @@ SPARQL
               data.push document
             end
           rescue StandardError => e
-            log.info "Failed to fetch document or upload it or somesuch.  ID #{uuid} error #{e.inspect}"
+            log.warn "Failed to fetch document or upload it or somesuch.  ID #{uuid} error #{e.inspect}"
           end
         # end
       end

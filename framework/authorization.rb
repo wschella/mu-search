@@ -160,6 +160,7 @@ class Indexes
   # service.  [Note that used_groups are currently NOT used in
   # lookup...  maybe a confusion in the specs?]
   def find_matching_index type, allowed_groups, used_groups
+    log.debug "FIND_MATCHING_INDEX for type #{type} and allowed_groups #{allowed_groups}"
     index = @indexes[type] && @indexes[type][allowed_groups]
     index
   end
@@ -383,12 +384,17 @@ end
 def get_request_indexes_raw type
   allowed_groups, used_groups = get_request_groups
 
+  log.debug "GET_REQUEST_INDEXES allowed_groups #{allowed_groups}"
+  log.debug "GET_REQUEST_INDEXES used_groups #{used_groups}"
+
   if settings.additive_indexes
+    log.debug "GET_REQUEST_INDEXES assumes additive indexes"
     indexes = allowed_groups.map do |group|
       Indexes.instance.find_matching_index type, [group], used_groups
     end
     indexes.select { |x| x }
   else
+    log.debug "GET_REQUEST_INDEXES assumes non-additive indexes"
     index = Indexes.instance.find_matching_index(type, allowed_groups, used_groups)
     if index then [index] else [] end
   end
@@ -402,6 +408,7 @@ end
 
 
 def get_matching_index type, allowed_groups, used_groups
+  log.debug "Searching matching indexes for type #{type} with allowed groups #{allowed_groups}"
   index = Indexes.instance.find_matching_index(type, allowed_groups, used_groups)
   if index then index[:index] else nil end
 end
@@ -547,7 +554,7 @@ def create_index_full client, type, allowed_groups, used_groups
     begin
       client.create_index index, settings.type_definitions[type]["mappings"]
     rescue StandardError => e
-      log.info "Error (create_index): #{e.inspect}"
+      log.warn "Error (create_index): #{e.inspect}"
       raise "Error creating index: #{index}"
     end
 
@@ -587,11 +594,16 @@ def get_indexes_safe client, type
   # experimentation, this code itself seems correct...
 
   def sync client, type
+    log.debug "GET_INDEXES_SAFE: sync type #{type}"
+
     settings.master_mutex.synchronize do
       # yield all available indexes
       indexes = get_request_indexes_raw type
 
+      log.debug "GET_INDEXES_SAFE: sync indexes #{indexes}"
       if indexes.all?
+        log.debug "GET_INDEXES_SAFE: sync get all indexes"
+
         update_statuses = indexes.map do |index|
           index_name = index[:index]
           if Indexes.instance.status(index_name) == :invalid
@@ -604,6 +616,8 @@ def get_indexes_safe client, type
 
         return indexes, update_statuses
       else
+        log.debug "GET_INDEXES_SAFE: sync did not get all indexes"
+
         indexes = create_request_indexes client, type
 
         update_statuses = indexes.map do |index|
@@ -627,6 +641,10 @@ def get_indexes_safe client, type
 
   indexes, update_statuses = sync client, type
 
+  log.debug "GET_INDEXES_SAFE Sync gave indexes #{indexes}"
+  log.debug "GET_INDEXES_SAFE Sync gave statuses #{update_statuses}"
+
+
   indexes.zip(update_statuses).each do |index, update_index|
     unless index.is_a? String # Hack! see above
       index_name = index[:index]
@@ -645,13 +663,16 @@ def get_indexes_safe client, type
     end
   end
 
-  indexes.map do |index|
+  resulting_indexes = indexes.map do |index|
     if index.is_a? String # hack
       index
     else
-      index[:index] 
+      index[:index]
     end
   end
+
+  log.debug "GET_INDEXES_SAFE yields indexes #{resulting_indexes}"
+  resulting_indexes
 end
 
 
@@ -664,9 +685,9 @@ end
 # retrieve them and load them in the internal model.  From there on
 # they can be used to search on or to update.
 def load_indexes type
-    indexes = {}
+  indexes = {}
 
-    query_result = direct_query  <<SPARQL
+  query_result = direct_query  <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
@@ -676,37 +697,37 @@ def load_indexes type
   }
 SPARQL
 
-    query_result.each do |result|
-      uri = result["index"].to_s
-      allowed_groups_result = direct_query  <<SPARQL
+  query_result.each do |result|
+    uri = result["index"].to_s
+    allowed_groups_result = direct_query  <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group
     }
   }
 SPARQL
-      allowed_groups = allowed_groups_result.map { |g| JSON.parse g["group"].to_s }
+    allowed_groups = allowed_groups_result.map { |g| JSON.parse g["group"].to_s }
 
-      used_groups_result = direct_query  <<SPARQL
+    used_groups_result = direct_query  <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> ?group
     }
   }
 SPARQL
-      used_groups = used_groups_result.map { |g| JSON.parse g["group"].to_s }
+    used_groups = used_groups_result.map { |g| JSON.parse g["group"].to_s }
 
-      index_name = result["index_name"].to_s
+    index_name = result["index_name"].to_s
 
-      indexes[allowed_groups] = {
-        uri: uri,
-        index: index_name,
-        allowed_groups: allowed_groups,
-        used_groups: used_groups
-      }
+    indexes[allowed_groups] = {
+      uri: uri,
+      index: index_name,
+      allowed_groups: allowed_groups,
+      used_groups: used_groups
+    }
 
-      Indexes.instance.new_mutex index_name
-    end
-
-    indexes
+    Indexes.instance.new_mutex index_name
   end
+
+  indexes
+end
