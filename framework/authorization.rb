@@ -566,7 +566,11 @@ end
 
 def create_index client, type, allowed_groups, used_groups
   index = create_index_full client, type, allowed_groups, used_groups
-  index and index.is_a?(Hash) and index.key?(:index)
+  if index and index.is_a?(Hash) and index.key?(:index)
+    index[:index]
+  else
+    index
+  end
 end
 
 
