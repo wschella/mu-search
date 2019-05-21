@@ -337,6 +337,11 @@ get "/:path/search" do |path|
 
   log.debug "SEARCH Found indexes #{indexes}"
 
+  # TOOD: Not sure how this could ever be empty.  We should at least
+  # be able to build some indexes if we have received some groups.
+  # This is a method of last resort which currently does the job.
+  return [].to_json if indexes.length == 0
+
   index_string = indexes.join(',')
 
   log.debug "SEARCH Searching index(es): #{index_string}"
