@@ -257,22 +257,22 @@ post "/:path/index" do |path|
   # and return values.
   def sync client, type
     settings.master_mutex.synchronize do
-      indexes = get_request_indexes type
+      index_names = get_request_indexes type
 
-      unless indexes
+      unless !index_names.empty?
         indexes = create_request_indexes client, type
+        index_names = indexes.map { |index| index[:index] }
       end
 
-      indexes.each do |index|
+      index_names.each do |index|
         Indexes.instance.set_status index, :updating
       end
 
-      return indexes
+      return index_names
     end
   end
 
-  # yes, rename this please
-  def go client, index, type, allowed_groups = nil
+  def index_index client, index, type, allowed_groups = nil
     Indexes.instance.mutex(index).synchronize do
       clear_index client, index
       report = index_documents client, type, index, allowed_groups
@@ -287,14 +287,14 @@ post "/:path/index" do |path|
         Indexes.instance.types.map do |type|
           indexes = sync client, type
           indexes.each do |index|
-            go client, index, type
+            index_index client, index[:index], type
           end
         end
       else
         type = get_type_from_path path
         indexes = sync client, type
         indexes.each do |index|
-          go client, index, type
+          index_index client, index, type
         end
       end
     else
@@ -302,7 +302,7 @@ post "/:path/index" do |path|
         report =
           Indexes.instance.indexes.map do |type, indexes|
           indexes.map do |groups, index|
-            go client, index[:index], type, groups
+            index_index client, index[:index], type, groups
           end
         end
         report.reduce([], :concat)
@@ -310,7 +310,7 @@ post "/:path/index" do |path|
         type = get_type_from_path path
         if Indexes.instance.get_indexes(type)
           Indexes.instance.get_indexes(type).map do |groups, index|
-            go client, index[:index], type, groups
+            index_index client, index[:index], type, groups
           end
         end
       end
