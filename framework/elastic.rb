@@ -72,17 +72,17 @@ class Elastic
   # Creates an index in the elasticSearch instance..
   #
   #   - index: Index to be created
-  #   - mappings: currently not used
+  #   - mappings: Optional pre-defined document mappings for the index,
+  #     JSON object passed directly to Elasticsearch.
   #
   # TODO: the settings for creating the index have been hardwired for
   # now.  We should move them to the configuration.
-  #
-  # TODO: describe and add support for the mappings argument
   def create_index index, mappings = nil
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Put.new(uri)
 
     req.body = {
+      mappings: { _doc: mappings },
       settings: {
         analysis: {
           analyzer: {
@@ -249,7 +249,7 @@ class Elastic
       log.debug "Searching elastic search index #{index} for body #{query}"
       uri = URI("http://#{@host}:#{@port_s}/#{index}/_search")
       req = Net::HTTP::Post.new(uri)
-      req.body = query.to_json
+      req.body = query.is_a?(String) ? query : query.to_json
     end
 
     run(uri, req)
