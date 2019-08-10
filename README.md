@@ -459,6 +459,9 @@ Pagination is specified with `page[number]` and `page[size]`:
 
 Re-index all documents of type `type`. If the request is sent with authorization headers, only the authorized indexes are re-indexed. Otherwise, all pertaining indexes are triggered.
 
+### DELETE `/:type/delete`
+
+Delete index(es) of type `type`. If the request is sent with authorization headers, only the authorized indexes are deleted. Otherwise, all pertaining indexes are deleted.
 
 
 
