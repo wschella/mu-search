@@ -606,7 +606,7 @@ def get_indexes_safe client, type
       indexes = get_request_indexes_raw type
 
       log.debug "GET_INDEXES_SAFE: sync indexes #{indexes}"
-      if indexes.all?
+      if indexes.all? and !indexes.empty?
         log.debug "GET_INDEXES_SAFE: sync get all indexes"
 
         update_statuses = indexes.map do |index|
