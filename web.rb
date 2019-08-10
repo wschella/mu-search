@@ -200,7 +200,7 @@ end
 
 # Deletes the indexes for :path requiring them to be fully recreated
 # the next time we make a search.
-delete "/:path" do |path|
+delete "/:path/delete" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
@@ -265,7 +265,7 @@ post "/:path/index" do |path|
         Indexes.instance.set_status index, :updating
       end
 
-      return indexes.map { |index| index[:index] }
+      return indexes
     end
   end
 
@@ -283,13 +283,17 @@ post "/:path/index" do |path|
     if !allowed_groups.empty?
       if path == '_all'
         Indexes.instance.types.map do |type|
-          index = sync client, type
-          go client, index, type
+          indexes = sync client, type
+          indexes.each do |index|
+            go client, index, type
+          end
         end
       else
         type = get_type_from_path path
-        index = sync client, type
-        go client, index, type
+        indexes = sync client, type
+        indexes.each do |index|
+          go client, index, type
+        end
       end
     else
       if path == '_all'
@@ -403,15 +407,18 @@ post "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
+  indexes = get_indexes_safe client, type
 
-  index = get_index_safe client, type
+  return [].to_json if indexes.length == 0
+
+  index_string = indexes.join(',')
 
   es_query = @json_body
 
   count_query = es_query.clone
   count_query.delete("from")
   count_query.delete("size")
-  count_result = JSON.parse(client.count index: index, query: es_query)
+  count_result = JSON.parse(client.count index: index_string, query: es_query)
   count = count_result["count"]
 
   format_results(type, count, 0, 10, client.search(index: index, query: es_query)).to_json
