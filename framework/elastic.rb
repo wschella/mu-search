@@ -74,25 +74,13 @@ class Elastic
   #   - index: Index to be created
   #   - mappings: Optional pre-defined document mappings for the index,
   #     JSON object passed directly to Elasticsearch.
-  #
-  # TODO: the settings for creating the index have been hardwired for
-  # now.  We should move them to the configuration.
-  def create_index index, mappings = nil
+  #   - settings: Optional JSON object passed directly to Elasticsearch
+  def create_index index, mappings = nil, settings = nil
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Put.new(uri)
-
     req.body = {
-      mappings: { _doc: mappings },
-      settings: {
-        analysis: {
-          analyzer: {
-            dutchanalyzer: {
-              tokenizer: "standard",
-              filter: ["lowercase", "dutchstemmer"] } },
-          filter: {
-            dutchstemmer: {
-              type: "stemmer",
-              name: "dutch" } } } }
+      mappings: mappings,
+      settings: settings
     }.to_json
 
     result = run(uri, req)

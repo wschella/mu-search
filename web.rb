@@ -50,6 +50,8 @@ def configure_settings client, is_reload = nil
 
   set :additive_indexes, ENV['ADDITIVE_INDEXES'] || configuration["additive_indexes"]
 
+  set :default_index_settings, configuration["default_settings"]
+
   set :common_terms_cutoff_frequency, (ENV['COMMON_TERMS_CUTOFF_FREQUENCY'] || configuration["common_terms_cutoff_frequency"] || 0.001)
 
   set :automatic_index_updates,

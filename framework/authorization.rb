@@ -553,7 +553,7 @@ def create_index_full client, type, allowed_groups, used_groups
     Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
 
     begin
-      client.create_index index, settings.type_definitions[type]["mappings"]
+      client.create_index index, settings.type_definitions[type]["mappings"], (settings.type_definitions[type]["settings"] || settings.default_index_settings)
     rescue StandardError => e
       log.warn "Error (create_index): #{e.inspect}"
       raise "Error creating index: #{index}"
