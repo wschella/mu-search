@@ -8,6 +8,16 @@
     "attachments_path_base" : "/local/files/directory",
     "persist_indexes" : false,
     "additive_indexes" : true,
+    "default_settings" : {
+        "analysis": {
+          "analyzer": {
+            "dutchanalyzer": {
+              "tokenizer": "standard",
+              "filter": ["lowercase", "dutchstemmer"] } },
+          "filter": {
+            "dutchstemmer": {
+              "type": "stemmer",
+              "name": "dutch" } } } },
     "types": [
         {
             "type": "document",

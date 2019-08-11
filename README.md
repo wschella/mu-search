@@ -11,6 +11,7 @@ A component to integrate authorization-aware search via Elasticsearch into the m
   - [Property Paths](#property-paths)
   - [Nested Objects](#nested-objects)
   - [Multi-types](#multi-types)
+  - [Elasticsearch Settings](#elasticsearch-settings)
   - [Elasticsearch Mappings](#elasticsearch-mappings)
 - [Index Lifecycle](#index-lifecycle)
   - [Persistent Indexes](#persistent-indexes)
@@ -180,6 +181,45 @@ A multi-type is defined by a list of its constituent simple types, and a set of 
                 }
             ]
         }
+```
+
+### Elasticsearch Settings
+
+Elasticsearch index settings can optionally be specified for the whole domain, and overridden on a per-type basis. To specify settings for all indexes, use `default_settings`:
+
+```
+  "types" : [...],
+  "default_settings" : {
+        "analysis": {
+          "analyzer": {
+            "dutchanalyzer": {
+              "tokenizer": "standard",
+              "filter": ["lowercase", "dutchstemmer"] } },
+          "filter": {
+            "dutchstemmer": {
+              "type": "stemmer",
+              "name": "dutch" } } } }
+```
+
+To specify them for a single type, use `settings`:
+
+```
+  "types": [
+    {
+      "type": "agendaitems"
+      ...
+      "settings" : {
+        "analysis": {
+          "analyzer": {
+            "dutchanalyzer": {
+              "tokenizer": "standard",
+              "filter": ["lowercase", "dutchstemmer"] } },
+          "filter": {
+            "dutchstemmer": {
+              "type": "stemmer",
+              "name": "dutch" } } } }
+    }
+    ...
 ```
 
 ### Elasticsearch Mappings
