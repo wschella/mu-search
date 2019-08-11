@@ -203,7 +203,7 @@ def make_property_query uuid, uri, properties
   property_predicates_s = property_predicates.join(" ")
 
   <<SPARQL
-    SELECT #{select_variables_s} WHERE {
+    SELECT DISTINCT #{select_variables_s} WHERE {
      #{id_line}
      #{property_predicates_s}
     }
