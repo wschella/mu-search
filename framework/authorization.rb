@@ -202,10 +202,19 @@ end
 #
 #   - client: ElasticSearch client
 #   - index: Index which is to be removed
-def destroy_index client, index
+def destroy_index client, index, type, groups
   if client.index_exists index
     log.info "Deleting index: #{index}"
     client.delete_index index
+  end
+
+  if settings.additive_indexes
+    log.debug "DESTROY_INDEX assumes additive indexes"
+    indexes = groups.map do |group|
+      Indexes.instance.indexes[type].delete [group]
+    end
+  else
+    Indexes.instance.indexes[type].delete groups
   end
 
   Indexes.instance.delete_status index
@@ -224,8 +233,7 @@ end
 def destroy_existing_indexes client
   Indexes.instance.indexes.map do |type, indexes|
     indexes.map do |groups, index|
-      destroy_index client, index[:index]
-      Indexes.instance.indexes[type].delete groups
+      destroy_index client, index[:index], type, groups
       index[:index]
     end
   end.flatten
@@ -245,9 +253,8 @@ end
 def destroy_authorized_indexes client, allowed_groups, used_groups
   Indexes.instance.indexes.map do |type, indexes|
     index = indexes[allowed_groups]
-    Indexes.instance.indexes[type].delete allowed_groups
     if index
-      destroy_index client, index[:index]
+      destroy_index client, index[:index], type, groups
       index[:index]
     end
   end
@@ -403,7 +410,7 @@ end
 
 
 def get_request_indexes type
-  indexes = get_request_indexes_raw(type)
+  indexes = get_request_indexes_raw type
   indexes and indexes.map { |index| index[:index] }
 end
 
@@ -537,23 +544,32 @@ end
 def create_index_full client, type, allowed_groups, used_groups
   index = Digest::MD5.hexdigest (type + "-" + allowed_groups.map { |g| g.to_json }.join("-"))
 
-  if client.index_exists index
-    log.info "Index not created, already exists: #{index}"
-    index
-  else
-    uri =  store_index type, index, allowed_groups, used_groups
+  uri =  store_index type, index, allowed_groups, used_groups
 
-    index_definition =   {
-      index: index,
-      uri: uri,
-      allowed_groups: allowed_groups,
-      used_groups: used_groups
-    }
+  index_definition =   {
+    index: index,
+    uri: uri,
+    allowed_groups: allowed_groups,
+    used_groups: used_groups
+  }
 
     Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
 
+  if client.index_exists index
+    log.info "Index not created, already exists: #{index}"
+    return index_definition
+  else
+    mappings = settings.type_definitions[type]["mappings"]
+    index_settings = settings.type_definitions[type]["settings"] || settings.default_index_settings
+
+    unless mappings
+      mappings = { "properties" => {} }
+    end
+
+    mappings["properties"]["uuid"] = { type: "keyword" }
+
     begin
-      client.create_index index, settings.type_definitions[type]["mappings"], (settings.type_definitions[type]["settings"] || settings.default_index_settings)
+      client.create_index index, mappings, index_settings
     rescue StandardError => e
       log.warn "Error (create_index): #{e.inspect}"
       raise "Error creating index: #{index}"

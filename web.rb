@@ -224,8 +224,7 @@ delete "/:path/delete" do |path|
         type = get_type_from_path path
 
         indexes_deleted = Indexes.instance.get_indexes(type).map do |groups, index|
-          destroy_index client, index[:index]
-          Indexes.instance.indexes[type].delete(groups)
+          destroy_index client, index[:index], groups
           index[:index]
         end
 
@@ -235,8 +234,7 @@ delete "/:path/delete" do |path|
 
         indexes.each do |index|
           Indexes.instance.mutex(index).synchronize do
-            destroy_index client, index
-            Indexes.instance.indexes[type].delete(allowed_groups)
+            destroy_index client, index, type, allowed_groups
           end
         end
 
@@ -287,7 +285,7 @@ post "/:path/index" do |path|
         Indexes.instance.types.map do |type|
           indexes = sync client, type
           indexes.each do |index|
-            index_index client, index[:index], type
+            index_index client, index, type
           end
         end
       else
@@ -375,6 +373,10 @@ get "/:path/search" do |path|
 
   es_query["from"] = page * size
   es_query["size"] = size
+
+  if params["collapse_uuids"] == "t"
+    es_query["collapse"] = { field: "uuid" }
+  end
 
   # hard-coded example
   # question: how to specify which fields are included/excluded?

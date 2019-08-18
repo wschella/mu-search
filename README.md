@@ -495,6 +495,14 @@ Pagination is specified with `page[number]` and `page[size]`:
 
     /documents/search?filter[name]=fish&page[number]=2&page[size]=20
 
+#### Removing Duplicate Results
+
+When querying multiple indexes with additive indexes, identical documents may be returned multiple times. Unique results can be assured using Elasticsearch's Field Collapsing, toggled using the `collapse_uuids` parameter:
+
+    /documents/search?filter[name]=fish&collapse_uuids=t
+
+Note that in the results, `count` still designates total non-unique results.
+
 ### POST `/:type/index`
 
 Re-index all documents of type `type`. If the request is sent with authorization headers, only the authorized indexes are re-indexed. Otherwise, all pertaining indexes are triggered.

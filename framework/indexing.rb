@@ -108,6 +108,8 @@ SPARQL
           begin
             document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
 
+            document["uuid"] = uuid
+
             log.debug "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
 
             if attachment_pipeline
