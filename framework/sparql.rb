@@ -178,10 +178,7 @@ end
 #     supplied.
 #   - properties: properties to be discovered, as an array of
 #     definitions supplied from the configuration.
-def make_property_query uuid, uri, properties
-  select_variables_s = ""
-  property_predicates = []
-
+def make_property_query uuid, uri, property_key, property_predicate
   id_line =
     if uuid
       "?doc <http://mu.semte.ch/vocabularies/core/uuid> \"#{uuid}\". "
@@ -191,21 +188,13 @@ def make_property_query uuid, uri, properties
 
   s = uuid ? "?doc" : "<#{uri}>"
 
-  properties.each do |key, predicate|
-    select_variables_s += " ?#{key} "
-
-    predicate = predicate.is_a?(Hash) ? predicate["via"] : predicate
-    predicate_s = make_predicate_string predicate
-
-    property_predicates.push " OPTIONAL { #{s} #{predicate_s} ?#{key} } "
-  end
-
-  property_predicates_s = property_predicates.join(" ")
+  predicate = property_predicate.is_a?(Hash) ? property_predicate["via"] : property_predicate
+  predicate_s = make_predicate_string predicate
 
   <<SPARQL
-    SELECT DISTINCT #{select_variables_s} WHERE {
+    SELECT DISTINCT ?#{property_key} WHERE {
      #{id_line}
-     #{property_predicates_s}
+     #{s} #{predicate_s} ?#{property_key}
     }
 SPARQL
 end
@@ -225,72 +214,90 @@ end
 #   - allowed_groups: Optional setting allowing to scope down the
 #     retrieved contents by specific access rights.
 def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups: nil
-  query_result =
-    if allowed_groups
-      authorized_query make_property_query(uuid, uri, properties), allowed_groups
+  def denumerate results
+    case results.length
+    when 0
+      nil
+    when 1
+      results.first
     else
-      request_authorized_query make_property_query(uuid, uri, properties)
+      results
     end
-
-  log.debug "Found document properties to index #{query_result}"
-
-  result = query_result.first
+  end  
+        
   pipeline = false
 
   document = Hash[
     properties.collect do |key, val|
+      results = 
+        if allowed_groups
+          authorized_query make_property_query(uuid, uri, key, val), allowed_groups
+        else
+          request_authorized_query make_property_query(uuid, uri, key, val)
+        end
+
       if val.is_a? Hash
         # file attachment
         if val["attachment_pipeline"]
-          file_path = result[key]
-          s = file_path.to_s
-          if file_path
-            file_path = file_path.to_s.sub("share://","")
-            pipeline = val["attachment_pipeline"]
-            begin
-              File.open("/data/#{file_path}", "rb") do |file|
-                contents = Base64.strict_encode64 file.read
-                [key, contents]
+          attachments = results.collect do |result|
+            file_path = result[key]
+            s = file_path.to_s
+            if file_path
+              file_path = file_path.to_s.sub("share://","")
+              pipeline = val["attachment_pipeline"]
+              begin
+                File.open("/data/#{file_path}", "rb") do |file|
+                  contents = Base64.strict_encode64 file.read
+                  contents
+                end
+              rescue Errno::ENOENT, IOError => e
+                log.warn "Error reading \"/data/#{file_path}\": #{e.inspect}"
+                nil
               end
-            rescue Errno::ENOENT, IOError => e
-              log.warn "Error reading \"/data/#{file_path}\": #{e.inspect}"
-              [key, nil]
+            else
+              nil
             end
-          else
-            [key, nil]
           end
+          [key, denumerate(attachments)]
         # nested object
         elsif val["rdf_type"]
-          link_uri = result[key]
-          if link_uri
-            linked_document, attachments = fetch_document_to_index uri: link_uri, properties: val['properties'], allowed_groups: allowed_groups
-            [key, linked_document]
-          else
-            [key, link_uri]
+          links = results.collect do |result|
+            link_uri = result[key]
+            if link_uri
+              linked_document, attachments = fetch_document_to_index uri: link_uri, properties: val['properties'], allowed_groups: allowed_groups
+              linked_document
+            else
+              link_uri
+            end
           end
+
+          [key, denumerate(links)]
         end
       else
-
-        case result[key]
-        when RDF::Literal::Integer
-          [key, result[key].to_i]
-        when RDF::Literal::Double
-          [key, result[key].to_f]
-        when RDF::Literal::Decimal
-          [key, result[key].to_f]
-        when RDF::Literal::Boolean
-          [key, result[key].to_s.downcase == 'true']
-        when RDF::Literal::Time
-          [key, result[key].to_s]
-        when RDF::Literal::Date
-          [key, result[key].to_s]
-        when RDF::Literal::DateTime
-          [key, result[key].to_s]
-        when RDF::Literal
-          [key, result[key].to_s]
-        else
-          [key, result[key].to_s]
+        values = results.collect do |result|
+          case result[key]
+          when RDF::Literal::Integer
+            result[key].to_i
+          when RDF::Literal::Double
+            result[key].to_f
+          when RDF::Literal::Decimal
+            result[key].to_f
+          when RDF::Literal::Boolean
+            result[key].to_s.downcase == 'true'
+          when RDF::Literal::Time
+            result[key].to_s
+          when RDF::Literal::Date
+            result[key].to_s
+          when RDF::Literal::DateTime
+            result[key].to_s
+          when RDF::Literal
+            result[key].to_s
+          else
+            result[key].to_s
+          end
         end
+
+        [key, denumerate(values)]
       end
     end
   ]
