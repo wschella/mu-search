@@ -529,5 +529,5 @@ Environment parameters can be set in the `config.json` file (lowercase) or Docke
 
 **eager_indexing_sparql_query** (`config.json` only) -- To be defined. 
 
-
+**enable_raw_dsl_endpoint** -- enables the raw Elasticsearch DSL endpoint. This endpoint is disabled by default for security concerns.
 

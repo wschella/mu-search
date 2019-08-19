@@ -50,6 +50,10 @@ def configure_settings client, is_reload = nil
 
   set :additive_indexes, ENV['ADDITIVE_INDEXES'] || configuration["additive_indexes"]
 
+  raw = ENV['ENABLE_RAW_DSL_ENDPOINT'] || configuration["enable_raw_dsl_endpoint"]
+
+  set :raw_dsl_endpoint, ['true','True','TRUE'].include?(raw)
+
   set :default_index_settings, configuration["default_settings"]
 
   set :common_terms_cutoff_frequency, (ENV['COMMON_TERMS_CUTOFF_FREQUENCY'] || configuration["common_terms_cutoff_frequency"] || 0.001)
@@ -407,27 +411,28 @@ end
 
 # Raw ES Query DSL
 # Need to think through several things, such as pagination
-post "/:path/search" do |path|
-  content_type 'application/json'
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = get_type_from_path path
-  indexes = get_indexes_safe client, type
+if settings.raw_dsl_endpoint
+  post "/:path/search" do |path|
+    content_type 'application/json'
+    client = Elastic.new(host: 'elasticsearch', port: 9200)
+    type = get_type_from_path path
+    indexes = get_indexes_safe client, type
 
-  return [].to_json if indexes.length == 0
+    return [].to_json if indexes.length == 0
 
-  index_string = indexes.join(',')
+    index_string = indexes.join(',')
 
-  es_query = @json_body
+    es_query = @json_body
 
-  count_query = es_query.clone
-  count_query.delete("from")
-  count_query.delete("size")
-  count_result = JSON.parse(client.count index: index_string, query: es_query)
-  count = count_result["count"]
+    count_query = es_query.clone
+    count_query.delete("from")
+    count_query.delete("size")
+    count_result = JSON.parse(client.count index: index_string, query: es_query)
+    count = count_result["count"]
 
-  format_results(type, count, 0, 10, client.search(index: index, query: es_query)).to_json
+    format_results(type, count, 0, 10, client.search(index: index_string, query: es_query)).to_json
+  end
 end
-
 
 # Processes an update from the delta system.  Consumes the genesis
 # delta format and invalidates the necessary indexes.
