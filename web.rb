@@ -113,16 +113,16 @@ def configure_settings client, is_reload = nil
     settings.master_mutex.synchronize do
       eager_indexing_groups.each do |groups|
         settings.type_definitions.keys.each do |type|
-          index = get_matching_index type, groups, groups
+          index = get_matching_index_name type, groups, []
+          index_name = (index and index[:index]) || create_index(client, type, groups, [])
 
-          unless settings.persist_indexes and index and client.index_exists index
-            log.info "Clearing index for type #{type}."
-            index = index || create_index(client, type, groups, groups)
-            clear_index client, index
-            index_documents client, type, index, groups
-            Indexes.instance.set_status index, :valid
+          unless settings.persist_indexes and index and client.index_exists index_name
+            log.info "Clearing index for type #{type} - #{index_name}."
+            clear_index client, index_name
+            index_documents client, type, index_name, groups
+            Indexes.instance.set_status index_name, :valid
           else
-            log.info "Using persisted index: #{index}"
+            log.info "Using persisted index: #{index_name}"
           end
         end
       end
@@ -170,7 +170,8 @@ post "/:path/invalidate" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
-  allowed_groups, used_groups = get_request_groups
+  allowed_groups = get_allowed_groups
+  used_groups = []
 
   if path == '_all'
     settings.master_mutex.synchronize do
@@ -190,9 +191,9 @@ post "/:path/invalidate" do |path|
           Indexes.instance.invalidate_all_by_type type
         { indexes: indexes_invalidated, status: "invalid" }.to_json
       else
-        indexes = get_request_indexes type
+        index_names = get_request_index_names type
 
-        indexes.each do |index|
+        index_names.each do |index|
           Indexes.instance.mutex(index).synchronize do
             Indexes.instance.set_status index, :invalid
           end
@@ -210,7 +211,8 @@ delete "/:path/delete" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
-  allowed_groups, used_groups = get_request_groups
+  allowed_groups = get_allowed_groups
+  used_groups = []
 
   if path == '_all'
     settings.master_mutex.synchronize do
@@ -234,15 +236,15 @@ delete "/:path/delete" do |path|
 
         { indexes: indexes_deleted, status: "deleted" }.to_json
       else
-        indexes = get_request_indexes type
+        index_names = get_request_index_names type
 
-        indexes.each do |index|
+        index_names.each do |index|
           Indexes.instance.mutex(index).synchronize do
             destroy_index client, index, type, allowed_groups
           end
         end
 
-        { indexes: indexes, status: "deleted" }.to_json
+        { indexes: index_names, status: "deleted" }.to_json
       end
     end
   end
@@ -253,13 +255,15 @@ end
 post "/:path/index" do |path|
   content_type 'application/json'
   client = Elastic.new host: 'elasticsearch', port: 9200
-  allowed_groups, used_groups = get_request_groups
+  allowed_groups = get_allowed_groups
+  used_groups = []
+
   # This method shouldn't be necessary...
   # something wrong with how I'm using synchronize
   # and return values.
   def sync client, type
     settings.master_mutex.synchronize do
-      index_names = get_request_indexes type
+      index_names = get_request_index_names type
 
       unless !index_names.empty?
         indexes = create_request_indexes client, type
@@ -287,22 +291,21 @@ post "/:path/index" do |path|
     if !allowed_groups.empty?
       if path == '_all'
         Indexes.instance.types.map do |type|
-          indexes = sync client, type
-          indexes.each do |index|
+          index_names = sync client, type
+          index_names.each do |index|
             index_index client, index, type
           end
         end
       else
         type = get_type_from_path path
-        indexes = sync client, type
-        indexes.each do |index|
+        index_names = sync client, type
+        index_names.each do |index|
           index_index client, index, type
         end
       end
     else
       if path == '_all'
-        report =
-          Indexes.instance.indexes.map do |type, indexes|
+        report = Indexes.instance.indexes.map do |type, indexes|
           indexes.map do |groups, index|
             index_index client, index[:index], type, groups
           end
@@ -341,16 +344,16 @@ get "/:path/search" do |path|
 
   log.debug "SEARCH Found type #{type}"
 
-  indexes = get_indexes_safe client, type
+  index_names = get_or_create_indexes client, type
 
-  log.debug "SEARCH Found indexes #{indexes}"
+  log.debug "SEARCH Found indexes #{index_names}"
 
   # TOOD: Not sure how this could ever be empty.  We should at least
   # be able to build some indexes if we have received some groups.
   # This is a method of last resort which currently does the job.
-  return [].to_json if indexes.length == 0
+  return [].to_json if index_names.length == 0
 
-  index_string = indexes.join(',')
+  index_string = index_names.join(',')
 
   log.debug "SEARCH Searching index(es): #{index_string}"
 
@@ -391,7 +394,7 @@ get "/:path/search" do |path|
 
   # while Indexes.instance.status index == :updating
 
-  while indexes.map { |index| Indexes.instance.status index == :updating }.any?
+  while index_names.map { |index| Indexes.instance.status index == :updating }.any?
     sleep 0.5
   end
 
@@ -416,11 +419,11 @@ if settings.raw_dsl_endpoint
     content_type 'application/json'
     client = Elastic.new(host: 'elasticsearch', port: 9200)
     type = get_type_from_path path
-    indexes = get_indexes_safe client, type
+    index_names = get_or_create_indexes client, type
 
-    return [].to_json if indexes.length == 0
+    return [].to_json if index_names.length == 0
 
-    index_string = indexes.join(',')
+    index_string = index_names.join(',')
 
     es_query = @json_body
 

@@ -166,6 +166,17 @@ class Indexes
     index
   end
 
+  # Looks up an index definition by name (hash).
+  def lookup_index_by_name index_name
+    @indexes.each do |type, indexes|
+      indexes.each do |allowed_groups, index|
+        if index[:index] == index_name
+          return index
+        end
+      end
+    end
+  end
+
 
   # Yields the mutex for the supplied index
   def mutex index
@@ -389,8 +400,9 @@ end
 # Also used in config, calling find_matching_index directly
 # Note that used_groups are currently NOT used in lookup...
 # maybe a confusion in the specs?
-def get_request_indexes_raw type
-  allowed_groups, used_groups = get_request_groups
+def get_request_indexes type
+  allowed_groups = get_allowed_groups
+  used_groups = []
 
   log.debug "GET_REQUEST_INDEXES allowed_groups #{allowed_groups}"
   log.debug "GET_REQUEST_INDEXES used_groups #{used_groups}"
@@ -409,15 +421,19 @@ def get_request_indexes_raw type
 end
 
 
-def get_request_indexes type
-  indexes = get_request_indexes_raw type
-  indexes and indexes.map { |index| index[:index] }
+def get_request_index_names type
+  indexes = get_request_indexes type
+  indexes ? indexes.map { |index| index[:index] } : []    
 end
 
 
-def get_matching_index type, allowed_groups, used_groups
+def get_matching_index_name type, allowed_groups, used_groups
   log.debug "Searching matching indexes for type #{type} with allowed groups #{allowed_groups}"
-  index = Indexes.instance.find_matching_index(type, allowed_groups, used_groups)
+  Indexes.instance.find_matching_index(type, allowed_groups, used_groups)
+end
+
+def get_matching_index type, allowed_groups, used_groups
+  index = get_matching_index type, allowed_groups, used_groups
   if index then index[:index] else nil end
 end
 
@@ -460,7 +476,8 @@ end
 #
 # TODO: The variables array is already a sorted array.  Sorting their
 # values may yield strange results.  It is likely better not to sort
-# them.
+# them. -- Really? Note that groups are used for lookup of indexes.
+# Sorting guaranties uniqueness.
 #
 # TODO: cope with dashes in the variables.  Perhaps we should escape
 # these characters in the variables so we don't have conflicts.
@@ -468,35 +485,13 @@ def sort_groups groups
   groups.sort_by { |g| g["name"] + "-" + g["variables"].sort.join("-") }
 end
 
-# Returns the allowed groups from the connection
-#
-# Searches for the allowed_groups in the connection and yields the
-# parsed allowed groups.
+# Returns the allowed_groups from the request
 def get_allowed_groups
-  allowed_groups = get_request_groups[0]
-
-  log.info "Found groups #{allowed_groups} in get_allowed_groups"
-
-  allowed_groups
-end
-
-# Returns the allowed_groups and used_groups from the request
-#
-# TODO: A request cannot have used_groups.  The used_groups come from
-# sending requests to the triplestore and checking which
-# allowed_groups were necessary for answering the specific request.
-# As such, we should merge this function with #get_allowed_groups and
-# update the code.
-def get_request_groups
   allowed_groups_s = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
   allowed_groups =
     allowed_groups_s ? JSON.parse(allowed_groups_s) : []
 
-  used_groups_s = request.env["HTTP_MU_AUTH_USED_GROUPS"]
-  used_groups = used_groups_s ? JSON.parse(used_groups_s) : []
-
-
-  return sort_groups(allowed_groups), sort_groups(used_groups)
+  return sort_groups(allowed_groups)
 end
 
 # Ensures indexes exist for the current request in the TripleStore in
@@ -512,7 +507,8 @@ end
 # ensure_indexes_for_request would be better.  Perhaps different base
 # constructs would remove the need for a function like this.
 def create_request_indexes client, type
-  allowed_groups, used_groups = get_request_groups
+  allowed_groups = get_allowed_groups
+  used_groups = []
 
   if settings.additive_indexes
     allowed_groups.map do |group|
@@ -553,7 +549,9 @@ def create_index_full client, type, allowed_groups, used_groups
     used_groups: used_groups
   }
 
-    Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
+  # Although index may exist in Elasticsearch, it may have been lost in the 
+  # triplestore and the Indexes singleton. Add it, just to be sure.
+  Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
 
   if client.index_exists index
     log.info "Index not created, already exists: #{index}"
@@ -579,19 +577,16 @@ def create_index_full client, type, allowed_groups, used_groups
   end
 end
 
-
+# Creates an index and returns the index's name.
 def create_index client, type, allowed_groups, used_groups
   index = create_index_full client, type, allowed_groups, used_groups
-  if index and index.is_a?(Hash) and index.key?(:index)
-    index[:index]
-  else
-    index
-  end
+  index[:index]
 end
 
 
 # Retrieves the indexes for the current request in a safe manner,
-# ensuring everything is up-to-date when this function returns.
+# ensuring everything exists and is up-to-date when this function 
+# returns.
 #
 #   - client: ElasticSearch instance used for storing the indexes.
 #   - type: Type of documents requested
@@ -610,20 +605,20 @@ end
 #
 # WARNING: a quick bug fix has introduced some naming ambiguity
 # between indexes and indexs_name(s)
-def get_indexes_safe client, type
+def get_or_create_indexes client, type
   # I doubt this takes care of additive indexes <-- this was from
   # experimentation, this code itself seems correct...
 
   def sync client, type
-    log.debug "GET_INDEXES_SAFE: sync type #{type}"
+    log.debug "GET_OR_CREATE_INDEXES: sync type #{type}"
 
     settings.master_mutex.synchronize do
       # yield all available indexes
-      indexes = get_request_indexes_raw type
+      indexes = get_request_indexes type
 
-      log.debug "GET_INDEXES_SAFE: sync indexes #{indexes}"
+      log.debug "GET_OR_CREATE_INDEXES: sync indexes #{indexes}"
       if indexes.all? and !indexes.empty?
-        log.debug "GET_INDEXES_SAFE: sync get all indexes"
+        log.debug "GET_OR_CREATE_INDEXES: sync get all indexes"
 
         update_statuses = indexes.map do |index|
           index_name = index[:index]
@@ -637,7 +632,7 @@ def get_indexes_safe client, type
 
         return indexes, update_statuses
       else
-        log.debug "GET_INDEXES_SAFE: sync did not get all indexes"
+        log.debug "GET_OR_CREATE_INDEXES: sync did not get all indexes"
 
         indexes = create_request_indexes client, type
 
@@ -662,9 +657,8 @@ def get_indexes_safe client, type
 
   indexes, update_statuses = sync client, type
 
-  log.debug "GET_INDEXES_SAFE Sync gave indexes #{indexes}"
-  log.debug "GET_INDEXES_SAFE Sync gave statuses #{update_statuses}"
-
+  log.debug "GET_OR_CREATE_INDEXES Sync gave indexes #{indexes}"
+  log.debug "GET_OR_CREATE_INDEXES Sync gave statuses #{update_statuses}"
 
   indexes.zip(update_statuses).each do |index, update_index|
     unless index.is_a? String # Hack! see above
@@ -692,7 +686,7 @@ def get_indexes_safe client, type
     end
   end
 
-  log.debug "GET_INDEXES_SAFE yields indexes #{resulting_indexes}"
+  log.debug "GET_OR_CREATE_INDEXES yields indexes #{resulting_indexes}"
   resulting_indexes
 end
 
