@@ -28,8 +28,10 @@ class Elastic
 
     case res
     when Net::HTTPSuccess, Net::HTTPRedirection
+      log.debug "Succeeded to run request #{uri}\n Request body: #{req.body}\n Response body: #{res.body}"
       res.body
     else
+      log.error "Failed to run request #{uri}\n Request body: #{req.body}\n Response body: #{res.body}"
       res.value
     end
   end
