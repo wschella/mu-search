@@ -28,8 +28,10 @@ class Elastic
 
     case res
     when Net::HTTPSuccess, Net::HTTPRedirection
+      log.debug "Succeeded to run request #{uri}\n Request body: #{req.body}\n Response body: #{res.body}"
       res.body
     else
+      log.error "Failed to run request #{uri}\n Request body: #{req.body}\n Response body: #{res.body}"
       res.value
     end
   end
@@ -185,7 +187,7 @@ class Elastic
         id = data[0] && data[0][:index] && data[0][:index][:_id]
         log.warn( e )
         log.warn( "Failed to upload document #{id} with length #{body.length}" )
-        log.warn( "Falied document #{id} is not ginormous" ) if body.length < 100_000_000
+        log.warn( "Failed document #{id} is not ginormous" ) if body.length < 100_000_000
       end
     end
   end
