@@ -185,7 +185,7 @@ class Elastic
         id = data[0] && data[0][:index] && data[0][:index][:_id]
         log.warn( e )
         log.warn( "Failed to upload document #{id} with length #{body.length}" )
-        log.warn( "Falied document #{id} is not ginormous" ) if body.length < 100_000_000
+        log.warn( "Failed document #{id} is not ginormous" ) if body.length < 100_000_000
       end
     end
   end
