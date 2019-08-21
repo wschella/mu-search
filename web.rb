@@ -81,7 +81,7 @@ def configure_settings client, is_reload = nil
     end
   end
   if !sparql_up
-    log.info "Waiting for Virtuoso"
+    log.info "Waiting for SPARQL endpoint"
     while !sparql_up do
       log.info "."
       sleep 1
