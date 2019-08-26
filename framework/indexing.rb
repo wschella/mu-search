@@ -41,11 +41,8 @@ end
 #   - allowed_groups: Groups used for querying the database
 #
 # Documents are indexed in batches, thereby lowering the load on
-# ElasticSearch.  Our experiments show that a multi-core system barely
-# receives load in this setup.  We suppose this can be solved by
-# running these requests in parallel but that's not clear.
+# ElasticSearch.
 #
-# TODO: Optimize this code so indexing can use more than 8 cores.
 def index_documents client, type, index, allowed_groups = nil
   log.debug "Allowed groups in index #{allowed_groups}"
 
@@ -61,7 +58,6 @@ def index_documents client, type, index, allowed_groups = nil
 
   type_defs.each do |type_def|
     rdf_type = type_def["rdf_type"]
-
     count = count_documents rdf_type, allowed_groups
     count_list.push({type: type_def["type"], count: count})
     properties = type_def["properties"]
@@ -100,29 +96,24 @@ SPARQL
 
       log.debug "Discovered identifiers for this batch: #{query_result}"
 
-       Parallel.each( query_result, in_threads: 32 ) do |result|
-          uuid = result[:id].to_s
-
-          log.debug "Fetching document for uuid #{uuid}"
-
-          begin
-            document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
-
-            document["uuid"] = uuid
-
-            log.debug "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
-
-            if attachment_pipeline
-              data.push({ index: { _id: uuid , pipeline: attachment_pipeline } }, document)
-            else
-              data.push({ index: { _id: uuid } }, document)
-            end
-          rescue StandardError => e
-            log.warn "Failed to fetch document or upload it or somesuch.  ID #{uuid} error #{e.inspect}"
+      number_of_threads = settings.batch_size > ENV['NUMBER_OF_THREADS'] ? ENV['NUMBER_OF_THREADS']: settings.batch_size
+      Parallel.each( query_result, in_threads: number_of_threads ) do |result|
+        uuid = result[:id].to_s
+        log.debug "Fetching document for uuid #{uuid}"
+        begin
+          document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
+          document["uuid"] = uuid
+          log.debug "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
+          if attachment_pipeline
+            data.push({ index: { _id: uuid , pipeline: attachment_pipeline } }, document)
+          else
+            data.push({ index: { _id: uuid } }, document)
           end
-        # end
+        rescue StandardError => e
+          log.warn "Failed to fetch document or upload it or somesuch.  ID #{uuid} error #{e.inspect}"
+        end
       end
-      # Process.waitall
+
       begin
         log.info "Bulk updating documents for batch #{i} - index #{index} - data #{data.length}"
         client.bulk_update_document index, data unless data.empty?
