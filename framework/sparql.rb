@@ -216,12 +216,9 @@ end
 def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups: nil
   def denumerate results
     case results.length
-    when 0
-      nil
-    when 1
-      results.first
-    else
-      results
+    when 0 then nil
+    when 1 then results.first
+    else results
     end
   end  
         

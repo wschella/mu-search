@@ -341,6 +341,7 @@ get "/:path/search" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
+  collapse_uuids = (params["collapse_uuids"] == "t")
 
   log.debug "SEARCH Found type #{type}"
 
@@ -381,8 +382,9 @@ get "/:path/search" do |path|
   es_query["from"] = page * size
   es_query["size"] = size
 
-  if params["collapse_uuids"] == "t"
+  if collapse_uuids
     es_query["collapse"] = { field: "uuid" }
+    es_query["aggs"] = { "type_count" => { "cardinality" => { "field" => "uuid" } } }
   end
 
   # hard-coded example
@@ -399,14 +401,22 @@ get "/:path/search" do |path|
   end
 
   log.debug "All indexes are up to date"
+  log.debug "Running ES query: #{es_query.to_json}"
 
-  count_result = JSON.parse(client.count index: index_string, query: count_query)
-  log.debug "Got #{count_result} results"
+  results = JSON.parse(client.search index: index_string, query: es_query)
 
-  count = count_result["count"]
-  results = client.search index: index_string, query: es_query
 
   log.debug "Got native results: #{results}"
+
+  count = 
+    if collapse_uuids
+      results["aggregations"]["type_count"]["value"]
+    else
+      count_result = JSON.parse(client.count index: index_string, query: count_query)
+      count_result["count"]
+    end
+
+  log.debug "Got #{count} results"
 
   format_results(type, count, page, size, results).to_json
 end

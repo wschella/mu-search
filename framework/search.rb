@@ -196,7 +196,7 @@ def format_results type, count, page, size, results
 
   {
     count: count,
-    data: JSON.parse(results)["hits"]["hits"].map do |result|
+    data: results["hits"]["hits"].map do |result|
       {
         type: type,
         id: result["_id"],
