@@ -62,7 +62,7 @@ end
 def attachment_field type, field
   properties = settings.type_definitions[type]["properties"]
   if properties[field].is_a? Hash and properties[field]["attachment_pipeline"]
-    "attachment.content"
+    ["attachment.content", "#{field}.attachment.content"]
   else
     field
   end
@@ -115,19 +115,17 @@ def construct_es_query_term type, field, val
     { multi_match: { query: val } }
   else
     flag, field = split_filter field
-    fields = split_fields field
+    fields = split_fields(field) || [field]
 
-    fields = fields ? fields.map { |f| attachment_field type, f } : nil
-    field = attachment_field type, field
+    fields = fields.map { |f| attachment_field type, f }.flatten
 
     if val.is_a? Hash
-      t = construct_es_query_path field, val
-      t
+      construct_es_query_path field, val
     elsif not flag
-      if fields
-        { multi_match: { query: val, fields: fields } }
+      if fields.length == 1
+        { match: { fields[0] => val } }
       else
-        { match: { field => val } }
+        { multi_match: { query: val, fields: fields } }
       end
     else
       case flag

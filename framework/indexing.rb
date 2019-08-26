@@ -113,7 +113,7 @@ SPARQL
             log.debug "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
 
             if attachment_pipeline
-              data.push({ index: { _id: uuid , pipeline: "attachment" } }, document)
+              data.push({ index: { _id: uuid , pipeline: attachment_pipeline } }, document)
             else
               data.push({ index: { _id: uuid } }, document)
             end

@@ -241,7 +241,6 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
             s = file_path.to_s
             if file_path
               file_path = file_path.to_s.sub("share://","")
-              pipeline = val["attachment_pipeline"]
               begin
                 File.open("/data/#{file_path}", "rb") do |file|
                   contents = Base64.strict_encode64 file.read
@@ -255,7 +254,17 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
               nil
             end
           end
-          [key, denumerate(attachments)]
+
+          case attachments.length
+          when 0 
+            [key, nil]
+          when 1
+            pipeline = val["attachment_pipeline"]
+            [key, attachments.first]
+          else
+            pipeline = "#{val["attachment_pipeline"]}_array"
+            [key, attachments.collect { |attachment| { data: Base64.strict_encode64(attachment) } }]
+          end
         # nested object
         elsif val["rdf_type"]
           links = results.collect do |result|

@@ -132,6 +132,8 @@ end
 
 # Configures the system and makes sure everything is up.  Heavily
 # relies on configure_settings.
+#
+# TODO: get attachment pipeline names from configuration
 configure do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
@@ -140,7 +142,10 @@ configure do
     sleep 1
   end
 
+  # hardcoded pipeline names (for now)
   client.create_attachment_pipeline "attachment", "data"
+  client.create_attachment_array_pipeline "attachment_array", "data"
+
   configure_settings client
 
   if settings.dev
@@ -389,7 +394,7 @@ get "/:path/search" do |path|
 
   # hard-coded example
   # question: how to specify which fields are included/excluded?
-  # or should we simply exclued all attachment fields?
+  # or should we simply exclude all attachment fields?
   es_query["_source"] = {
     excludes: ["data","attachment"]
   }

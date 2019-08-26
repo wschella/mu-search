@@ -303,6 +303,29 @@ class Elastic
     run(uri, req)
   end
 
+  # Creates a new attachment pipeline for arrays of attachments
+  def create_attachment_array_pipeline pipeline, field
+    uri = URI("http://#{@host}:#{@port_s}/_ingest/pipeline/#{pipeline}")
+    req = Net::HTTP::Put.new(uri)
+    req.body = {
+      description: "Extract attachment information from arrays",
+      processors: [
+        {
+          foreach: {
+            field: field,
+            processor: {
+              attachment: {
+                target_field: "_ingest._value.attachment",
+                field: "_ingest._value.data"
+              }
+            }
+          }
+        }
+      ]
+    }.to_json
+    run(uri,req)
+  end
+
   # Executes a count query for a particular string
   #
   # Arguments behave similarly to Elastic#search
