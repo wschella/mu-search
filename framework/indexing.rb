@@ -96,7 +96,7 @@ SPARQL
 
       log.debug "Discovered identifiers for this batch: #{query_result}"
 
-      number_of_threads = settings.batch_size > ENV['NUMBER_OF_THREADS'] ? ENV['NUMBER_OF_THREADS']: settings.batch_size
+      number_of_threads = settings.batch_size > ENV['NUMBER_OF_THREADS'].to_i ? ENV['NUMBER_OF_THREADS'].to_i: settings.batch_size
       Parallel.each( query_result, in_threads: number_of_threads ) do |result|
         uuid = result[:id].to_s
         log.debug "Fetching document for uuid #{uuid}"

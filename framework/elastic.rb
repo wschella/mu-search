@@ -170,7 +170,7 @@ class Elastic
   #   - data: An array of json/hashes, ordered according to
   # https://www.elastic.co/guide/en/elasticsearch/reference/6.4/docs-bulk.html
   def bulk_update_document index, data
-    Parallel.each( data.each_slice(4), in_threads: ENV['NUMBER_OF_THREADS'] ) do |data|
+    Parallel.each( data.each_slice(4), in_threads: ENV['NUMBER_OF_THREADS'].to_i ) do |data|
       begin
         uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_bulk")
         req = Net::HTTP::Post.new(uri)
