@@ -73,7 +73,8 @@ def index_documents client, type, index, allowed_groups = nil
 
     log.info "Number of batches: #{batches}"
 
-    (0..batches).each do |i|
+    Parallel.each( 0..batches, in_threads: 8 ) do |i|
+      # TODO: make this thread number configurable, was (0..batches).each do |i|
       batch_start_time = Time.now
       log.info "Indexing batch #{i} of #{count/settings.batch_size}"
       offset = i*settings.batch_size
