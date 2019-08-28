@@ -195,6 +195,7 @@ class Elastic
   # https://www.elastic.co/guide/en/elasticsearch/reference/6.4/docs-bulk.html
   def bulk_update_document index, data
     Parallel.each( data.each_slice(4), in_threads: ENV['NUMBER_OF_THREADS'].to_i ) do |slice|
+      # Hardcoded for slice of 4 elements, of which we need to combine 2
       enriched_slice = slice.map do |document|
         { doc: document, serialization: document.to_json }
       end
@@ -202,9 +203,9 @@ class Elastic
       nested_slice = []
 
       if enriched_slice.any? { |s| s[:serialization].length > 50_000_000 }
-        log.warn("Splitting bulk update document into separate requests because one document more than 50Mb")
+        log.debug("Splitting bulk update document into separate requests because one document more than 50Mb")
 
-        nested_slice = enriched_slice.map { |d| [d] }
+        nested_slice = enriched_slice.each_slice(2) { |slice| slice }
       else
         nested_slice = [enriched_slice]
       end
