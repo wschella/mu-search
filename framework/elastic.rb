@@ -224,6 +224,16 @@ class Elastic
           req["Content-Type"] = "application/x-ndjson"
 
           run(uri, req)
+        rescue SocketError => e
+          log.warn(e)
+          tries = 1
+          while ! up
+            log.info "Waiting for elastic search"
+            sleep tries
+            tries +=1
+          end
+          log.debug "Retrying request"
+          run(uri, req)
         rescue StandardError => e
           log.warn( "Failed to upload #{enriched_postable_slice.length} documents" )
 
