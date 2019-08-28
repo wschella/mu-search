@@ -69,7 +69,7 @@ def direct_query q, retries = 6
       log.warn "Could not execute raw query (attempt #{6 - next_retries}): #{q}"
       timeout = (6 - next_retries) ** 2
       sleep timeout
-      authorized_query query_string, allowed_groups, next_retries
+      direct_query query_string, next_retries
     end
   end
 end
