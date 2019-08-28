@@ -268,7 +268,7 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
               begin
                 filesize=File.size?("/data/#{file_path}")
                 if filesize > ENV['MAXIMUM_FILE_SIZE'].to_i
-                  raise "filesize #{filesize} is too large, not reading "
+                  raise "#{file_path} filesize #{filesize} is too large, not reading "
                 end
                 File.open("/data/#{file_path}", "rb") do |file|
                   contents = Base64.strict_encode64 file.read
