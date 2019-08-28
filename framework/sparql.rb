@@ -29,7 +29,7 @@ def authorized_query query_string, allowed_groups, retries = 6
 
     my_sparql_client.query query_string, options
   rescue
-    next_retries -= 1
+    next_retries = retries - 1
     if next_retries == 0
       raise
     else
@@ -58,11 +58,11 @@ end
 # TODO: this is now configured in the settings block.  It's not a
 # pretty way of handling this.  We should find a solid solution for
 # the mu-auth-sudo queries.
-def direct_query q, retries=6
+def direct_query q, retries = 6
   begin
     settings.db.query q
   rescue
-    next_retries -= 1
+    next_retries = retries - 1
     if next_retries == 0
       raise
     else
