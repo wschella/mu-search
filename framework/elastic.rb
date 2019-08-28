@@ -194,24 +194,45 @@ class Elastic
   #   - data: An array of json/hashes, ordered according to
   # https://www.elastic.co/guide/en/elasticsearch/reference/6.4/docs-bulk.html
   def bulk_update_document index, data
-    Parallel.each( data.each_slice(4), in_threads: ENV['NUMBER_OF_THREADS'].to_i ) do |data|
-      begin
-        uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_bulk")
-        req = Net::HTTP::Post.new(uri)
-        body = ""
-        data.each do |datum|
-          body += datum.to_json + "\n"
+    Parallel.each( data.each_slice(4), in_threads: ENV['NUMBER_OF_THREADS'].to_i ) do |slice|
+      enriched_slice = slice.map do |document|
+        { doc: document, serialization: document.to_json }
+      end
+
+      nested_slice = []
+
+      if enriched_slice.any? { |s| s[:serialization].length > 50_000_000 }
+        log.warn("Splitting bulk update document into separate requests because one document more than 50Mb")
+
+        nested_slice = enriched_slice.map { |d| [d] }
+      else
+        nested_slice = [enriched_slice]
+      end
+
+      nested_slice.each do |enriched_postable_slice|
+        begin
+          uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_bulk")
+          req = Net::HTTP::Post.new(uri)
+          body = ""
+          enriched_postable_slice.each do |enriched_document|
+            body += enriched_document[:serialization] + "\n"
+          end
+          req.body = body
+
+          req["Content-Type"] = "application/x-ndjson"
+
+          run(uri, req)
+        rescue StandardError => e
+          log.warn( "Failed to upload #{enriched_postable_slice.length} documents" )
+
+          ids = enriched_postable_slice.map do |enriched_document|
+            enriched_document && enriched_document[:index] && enriched_document[:index][:_id]
+          end
+
+          log.warn( e )
+          log.warn( "Failed to upload documents #{ids.join(", ")} with total length #{body.length}" )
+          log.warn( "Failed documents #{ids.join(", ")} are not ginormous" ) if body.length < 100_000_000
         end
-        req.body = body
-
-        req["Content-Type"] = "application/x-ndjson"
-
-        run(uri, req)
-      rescue StandardError => e
-        id = data[0] && data[0][:index] && data[0][:index][:_id]
-        log.warn( e )
-        log.warn( "Failed to upload document #{id} with length #{body.length}" )
-        log.warn( "Failed document #{id} is not ginormous" ) if body.length < 100_000_000
       end
     end
   end
