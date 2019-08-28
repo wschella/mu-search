@@ -204,7 +204,9 @@ class Elastic
 
       if enriched_slice.any? { |s| s[:serialization].length > 50_000_000 }
         log.debug("Splitting bulk update document into separate requests because one document more than 50Mb")
-        nested_slice = enriched_slice.each_slice(2) { |slice| slice }
+        enriched_slice.each_slice(2) do |tuple|
+          nested_slice << tuple
+        end
       else
         nested_slice = [enriched_slice]
       end
