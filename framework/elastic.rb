@@ -230,7 +230,7 @@ class Elastic
           log.warn( "Failed to upload #{enriched_postable_slice.length} documents" )
 
           ids = enriched_postable_slice.map do |enriched_document|
-            enriched_document && enriched_document[:index] && enriched_document[:index][:_id]
+            enriched_document && enriched_document[:doc][:index] && enriched_document[:doc][:index][:_id]
           end
 
           log.warn( e )
