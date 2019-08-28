@@ -245,13 +245,13 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
     when 1 then results.first
     else results
     end
-  end  
-        
+  end
+
   pipeline = false
 
   document = Hash[
     properties.collect do |key, val|
-      results = 
+      results =
         if allowed_groups
           authorized_query make_property_query(uuid, uri, key, val), allowed_groups
         else
@@ -263,10 +263,13 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
         if val["attachment_pipeline"]
           attachments = results.collect do |result|
             file_path = result[key]
-            s = file_path.to_s
             if file_path
               file_path = file_path.to_s.sub("share://","")
               begin
+                filesize=File.size?("/data/#{file_path}")
+                if filesize > ENV['MAXIMUM_FILE_SIZE'].to_i
+                  raise "filesize #{filesize} is too large, not reading "
+                end
                 File.open("/data/#{file_path}", "rb") do |file|
                   contents = Base64.strict_encode64 file.read
                   contents
@@ -281,7 +284,7 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
           end
 
           case attachments.length
-          when 0 
+          when 0
             [key, nil]
           when 1
             pipeline = val["attachment_pipeline"]
