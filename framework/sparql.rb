@@ -17,15 +17,28 @@ end
 # TODO: This method creates a new SPARQL client because I didn't know
 # how to do this in a pretty manner.  We should provide some tooling
 # and share it as an addon for the users of the mu-ruby-template.
-def authorized_query query_string, allowed_groups
-  allowed_groups_object = allowed_groups.map { |group| group }.to_json
+def authorized_query query_string, allowed_groups, retries = 6
+  begin
+    allowed_groups_object = allowed_groups.map { |group| group }.to_json
 
-  log.debug "Authorized query with allowed groups object #{allowed_groups_object}"
+    log.debug "Authorized query with allowed groups object #{allowed_groups_object}"
 
-  options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object } }
+    options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object } }
 
-  my_sparql_client = SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], options)
-  my_sparql_client.query query_string, options
+    my_sparql_client = SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], options)
+
+    my_sparql_client.query query_string, options
+  rescue
+    next_retries -= 1
+    if next_retries == 0
+      raise
+    else
+      log.warn "Could not execute authorized query (attempt #{6 - next_retries}): #{query_string} \n #{allowed_groups}"
+      timeout = (6 - next_retries) ** 2
+      sleep timeout
+      authorized_query query_string, allowed_groups, next_retries
+    end
+  end
 end
 
 
@@ -45,8 +58,20 @@ end
 # TODO: this is now configured in the settings block.  It's not a
 # pretty way of handling this.  We should find a solid solution for
 # the mu-auth-sudo queries.
-def direct_query q
-  settings.db.query q
+def direct_query q, retries=6
+  begin
+    settings.db.query q
+  rescue
+    next_retries -= 1
+    if next_retries == 0
+      raise
+    else
+      log.warn "Could not execute raw query (attempt #{6 - next_retries}): #{q}"
+      timeout = (6 - next_retries) ** 2
+      sleep timeout
+      authorized_query query_string, allowed_groups, next_retries
+    end
+  end
 end
 
 # Executes a document count for documents of a particular type.
