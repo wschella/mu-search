@@ -31,7 +31,8 @@ class Elastic
       log.debug "Succeeded to run request #{uri}\n Request body: #{req.body}\n Response body: #{res.body}"
       res.body
     else
-      log.error "Failed to run request #{uri}\n Request body: #{req.body}\n Response body: #{res.body}"
+      log.error "Failed to run request #{uri}\n Response body: #{res.body}"
+      log.debug "Request body for #{uri} was: #{req.body}\n Response body: #{res.body}"
       res.value
     end
   end
