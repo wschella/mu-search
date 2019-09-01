@@ -53,10 +53,9 @@ class Elastic
     when Net::HTTPTooManyRequests
       run_rescue(uri, req, retries, res)
     else
-      result = res.kind_of?(String) ? res : res.body
       log.error "Failed to run request #{uri}\n Response: #{result}"
-      log.debug "Request body for #{uri} was: #{req.body}\n Response body: #{result}"
-      res.kind_of?(String) ? nil : res.value
+      log.debug "Request body for #{uri} was: #{req.body}\n Response body: #{result.inspect}"
+      result
     end
   end
 
@@ -373,9 +372,15 @@ class Elastic
             processor: {
               attachment: {
                 target_field: "_ingest._value.attachment",
-                field: "_ingest._value.data"
+                field: "_ingest._value.data",
+                indexed_chars: -1
               }
             }
+          }
+        },
+        {
+          remove: {
+            field: field
           }
         }
       ]
