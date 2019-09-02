@@ -78,7 +78,7 @@ def index_documents client, type, index, allowed_groups = nil
       batch_start_time = Time.now
       log.info "Indexing batch #{i} of #{count/settings.batch_size}"
       offset = i*settings.batch_size
-      data = Concurrent::Array.new
+
       q = <<SPARQL
     SELECT DISTINCT ?id WHERE {
       ?doc a <#{rdf_type}>;
@@ -99,6 +99,7 @@ SPARQL
 
       number_of_threads = settings.batch_size > ENV['NUMBER_OF_THREADS'].to_i ? ENV['NUMBER_OF_THREADS'].to_i: settings.batch_size
       Parallel.each( query_result, in_threads: number_of_threads ) do |result|
+        data = []
         uuid = result[:id].to_s
         log.debug "Fetching document for uuid #{uuid}"
         begin
@@ -110,23 +111,21 @@ SPARQL
           else
             data.push({ index: { _id: uuid } }, document)
           end
+
+          begin
+            client.bulk_update_document index, data unless data.empty?
+          rescue StandardError => e
+            log.warn e
+            ids_as_string =
+              data
+                .select { |d| d[:index] && d[:index][:_id] }
+                .map { |d| d[:index][:_id] }
+                .join( "," )
+            log.warn "Failed to ingest batch for ids #{ids_as_string}"
+          end
         rescue StandardError => e
           log.warn "Failed to fetch document or upload it or somesuch.  ID #{uuid} error #{e.inspect}"
         end
-      end
-
-      begin
-        log.info "Bulk updating documents for batch #{i} - index #{index} - data #{data.length}"
-        client.bulk_update_document index, data unless data.empty?
-        log.info "Bulk updated documents for batch #{i}"
-      rescue StandardError => e
-        log.warn e
-        ids_as_string =
-          data
-            .select { |d| d[:index] && d[:index][:_id] }
-            .map { |d| d[:index][:_id] }
-            .join( "," )
-        log.warn "Failed to ingest batch for ids #{ids_as_string}"
       end
 
       log.info "Processed batch in #{(Time.now - batch_start_time).round} seconds"
