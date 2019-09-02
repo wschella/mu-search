@@ -39,6 +39,7 @@ class Elastic
     end
 
     res = Net::HTTP.start(uri.hostname, uri.port) do |http|
+      http.read_timeout=ENV["ELASTIC_READ_TIMEOUT"].to_i
       begin
         http.request(req)
       rescue Exception => e
