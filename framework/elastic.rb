@@ -53,8 +53,8 @@ class Elastic
     when Net::HTTPTooManyRequests
       run_rescue(uri, req, retries, res)
     else
-      log.error "Failed to run request #{uri}\n Response: #{result}"
-      log.debug "Request body for #{uri} was: #{req.body}\n Response body: #{result.inspect}"
+      log.error "Failed to run request #{uri}\n Response: #{res}"
+      log.debug "Request body for #{uri} was: #{req.body}\n Response body: #{res.inspect}"
       result
     end
   end
