@@ -101,7 +101,7 @@ SPARQL
 
   documents_count = query_result.first["count"].to_i
 
-  puts "Found #{documents_count} documents for #{allowed_groups}."
+  logger.info "Found #{documents_count} documents for #{allowed_groups}."
 
   documents_count
 end
