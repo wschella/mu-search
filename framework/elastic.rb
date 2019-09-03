@@ -379,9 +379,12 @@ class Elastic
             }
           }
         },
-        {
-          remove: {
-            field: field
+        foreach: {
+          field: field,
+          processor: {
+            remove: {
+              field: "_ingest._value.data"
+            }
           }
         }
       ]
