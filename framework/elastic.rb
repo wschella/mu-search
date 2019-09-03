@@ -25,7 +25,7 @@ class Elastic
     def run_rescue(uri, req, retries, result = nil)
       if retries == 0
         log.error "Failed to run request #{uri}\n result: #{result.inspect}"
-        log.debug "Request body for #{uri} was: #{req.body}"
+        log.debug "Request body for #{uri} was: #{req.body.to_s[0...1024]}"
         if result.kind_of?(Exception)
           raise result
         end
@@ -49,14 +49,14 @@ class Elastic
 
     case res
     when Net::HTTPSuccess, Net::HTTPRedirection
-      log.debug "Succeeded to run request #{uri}\n Request body: #{req.body}\n Response body: #{res.body}"
+      log.debug "Succeeded to run request #{uri}\n Request body: #{req.body.to_s[0...1024]}\n Response body: #{res.body.to_s[0...1024]}"
       res.body
     when Net::HTTPTooManyRequests
       run_rescue(uri, req, retries, res)
     else
       log.error "Failed to run request #{uri}\n Response: #{res}"
       log.debug "Request body for #{uri} was: #{req.body}\n Response body: #{res.inspect}"
-      result
+      res
     end
   end
 
