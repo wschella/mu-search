@@ -7,7 +7,7 @@
 #
 # Yields two values: the modifier and the search property.
 def split_filter filter
-  match = /(?:\:)([^ ]+)(?::)(\w+)/.match(filter)
+  match = /(?:\:)([^ ]+)(?::)([\w,]*)/.match(filter)
   if match
     return match[1], match[2]
   else
@@ -15,24 +15,6 @@ def split_filter filter
   end
 end
 
-# Splits fields when multiple were given.
-#
-# It is possible to supply multiple fields in some queries.  They are
-# then split by a comma.  THis function splits the fields.
-#
-# TODO: I find it strange that this requires there to be more than one
-# field.  Perhaps I'm not interpreting this correctly.  I would assume
-# this to yield field.split(',') but it seems something else is
-# expected.  Perhaps the consuming code would better check on this
-# being more than one element long.
-def split_fields field
-  fields = field.split(',')
-  if fields.length > 1
-    fields
-  else
-    nil
-  end
-end
 
 # Converts the sort statement from the params into an ElasticSearch
 # sort statement.
@@ -59,7 +41,7 @@ end
 # TODO: This is named strangely.  Perhaps we should turn this into a
 # name that only indicates that we're translating the publicly visible
 # field name into the internal one.
-def attachment_field type, field
+def translate_attachment_field type, field
   properties = settings.type_definitions[type]["properties"]
   if properties[field].is_a? Hash and properties[field]["attachment_pipeline"]
     ["attachment.content", "#{field}.attachment.content"]
@@ -91,6 +73,19 @@ def construct_es_query type
   end
 end
 
+# Abstraction for coping with filters that require a single field to
+# be provided.
+#
+# name should be the name of your filter (for error output), fields
+# should be the parsed fields (nil or an array).
+def ensuring_single_field_for name, fields
+  if fields && fields.length == 1
+    yield fields.first
+  else
+    log.error("#{name} match works on exactly one field, received #{fields}")
+    { }
+  end
+end
 
 # Constructs an ElasticSearch query path for the given field and
 # value.
@@ -106,56 +101,83 @@ def construct_es_query_path field, val
   end
 end
 
+# Parses a filter argument as received by the construct_es_query_term
+# function and converts it into the correct fields as used by
+# elasticsearch.
+#
+# Emits flag (the thing between colons), and fields.  If no flag was
+# given, it will be nil, the same holds for zero fields.
+def parse_filter_argument( filter_argument, type )
+  flag, fields_string = split_filter filter_argument
+  fields_arr = fields_string
+                 .split( "," )
+                 .map { |field| translate_attachment_field( type, field ) }
+                 .flatten()
+  fields = fields_arr.length > 0 ? fields_arr : nil
+
+  return flag, fields
+end
+
 # Constructs an ElasticSearch query term
 #
 # TODO: I don't really grok what this means either in detail either.
 # I see things I recognize, but didn't connect the dots yet.
-def construct_es_query_term type, field, val
-  if field == '_all'
-    { multi_match: { query: val } }
-  else
-    flag, field = split_filter field
-    fields = split_fields(field) || [field]
+def construct_es_query_term type, filter_argument, val
+  flag, fields = parse_filter_argument( filter_argument, type )
 
-    fields = fields.map { |f| attachment_field type, f }.flatten
-
-    if val.is_a? Hash
-      construct_es_query_path field, val
-    elsif not flag
-      if fields.length == 1
-        { match: { fields[0] => val } }
-      else
-        { multi_match: { query: val, fields: fields } }
+  case flag
+  when nil
+    { multi_match:
+        { query: val, fields: fields == ['_all'] ? nil : fields }.compact
+    }
+  when 'fuzzy_phrase'
+    make_fuzzy_phrase_match fields, val
+  when 'fuzzy_match'
+    make_fuzzy_match fields, val
+  when 'term', 'fuzzy', 'prefix', 'wildcard', 'regexp'
+    ensuring_single_field_for 'term fuzzy prefix wildcard or regexp', fields do |field|
+      { flag => { field => val } }
+    end
+  when 'phrase', 'phrase_prefix'
+    ensuring_single_field_for 'phrase and phrase_prefix', fields do |field|
+      { 'match_' + flag => { field => val } }
+    end
+  when "terms"
+    ensuring_single_field_for 'terms', fields do |field|
+      { terms: { field => val.split(',') } }
+    end
+  when 'gte', 'lte', 'gt', 'lt'
+    ensuring_single_field_for 'gte lte gt and lt', fields do |field|
+      { range: { first_field => { flag => val } } }
+    end
+  when 'lte,gte', 'lt,gt', 'lt,gte', 'lte,gt'
+    ensuring_single_field_for 'range combinations', fields do |field|
+      flags = flag.split(',')
+      vals = val.split(',')
+      { range: { field => { flags[0] => vals[0], flags[1] => vals[1] } } }
+    end
+  when 'query'
+    ensuring_single_field_for 'query', fields do |field|
+      { query_string: { default_field: field, query: val } }
+    end
+  when 'sqs'
+    {
+      simple_query_string: {
+        query: val,
+        fields: fields,
+        default_operator: "and",
+        all_fields: fields ? nil : true
+      }.compact
+    }
+  when /common(,[0-9.]+){,2}/
+    ensuring_single_field_for 'common', fields do |field|
+      flag, cutoff, min_match = flag.split(',')
+      cutoff = cutoff or settings.common_terms_cutoff_frequency
+      term = { common: { field => { query: val, cutoff_frequency: cutoff } } }
+      if min_match
+        term['minimum_should_match'] = min_match
       end
-    else
-      case flag
-      when 'fuzzy_phrase'
-        make_fuzzy_phrase_match field, val
-      when 'fuzzy_match'
-        make_fuzzy_match field, val
-      when 'term', 'fuzzy', 'prefix', 'wildcard', 'regexp'
-        { flag => { field => val } }
-      when 'phrase', 'phrase_prefix'
-        { 'match_' + flag => { field => val } }
-      when "terms"
-        { terms: { field => val.split(',') } }
-      when 'gte', 'lte', 'gt', 'lt'
-        { range: { field => { flag => val } } }
-      when 'lte,gte', 'lt,gt', 'lt,gte', 'lte,gt'
-        flags = flag.split(',')
-        vals = val.split(',')
-        { range: { field => { flags[0] => vals[0], flags[1] => vals[1] } } }
-      when 'query'
-        { query_string: { default_field: field, query: val } }
-      when /common(,[0-9.]+){,2}/
-        flag, cutoff, min_match = flag.split(',')
-        cutoff = cutoff or settings.common_terms_cutoff_frequency
-        term = { common: { field => { query: val, cutoff_frequency: cutoff } } }
-        if min_match
-          term['minimum_should_match'] = min_match
-        end
-        term
-      end
+      term
     end
   end
 end
@@ -218,19 +240,26 @@ end
 # TODO: this type of search does not seem to work at the moment.  We
 # should verify how to get this running with our version of
 # ElasticSearch as it may be a common way of searching.
-def make_fuzzy_phrase_match field, value
-  { "in_order" => true,
-    "slop" => 2,
-    "span_near" => {
-      "clauses" => value.split(" ").map do |word|
-        { "span_multi" => {
-            "match" => {
-              "fuzzy" => {
-                "#{field}" => {
-                  "fuzziness" => 2,
-                  "value" => word } } } } }
-      end
-    } }
+def make_fuzzy_phrase_match fields, value
+  ensuring_single_field_for 'fuzzy phrase match', fields do |field|
+    { "in_order" => true,
+      "slop" => 2,
+      "span_near" => {
+        "clauses" => value.split(" ").map do |word|
+          { "span_multi" => {
+              "match" => {
+                "fuzzy" => {
+                  "#{field}" => {
+                    "fuzziness" => "AUTO",
+                    "value" => word
+                  }
+                }
+              }
+            }
+          }
+        end
+      } }
+  end
 end
 
 # Fuzzy matcher trying to match within a sentence.  This essentially
@@ -239,14 +268,16 @@ end
 #
 # This is merely a try to figure out how to create some form of usable
 # matching.
-def make_fuzzy_match field, value
-  {
-    "match" => {
-      "#{field}" => {
-        "query" => value,
-        "operator" => "and",
-        "fuzziness" => "AUTO"
+def make_fuzzy_match fields, value
+  ensuring_single_field_for 'fuzzy match', fields do |field|
+    {
+      "match" => {
+        "#{field}" => {
+          "query" => value,
+          "operator" => "and",
+          "fuzziness" => "AUTO"
+        }
       }
     }
-  }
+  end
 end
