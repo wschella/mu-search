@@ -291,7 +291,7 @@ def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups
             [key, attachments.first]
           else
             pipeline = "#{val["attachment_pipeline"]}_array"
-            [key, attachments.collect { |attachment| { data: Base64.strict_encode64(attachment) } }]
+            [key, attachments.collect { |attachment| { data: attachment} }]
           end
         # nested object
         elsif val["rdf_type"]
