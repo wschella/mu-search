@@ -7,7 +7,7 @@
 #
 # Yields two values: the modifier and the search property.
 def split_filter filter
-  match = /(?:\:)([^ ]+)(?::)([\w,]*)/.match(filter)
+  match = /(?:\:)([^ ]+)(?::)([\w,.]*)/.match(filter)
   if match
     return match[1], match[2]
   else
