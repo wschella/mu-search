@@ -88,8 +88,8 @@ class Elastic
     req = Net::HTTP::Head.new(uri)
 
     begin
-      run(uri, req)
-      true
+      result = run(uri, req)
+      result.is_a(Net::HTTPNotFound) ? false : true
     rescue
       false
     end
