@@ -148,7 +148,7 @@ def construct_es_query_term type, filter_argument, val
     end
   when 'gte', 'lte', 'gt', 'lt'
     ensuring_single_field_for 'gte lte gt and lt', fields do |field|
-      { range: { first_field => { flag => val } } }
+      { range: { field => { flag => val } } }
     end
   when 'lte,gte', 'lt,gt', 'lt,gte', 'lte,gt'
     ensuring_single_field_for 'range combinations', fields do |field|
