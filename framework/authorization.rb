@@ -221,7 +221,7 @@ def destroy_index client, index, type, groups
 
   if settings.additive_indexes
     log.debug "DESTROY_INDEX assumes additive indexes"
-    indexes = groups.map do |group|
+    groups.map do |group|
       Indexes.instance.indexes[type].delete [group]
     end
   else
@@ -242,7 +242,7 @@ end
 # TODO: should be inside Indexes, but uses *settings* (side-note: I
 # don't see settings being used here just yet)
 def destroy_existing_indexes client
-  Indexes.instance.indexes.map do |type, indexes|
+  @indexes.map do |type, indexes|
     indexes.map do |groups, index|
       destroy_index client, index[:index], type, groups
       index[:index]
@@ -278,7 +278,7 @@ end
 # used.  I don't understand what the goal of this method is as I don't
 # see how the type filtering helps.
 def invalidate_indexes s, type
-  Indexes.instance.indexes[type].each do |key, index|
+  @indexes[type].each do |key, index|
     allowed_groups = index[:allowed_groups]
     rdf_type = settings.type_definitions[type]["rdf_type"]
     if is_authorized s, rdf_type, allowed_groups

@@ -30,14 +30,6 @@ end
 def configure_settings client, is_reload = nil
   configuration = JSON.parse File.read('/config/config.json')
 
-  # set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', {})
-
-  # TODO provide more explicit abstraction to send out sudo calls. All
-  # calls that go through this endpoint (rather than the one provided
-  # by the mu-ruby-template seem to be mu-auth-sudo calls so it's easy
-  # to replace.
-  set :db, SinatraTemplate::SPARQL::Client.new('http://db:8890/sparql', { headers: { 'mu-auth-sudo': 'true' } } )
-
   set :master_mutex, Mutex.new
 
   set :dev, (ENV['RACK_ENV'] == 'development')
@@ -72,21 +64,6 @@ def configure_settings client, is_reload = nil
           [type_def["type"], type_def]
         end
       ]
-
-  if !client.up
-    log.info "Waiting for ES"
-    while !client.up do
-      log.info "."
-      sleep 1
-    end
-  end
-  if !sparql_up
-    log.info "Waiting for SPARQL endpoint"
-    while !sparql_up do
-      log.info "."
-      sleep 1
-    end
-  end
 
   if settings.persist_indexes
     log.info "Loading persisted indexes"
@@ -142,11 +119,22 @@ configure do
     sleep 1
   end
 
+  # TODO provide more explicit abstraction to send out sudo calls. All
+  # calls that go through this endpoint (rather than the one provided
+  # by the mu-ruby-template seem to be mu-auth-sudo calls so it's easy
+  # to replace.
+  set :db, SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], { headers: { 'mu-auth-sudo': 'true' } } )
+  while !sparql_up do
+    log.info "...waiting for SPARQL endpoint..."
+    sleep 1
+  end
+
   # hardcoded pipeline names (for now)
   client.create_attachment_pipeline "attachment", "data"
   client.create_attachment_array_pipeline "attachment_array", "data"
 
   configure_settings client
+
 
   if settings.dev
     listener = Listen.to('/config/') do |modified, added, removed|

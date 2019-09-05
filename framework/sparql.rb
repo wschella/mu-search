@@ -225,6 +225,67 @@ SPARQL
 end
 
 
+# helper function for fetch_document_to_index
+# retrieves the content of a linked resource
+def parse_nested_object(results, key, properties)
+  links = results.collect do |result|
+    link_uri = result[key]
+    if link_uri
+      linked_document, pipeline = fetch_document_to_index uri: link_uri, properties: properties, allowed_groups: allowed_groups
+      linked_document
+    else
+      nil
+    end
+  end
+
+  [key, denumerate(links)]
+end
+
+# helper function for fetch_document_to_index
+# retrieves content of the linked attachments
+def parse_attachment(results, key)
+  attachments = results.collect do |result|
+    file_path = result[key]
+    if file_path
+      file_path = file_path.to_s.sub("share://","")
+      begin
+        filesize=File.size?("/data/#{file_path}")
+        if filesize > ENV['MAXIMUM_FILE_SIZE'].to_i
+          raise "#{file_path} filesize #{filesize} is too large, not reading "
+        end
+        File.open("/data/#{file_path}", "rb") do |file|
+          contents = Base64.strict_encode64 file.read
+          contents
+        end
+      rescue Errno::ENOENT, IOError => e
+        log.warn "Error reading \"/data/#{file_path}\": #{e.inspect}"
+        nil
+      end
+    else
+      nil
+    end
+  end
+
+  case attachments.length
+  when 0
+    [key, nil]
+  when 1
+    [key, attachments.first]
+  else
+    [key, attachments.collect { |attachment| { data: attachment} }]
+  end
+end
+
+# utility function
+def denumerate results
+  case results.length
+  when 0 then nil
+  when 1 then results.first
+  else results
+  end
+end
+
+
 # Retrieves a document to index from the available parameters.  Is
 # capable of coping with uuid or uri identification schemes, with
 # properties as configured in the user's config, as well as with
@@ -239,103 +300,53 @@ end
 #   - allowed_groups: Optional setting allowing to scope down the
 #     retrieved contents by specific access rights.
 def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups: nil
-  def denumerate results
-    case results.length
-    when 0 then nil
-    when 1 then results.first
-    else results
+  pipeline = false
+  key_value_tuples = properties.collect do |key, val|
+    query = make_property_query(uuid, uri, key, val)
+    results = allowed_groups ? authorized_query(query, allowed_groups) : request_authorized_query(query)
+
+    if val.is_a? Hash
+        # file attachment
+        if val["attachment_pipeline"]
+          key, value = parse_attachment(results, key)
+          if value.is_a?(Array)
+            pipeline = "#{val["attachment_pipeline"]}_array"
+          else
+            pipeline = val["attachment_pipeline"]
+          end
+          [key, value]
+        # nested object
+        elsif val["rdf_type"]
+          parse_nested_object(results, key, val['properties'])
+        end
+    else
+      values = results.collect do |result|
+        case result[key]
+        when RDF::Literal::Integer
+          result[key].to_i
+        when RDF::Literal::Double
+          result[key].to_f
+        when RDF::Literal::Decimal
+          result[key].to_f
+        when RDF::Literal::Boolean
+          result[key].to_s.downcase == 'true'
+        when RDF::Literal::Time
+            result[key].to_s
+        when RDF::Literal::Date
+            result[key].to_s
+        when RDF::Literal::DateTime
+          result[key].to_s
+        when RDF::Literal
+            result[key].to_s
+        else
+            result[key].to_s
+        end
+      end
+      [key, denumerate(values)]
     end
   end
 
-  pipeline = false
-
-  document = Hash[
-    properties.collect do |key, val|
-      results =
-        if allowed_groups
-          authorized_query make_property_query(uuid, uri, key, val), allowed_groups
-        else
-          request_authorized_query make_property_query(uuid, uri, key, val)
-        end
-
-      if val.is_a? Hash
-        # file attachment
-        if val["attachment_pipeline"]
-          attachments = results.collect do |result|
-            file_path = result[key]
-            if file_path
-              file_path = file_path.to_s.sub("share://","")
-              begin
-                filesize=File.size?("/data/#{file_path}")
-                if filesize > ENV['MAXIMUM_FILE_SIZE'].to_i
-                  raise "#{file_path} filesize #{filesize} is too large, not reading "
-                end
-                File.open("/data/#{file_path}", "rb") do |file|
-                  contents = Base64.strict_encode64 file.read
-                  contents
-                end
-              rescue Errno::ENOENT, IOError => e
-                log.warn "Error reading \"/data/#{file_path}\": #{e.inspect}"
-                nil
-              end
-            else
-              nil
-            end
-          end
-
-          case attachments.length
-          when 0
-            [key, nil]
-          when 1
-            pipeline = val["attachment_pipeline"]
-            [key, attachments.first]
-          else
-            pipeline = "#{val["attachment_pipeline"]}_array"
-            [key, attachments.collect { |attachment| { data: attachment} }]
-          end
-        # nested object
-        elsif val["rdf_type"]
-          links = results.collect do |result|
-            link_uri = result[key]
-            if link_uri
-              linked_document, attachments = fetch_document_to_index uri: link_uri, properties: val['properties'], allowed_groups: allowed_groups
-              linked_document
-            else
-              link_uri
-            end
-          end
-
-          [key, denumerate(links)]
-        end
-      else
-        values = results.collect do |result|
-          case result[key]
-          when RDF::Literal::Integer
-            result[key].to_i
-          when RDF::Literal::Double
-            result[key].to_f
-          when RDF::Literal::Decimal
-            result[key].to_f
-          when RDF::Literal::Boolean
-            result[key].to_s.downcase == 'true'
-          when RDF::Literal::Time
-            result[key].to_s
-          when RDF::Literal::Date
-            result[key].to_s
-          when RDF::Literal::DateTime
-            result[key].to_s
-          when RDF::Literal
-            result[key].to_s
-          else
-            result[key].to_s
-          end
-        end
-
-        [key, denumerate(values)]
-      end
-    end
-  ]
-
+  document = Hash[key_value_tuples]
   return document, pipeline
 end
 
