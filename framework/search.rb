@@ -242,9 +242,10 @@ end
 # ElasticSearch as it may be a common way of searching.
 def make_fuzzy_phrase_match fields, value
   ensuring_single_field_for 'fuzzy phrase match', fields do |field|
-    { "in_order" => true,
-      "slop" => 2,
+    { 
       "span_near" => {
+        "in_order" => true,
+        "slop" => 2,
         "clauses" => value.split(" ").map do |word|
           { "span_multi" => {
               "match" => {

@@ -89,8 +89,10 @@ class Elastic
 
     begin
       result = run(uri, req)
-      result.is_a(Net::HTTPNotFound) ? false : true
-    rescue
+      result.is_a?(Net::HTTPNotFound) ? false : true
+    rescue StandardError => error
+      log.warn "encountered an error while checking if index #{index} exists"
+      log.warn error
       false
     end
   end
