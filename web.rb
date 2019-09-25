@@ -29,7 +29,9 @@ end
 # would make sense to split both.
 def configure_settings client, is_reload = nil
   configuration = JSON.parse File.read('/config/config.json')
-
+  
+  set :protection, :except => [:json_csrf]
+  
   set :master_mutex, Mutex.new
 
   set :dev, (ENV['RACK_ENV'] == 'development')
