@@ -557,16 +557,14 @@ def create_index_full client, type, allowed_groups, used_groups
     log.info "Index not created, already exists: #{index}"
     return index_definition
   else
-    mappings = settings.type_definitions[type]["mappings"]
-    index_settings = settings.type_definitions[type]["settings"] || settings.default_index_settings
-
-    unless mappings
-      mappings = { "properties" => {} }
-    end
-
+    type_definition = settings.type_definitions[type]
+    mappings = type_definition["mappings"]
+    index_settings = type_definition["settings"] || settings.default_index_settings
+    mappings ||= { "properties" => {} }
     mappings["properties"]["uuid"] = { type: "keyword" }
 
     begin
+      log.info "Creating index #{index}"
       client.create_index index, mappings, index_settings
     rescue StandardError => e
       log.warn "Error (create_index): #{e.inspect}"

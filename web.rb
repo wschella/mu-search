@@ -94,8 +94,10 @@ def configure_settings client, is_reload = nil
           index_name = (index and index[:index]) || create_index(client, type, groups, [])
 
           unless settings.persist_indexes and index and client.index_exists index_name
-            log.info "Clearing index for type #{type} - #{index_name}."
-            clear_index client, index_name
+            if ! settings.persist_indexes and index and client.index_exists index_name
+              log.info "Clearing index for type #{type} - #{index_name}."
+              clear_index client, index_name
+            end
             index_documents client, type, index_name, groups
             Indexes.instance.set_status index_name, :valid
           else
