@@ -48,13 +48,13 @@ class Elastic
     end
 
     case res
-    when Net::HTTPSuccess, Net::HTTPRedirection, Net::HTTPNotFound
+    when Net::HTTPSuccess, Net::HTTPRedirection
       log.debug "Succeeded to run request #{uri}\n Request body: #{req.body.to_s[0...1024]}\n Response body: #{res.body.to_s[0...1024]}"
       res.body
     when Net::HTTPTooManyRequests
       run_rescue(uri, req, retries, res)
     else
-      log.error "Failed to run #{req.method} request #{uri}\n Response: #{res}"
+      log.warn "#{req.method} request on #{uri} resulted in response: #{res}"
       log.debug "Request body for #{uri} was: #{req.body}\n Response: #{res.inspect}"
       res
     end
