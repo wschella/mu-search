@@ -29,7 +29,9 @@ end
 # would make sense to split both.
 def configure_settings client, is_reload = nil
   configuration = JSON.parse File.read('/config/config.json')
-
+  
+  set :protection, :except => [:json_csrf]
+  
   set :master_mutex, Mutex.new
 
   set :dev, (ENV['RACK_ENV'] == 'development')
@@ -491,4 +493,18 @@ end
 # Disables the persistent indexes setting on a live system
 delete "/settings/persist_indexes" do
   settings.persist_indexes = false
+end
+
+# Health report
+# TODO Make this more descriptive - status of all indexes? 
+get "/:path/health" do |path|
+  if path == '_all'
+    { status: "up" }.to_json
+  else
+    type = get_type_from_path path
+    index_names = get_or_create_indexes client, type
+    Hash[
+      index_names.map { |index| [index, Indexes.instance.status(index)] }
+    ].to_json
+  end
 end
