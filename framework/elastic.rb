@@ -230,7 +230,11 @@ class Elastic
 
           req["Content-Type"] = "application/x-ndjson"
 
-          run(uri, req)
+          result = JSON.parse(run(uri, req))
+          if result["errors"]
+            log.warn "bulk post request to #{req.uri} has errors\n response: #{result["error"].inspect}\n request body: #{req.body.to_s[0..2048]}"
+          end
+          result
         rescue SocketError => e
           log.warn(e)
           tries = 1
