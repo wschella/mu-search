@@ -99,7 +99,8 @@ def configure_settings client, is_reload = nil
             client.delete_index index_name
           end
           unless index and client.index_exists(index_name)
-            create_index(client, type, groups, [])
+            index_name = create_index(client, type, groups, [])
+            log.debug "Indexing documents for #{type} into #{index_name.inspect}"
             index_documents client, type, index_name, groups
             Indexes.instance.set_status index_name, :valid
           else
