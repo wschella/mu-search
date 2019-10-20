@@ -29,6 +29,7 @@ class Elastic
         if result.kind_of?(Exception)
           raise result
         end
+        result
       else
         log.debug "Failed to run request #{uri} retrying (#{retries} left)"
         next_retries = retries - 1
