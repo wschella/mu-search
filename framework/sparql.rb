@@ -268,7 +268,7 @@ def parse_attachment(results, key)
 
   case attachments.length
   when 0
-    [key, nil]
+    [key, ""]
   when 1
     [key, attachments.first]
   else
