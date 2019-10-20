@@ -49,8 +49,12 @@ class Elastic
 
     case res
     when Net::HTTPSuccess, Net::HTTPRedirection
-      log.debug "Succeeded to run request #{uri}\n Request body: #{req.body.to_s[0...1024]}\n Response body: #{res.body.to_s[0...1024]}"
-      res.body
+      log.debug "Succeeded to run #{req.method} request for #{uri}\n Request body: #{req.body.to_s[0...1024]}\n Response body: #{res.body.to_s[0...1024]}"
+      if req.method == "HEAD"
+        res
+      else
+        res.body
+      end
     when Net::HTTPTooManyRequests
       run_rescue(uri, req, retries, res)
     else
