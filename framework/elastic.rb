@@ -235,16 +235,6 @@ class Elastic
             log.warn "bulk post request to #{req.uri} has errors\n response: #{result["error"].inspect}\n request body: #{req.body.to_s[0..2048]}"
           end
           result
-        rescue SocketError => e
-          log.warn(e)
-          tries = 1
-          while ! up
-            log.info "Waiting for elastic search"
-            sleep tries
-            tries +=1
-          end
-          log.debug "Retrying request"
-          run(uri, req)
         rescue StandardError => e
           log.warn( "Failed to upload #{enriched_postable_slice.length} documents" )
 
