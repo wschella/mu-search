@@ -93,13 +93,13 @@ def configure_settings client, is_reload = nil
       eager_indexing_groups.each do |groups|
         settings.type_definitions.keys.each do |type|
           index = get_matching_index_name type, groups, []
-          index_name = (index and index[:index]) || create_index(client, type, groups, [])
-
-          unless settings.persist_indexes and index and client.index_exists index_name
-            if ! settings.persist_indexes and index and client.index_exists index_name
-              log.info "Clearing index for type #{type} - #{index_name}."
-              clear_index client, index_name
-            end
+          index_name = index ? index[:index] : nil
+          if !(settings.persist_indexes) and index and client.index_exists(index_name)
+            log.info "deleting index for type #{type} - #{index_name}."
+            client.delete_index index_name
+          end
+          unless index and client.index_exists(index_name)
+            create_index(client, type, groups, [])
             index_documents client, type, index_name, groups
             Indexes.instance.set_status index_name, :valid
           else
