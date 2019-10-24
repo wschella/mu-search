@@ -58,15 +58,15 @@ end
 # TODO: this is now configured in the settings block.  It's not a
 # pretty way of handling this.  We should find a solid solution for
 # the mu-auth-sudo queries.
-def direct_query q, retries = 6
+def direct_query query_string, retries = 6
   begin
-    settings.db.query q
+    settings.db.query query_string
   rescue
     next_retries = retries - 1
     if next_retries == 0
       raise
     else
-      log.warn "Could not execute raw query (attempt #{6 - next_retries}): #{q}"
+      log.warn "Could not execute raw query (attempt #{6 - next_retries}): #{query_string}"
       timeout = (6 - next_retries) ** 2
       sleep timeout
       direct_query query_string, next_retries
