@@ -232,7 +232,7 @@ class Elastic
 
           result = JSON.parse(run(uri, req))
           if result["errors"]
-            log.warn "bulk post request to #{req.uri} has errors\n response: #{result["error"].inspect}\n request body: #{req.body.to_s[0..2048]}"
+            log.warn "bulk post request to #{req.uri} has errors\n response: #{result.inspect}\n request body: #{req.body.to_s[0..2048]}"
           end
           result
         rescue StandardError => e
