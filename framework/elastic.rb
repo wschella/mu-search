@@ -348,7 +348,15 @@ class Elastic
         {
           attachment: {
             field: field,
-            indexed_chars: -1
+            indexed_chars: -1,
+            on_failure: [
+              {
+                set: {
+                  field: "error",
+                  value: "field \"#{field}\" does not exist."
+                }
+              }
+            ]
           }
         },
         {
@@ -377,7 +385,15 @@ class Elastic
                 field: "_ingest._value.data",
                 indexed_chars: -1
               }
-            }
+            },
+            on_failure: [
+              {
+                set: {
+                  field: "error",
+                  value: "field \"#{field}\" does not exist."
+                }
+              }
+            ]
           }
         },
         foreach: {
