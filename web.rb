@@ -498,6 +498,10 @@ end
 
 # Health report
 # TODO Make this more descriptive - status of all indexes? 
+get "/health" do
+  { status: "up" }.to_json
+end
+
 get "/:path/health" do |path|
   if path == '_all'
     { status: "up" }.to_json
