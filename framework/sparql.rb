@@ -272,6 +272,7 @@ def parse_attachment(results, key)
   when 1
     [key, attachments.first]
   else
+    attachments = attachments.keep_if { |v| v } # filter out falsy values (If one of the array is falsy, others are not taken into account)
     [key, attachments.collect { |attachment| { data: attachment} }]
   end
 end
