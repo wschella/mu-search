@@ -17,6 +17,26 @@ before do
   request.path_info.chomp!('/')
 end
 
+def parse_integer_var var, default
+  begin
+    Integer(var)
+  rescue Exception
+    default
+  end
+end
+
+def parse_float_var var, default
+  begin
+    Float(var)
+  rescue Exception
+    default
+  end
+end
+
+def parse_boolean_var var
+  ['true','True','TRUE'].include?(var)
+end
+
 # Applies basic configuration from environment variables and from
 # configuration file (environment variables win).  Ensures
 # elasticsearch is up and the database is set up.
@@ -36,24 +56,25 @@ def configure_settings client, is_reload = nil
 
   set :dev, (ENV['RACK_ENV'] == 'development')
 
-  set :batch_size, (ENV['BATCH_SIZE'] || configuration["batch_size"] || 100)
+  set :batch_size, parse_integer_var(ENV['BATCH_SIZE'], configuration["batch_size"]) || 100
 
-  set :max_batches, (ENV['MAX_BATCHES'] || configuration["max_batches"])
+  set :max_batches, parse_integer_var(ENV['MAX_BATCHES'], configuration["max_batches"])
 
-  set :persist_indexes, ENV['PERSIST_INDEXES'] || configuration["persist_indexes"]
+  set :persist_indexes, ENV['PERSIST_INDEXES'] ?
+    parse_boolean_var(ENV['PERSIST_INDEXES']) : configuration["persist_indexes"]
 
-  set :additive_indexes, ENV['ADDITIVE_INDEXES'] || configuration["additive_indexes"]
+  set :additive_indexes, ENV['ADDITIVE_INDEXES'] ?
+  parse_boolean_var(ENV['ADDITIVE_INDEXES']) : configuration["additive_indexes"]
 
-  raw = ENV['ENABLE_RAW_DSL_ENDPOINT'] || configuration["enable_raw_dsl_endpoint"]
-
-  set :raw_dsl_endpoint, ['true','True','TRUE'].include?(raw)
+  set :raw_dsl_endpoint, ENV['ENABLE_RAW_DSL_ENDPOINT'] ?
+    parse_boolean_var(ENV['ENABLE_RAW_DSL_ENDPOINT']) : configuration["enable_raw_dsl_endpoint"]
 
   set :default_index_settings, configuration["default_settings"]
 
-  set :common_terms_cutoff_frequency, (ENV['COMMON_TERMS_CUTOFF_FREQUENCY'] || configuration["common_terms_cutoff_frequency"] || 0.001)
+  set :common_terms_cutoff_frequency, parse_float_var(ENV['COMMON_TERMS_CUTOFF_FREQUENCY'], configuration["common_terms_cutoff_frequency"]) || 0.001
 
-  set :automatic_index_updates,
-      (ENV["AUTOMATIC_INDEX_UPDATES"] || configuration["automatic_index_updates"])
+  set :automatic_index_updates, ENV['AUTOMATIC_INDEX_UPDATES'] ?
+    parse_boolean_var(ENV['AUTOMATIC_INDEX_UPDATES']) : configuration["automatic_index_updates"]
 
   set :type_paths, Hash[
         configuration["types"].collect do |type_def|
