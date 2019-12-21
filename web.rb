@@ -76,6 +76,8 @@ def configure_settings client, is_reload = nil
   set :automatic_index_updates, ENV['AUTOMATIC_INDEX_UPDATES'] ?
     parse_boolean_var(ENV['AUTOMATIC_INDEX_UPDATES']) : configuration["automatic_index_updates"]
 
+  set :attachments_path_base, ENV['ATTACHMENTS_PATH_BASE'] || configuration["attachments_path_base"] || "/data"
+
   set :type_paths, Hash[
         configuration["types"].collect do |type_def|
           [type_def["on_path"], type_def["type"]]

@@ -247,18 +247,18 @@ def parse_attachment(results, key)
   attachments = results.collect do |result|
     file_path = result[key]
     if file_path
-      file_path = file_path.to_s.sub("share://","")
+      file_path = File.join(settings.attachments_path_base, file_path.to_s.sub("share://",""))
       begin
-        filesize=File.size?("/data/#{file_path}")
+        filesize = File.size(file_path)
         if filesize > ENV['MAXIMUM_FILE_SIZE'].to_i
           raise "#{file_path} filesize #{filesize} is too large, not reading "
         end
-        File.open("/data/#{file_path}", "rb") do |file|
+        File.open(file_path, "rb") do |file|
           contents = Base64.strict_encode64 file.read
           contents
         end
       rescue Errno::ENOENT, IOError => e
-        log.warn "Error reading \"/data/#{file_path}\": #{e.inspect}"
+        log.warn "Error reading \"#{file_path}\": #{e.inspect}"
         nil
       end
     else
