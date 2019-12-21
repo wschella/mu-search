@@ -242,7 +242,7 @@ end
 # TODO: should be inside Indexes, but uses *settings* (side-note: I
 # don't see settings being used here just yet)
 def destroy_existing_indexes client
-  @indexes.map do |type, indexes|
+  Indexes.instance.indexes.map do |type, indexes|
     indexes.map do |groups, index|
       destroy_index client, index[:index], type, groups
       index[:index]
@@ -278,7 +278,7 @@ end
 # used.  I don't understand what the goal of this method is as I don't
 # see how the type filtering helps.
 def invalidate_indexes s, type
-  @indexes[type].each do |key, index|
+  Indexes.instance.indexes[type].each do |key, index|
     allowed_groups = index[:allowed_groups]
     rdf_type = settings.type_definitions[type]["rdf_type"]
     if is_authorized s, rdf_type, allowed_groups
