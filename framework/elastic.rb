@@ -50,9 +50,9 @@ class Elastic
 
     case res
     when Net::HTTPSuccess, Net::HTTPRedirection
-      content_type_header = res.each_header.find {|k, v| k.downcase == "content-type"}
-      content_type = content_type_header ? content_type_header.at(1) : nil
-      if res.body and content_type and (content_type.downcase.include? "charset=utf-8") # Ruby doesn't use the encoding specified in HTTP headers (https://bugs.ruby-lang.org/issues/2567#note-3)
+      # Ruby doesn't use the encoding specified in HTTP headers (https://bugs.ruby-lang.org/issues/2567#note-3)
+      content_type = res['CONTENT-TYPE']
+      if res.body and content_type and content_type.downcase.include?("charset=utf-8")
         res.body.force_encoding('UTF-8')
       end
       log.debug "Succeeded to run #{req.method} request for #{uri}\n Request body: #{req.body.to_s[0...1024]}\n Response body: #{res.body.to_s[0...1024]}"
