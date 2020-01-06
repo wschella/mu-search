@@ -511,11 +511,23 @@ def create_request_indexes client, type
   used_groups = []
 
   if settings.additive_indexes
-    allowed_groups.map do |group|
-      create_index_full client, type, [group], used_groups
-    end
+    allowed_groups.map { |group|
+      begin
+        create_index_full client, type, [group], used_groups
+      rescue StandardError => error
+        log.error error.message
+        log.debug error.inspect
+        nil
+      end
+    }.select{ |index| ! index.nil? }
   else
-    [create_index_full( client, type, allowed_groups, used_groups)]
+    begin
+      [create_index_full( client, type, allowed_groups, used_groups)]
+    rescue StandardError => error
+      log.error error.message
+      log.debug error.inspect
+      []
+    end
   end
 end
 
@@ -549,7 +561,7 @@ def create_index_full client, type, allowed_groups, used_groups
     used_groups: used_groups
   }
 
-  # Although index may exist in Elasticsearch, it may have been lost in the 
+  # Although index may exist in Elasticsearch, it may have been lost in the
   # triplestore and the Indexes singleton. Add it, just to be sure.
   Indexes.instance.add_index type, allowed_groups, used_groups, index_definition
 
@@ -563,14 +575,8 @@ def create_index_full client, type, allowed_groups, used_groups
     mappings ||= { "properties" => {} }
     mappings["properties"]["uuid"] = { type: "keyword" }
 
-    begin
-      log.info "Creating index #{index}"
-      client.create_index index, mappings, index_settings
-    rescue StandardError => e
-      log.warn "Error (create_index): #{e.inspect}"
-      raise "Error creating index: #{index}"
-    end
-
+    log.info "Creating index #{index}"
+    client.create_index index, mappings, index_settings
     index_definition
   end
 end
@@ -583,7 +589,7 @@ end
 
 
 # Retrieves the indexes for the current request in a safe manner,
-# ensuring everything exists and is up-to-date when this function 
+# ensuring everything exists and is up-to-date when this function
 # returns.
 #
 #   - client: ElasticSearch instance used for storing the indexes.
