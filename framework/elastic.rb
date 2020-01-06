@@ -122,6 +122,12 @@ class Elastic
     }.to_json
 
     result = run(uri, req)
+    # TODO: check could be better, but on success run returns the body
+    if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
+      raise "failed to create index #{index}, response was #{result.code} #{result.msg}"
+    else
+      result
+    end
   end
 
   # Deletes an index from ElasticSearch
