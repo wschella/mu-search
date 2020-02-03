@@ -307,43 +307,24 @@ See more: https://www.elastic.co/guide/en/elasticsearch/reference/current/multi-
 
 When used with the Delta Service, mu-elastic-search can automatically invalidate or update indexes when notified of relevant changes in the data.
 
-Deltas are expected in the following format:
+Deltas are expected in the [v0.0.1 format](https://github.com/mu-semtech/delta-notifier/#v001) of the delta notifier.
 
 ```
-{
-  "graph": "http://graph1",
-  "delta": {
-    "inserts": [
-      {
-        "s": "http://uri1",
-        "p": "http://predicate1",
-        "o": "http://object1"
-      }
-    ],
-    "deletes": [
-
+    [
+      { "inserts": [{"subject": { "type": "uri", "value": "http://mu.semte.ch/" },
+                     "predicate": { "type": "uri", "value": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" },
+                     "object": { "type": "uri", "value": "https://schema.org/Project" }}],
+        "deletes": [] }
     ]
-  }
-}
 ```
 
-When a delta is received in which:
-
-- `p` corresponds to the property of given type, and
-- `s` is indeed of that type (verified by querying the triple store)
-
-then all indexes which
-
-- correspond to that type 
-- are authorized to see `s`
-
-are invalidated. Each one will be rebuilt the next time it is searched.
+When a delta is received that matches a property or rdf type of an index, those indexes are invalidated. Each one will be rebuilt the next time it is searched.
 
 ### Automatic Index Updating
 
 Alternate to automatic index invalidation, indexes can be dynamically updated on a per-document basis according to received deltas.
 
-When a corresponding delta is received (see previous section), the document corresponding to the delta's `s` is updated (or deleted) in every index corresponding to `s`'s type(s). Note that if there are many different configurations of ALLOWED_GROUPS, this might be a large number of indexes.
+When a corresponding delta is received (see previous section), the document corresponding to the delta is updated (or deleted) in every index corresponding to the delta. Note that if there are many different configurations of ALLOWED_GROUPS, this might be a large number of indexes.
 
 Also note this is not currently a blocking operation: an update will not lock the index, so that a simultaneously received search request might be run on the un-updated index.
 
