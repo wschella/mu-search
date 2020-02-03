@@ -366,7 +366,6 @@ get "/:path/search" do |path|
   groups = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
   log.debug "SEARCH Got allowed groups #{groups}"
 
-  content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
   type = get_type_from_path path
   collapse_uuids = (params["collapse_uuids"] == "t")
@@ -430,23 +429,29 @@ get "/:path/search" do |path|
 
   log.debug "All indexes are up to date"
   log.debug "Running ES query: #{es_query.to_json}"
+  response = client.search(index: index_string, query: es_query)
+  if response.kind_of?(String) # assume success
+    results = JSON.parse(response)
+    log.debug "Got native results: #{results}"
 
-  results = JSON.parse(client.search index: index_string, query: es_query)
+    count =
+      if collapse_uuids
+        results["aggregations"]["type_count"]["value"]
+      else
+        count_result = JSON.parse(client.count index: index_string, query: count_query)
+        count_result["count"]
+      end
 
-
-  log.debug "Got native results: #{results}"
-
-  count =
-    if collapse_uuids
-      results["aggregations"]["type_count"]["value"]
-    else
-      count_result = JSON.parse(client.count index: index_string, query: count_query)
-      count_result["count"]
-    end
-
-  log.debug "Got #{count} results"
-
-  format_results(type, count, page, size, results).to_json
+    log.debug "Got #{count} results"
+    content_type 'application/json'
+    format_results(type, count, page, size, results).to_json
+  else
+    log.info "ES query failed: #{response}"
+    log.debug response.body
+    content_type 'application/json'
+    status response.code
+    { errors: [{ title: response.message}] }.to_json
+  end
 end
 
 
