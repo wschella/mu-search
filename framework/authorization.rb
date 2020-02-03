@@ -274,6 +274,9 @@ end
 
 # Invalides indexes of the supplied subject for the given type.
 #
+# TODO: Update the specific documents rather than invalidating the
+# full index.  It seems index invalidation makes subsequent queries
+# take a substantial amount of time (that, or something went wrong).
 # TODO: describe this method further after seeing where it is being
 # used.  I don't understand what the goal of this method is as I don't
 # see how the type filtering helps.

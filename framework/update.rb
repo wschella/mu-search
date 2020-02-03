@@ -24,21 +24,30 @@ def configure_properties_types_lookup_tables configuration
             end
 
           rdf_property = settings.type_definitions[source_type][property_name]
+          if property_name == "data"
+            rdf_property = rdf_property["via"]
+          end
           rdf_property = rdf_property.is_a?(Array) ? rdf_property : [rdf_property]
-          rdf_property.each do |prop|
+          rdf_property.each_index do |index|
+            prop = rdf_property[index]
             rdf_properties[prop] =  rdf_properties[prop] || []
-            rdf_properties[prop].push type_def["type"]
+            rdf_properties[prop].push [type_def["type"], rdf_property.take(index)]
           end
         end
       end
     else
       rdf_types[type_def["rdf_type"]]  = rdf_types[type_def["rdf_type"]] || []
       rdf_types[type_def["rdf_type"]].push type_def["type"]
+      
       type_def["properties"].each do |name, rdf_property|
+        if name == "data"
+          rdf_property = rdf_property["via"]
+        end
         rdf_property = rdf_property.is_a?(Array) ? rdf_property : [rdf_property]
-        rdf_property.each do |prop|
+        rdf_property.each_index do |index|
+          prop = rdf_property[index]
           rdf_properties[prop] =  rdf_properties[prop] || []
-          rdf_properties[prop].push type_def["type"]
+          rdf_properties[prop].push [type_def["type"], rdf_property.take(index)]
         end
       end
     end
@@ -73,88 +82,6 @@ def parse_deltas raw_deltas
   end
 end
 
-# Invalidates the updates as received by the parsed delta's.
-#
-#   - deltas: Delta's as converted by #parse_deltas.
-#
-# TODO: Update the specific documents rather than invalidating the
-# full index.  It seems index invalidation makes subsequent queries
-# take a substantial amount of time (that, or something went wrong).
-#
-# TODO: Find a way to capture changes occurring in in-between objects
-# which may be found when subject paths are supplied in the
-# configuration.
-def invalidate_updates deltas
-  deltas.each do |triple|
-    delta, s, p, o = triple
-
-    if p == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-      settings.rdf_types[o].each { |type| invalidate_indexes s, type }
-    else
-      possible_types = settings.rdf_properties[p]
-      if possible_types
-        possible_types.each do |type|
-          rdf_type = settings.type_definitions[type]["rdf_type"]
-
-          if is_type s, rdf_type
-            invalidate_indexes s, type
-          end
-        end
-      end
-    end
-  end
-end
-
-# Consumes parsed delta's and acts on instance types in order to
-# figure out which documents to update and which documents to remove.
-# Assumes that it is safe to remove objects for which the type was
-# removed and that it needs to update the documents for inserts of the
-# type.
-#
-#   - deltas: Delta's as parsed by #parse_deltas
-#
-# TODO: Consider coping with intermediate objects as introduced by
-# array arrays in the subject configuration.
-def tabulate_updates deltas
-  docs_to_update = {}
-  docs_to_delete = {}
-
-  deltas.each do |triple|
-    delta, s, p, o = triple
-
-    if p == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-      types = settings.rdf_types[o]
-      if types
-        types.each do |type|
-          if delta == :-
-            docs_to_update[s] = false
-            triple_types = docs_to_delete[s] || Set[]
-            docs_to_delete[s] = triple_types.add(type)
-          else
-            triple_types = docs_to_update[s] || Set[]
-            docs_to_update[s] = triple_types.add(type)
-          end
-        end
-      end
-    else
-      possible_types = settings.rdf_properties[p]
-      if possible_types
-        possible_types.each do |type|
-          rdf_type = settings.type_definitions[type]["rdf_type"]
-
-          if is_type s, rdf_type
-            unless docs_to_update[s] == false
-              triple_types = docs_to_update[s] || Set[]
-              docs_to_update[s] = triple_types.add(type)
-            end
-          end
-        end
-      end
-    end
-  end
-
-  return docs_to_update, docs_to_delete
-end
 
 # Update all documents relating to a particular uri and a series of
 # types.
@@ -233,9 +160,12 @@ end
 #   - s: String URI of the entity which needs changing.
 #   - types: Array of types for which the document needs updating.
 def delete_document_all_types client, s, types
+  log.debug "Will delete document #{s} for types #{types}"
   types.each do |type|
+    # TODO: this fails because the uuid is already removed, should probably use uri as id in elastic?
     uuid = get_uuid s
     if uuid
+      log.debug "deleting document #{s} with uuid #{uuid} for type #{type}"
       Settings.instance.indexes[type].each do |key, index|
         begin
           client.delete_document index[:index], uuid

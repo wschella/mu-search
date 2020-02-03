@@ -6,6 +6,8 @@ require 'listen'
 require 'singleton'
 require 'base64'
 
+require_relative 'lib/mu_search/sparql.rb'
+require_relative 'lib/mu_search/delta_handler.rb'
 require_relative 'framework/elastic.rb'
 require_relative 'framework/sparql.rb'
 require_relative 'framework/authorization.rb'
@@ -49,13 +51,12 @@ end
 # would make sense to split both.
 def configure_settings client, is_reload = nil
   configuration = JSON.parse File.read('/config/config.json')
-  
+
   set :protection, :except => [:json_csrf]
-  
+
   set :master_mutex, Mutex.new
 
   set :dev, (ENV['RACK_ENV'] == 'development')
-
   set :batch_size, parse_integer_var(ENV['BATCH_SIZE'], configuration["batch_size"]) || 100
 
   set :max_batches, parse_integer_var(ENV['MAX_BATCHES'], configuration["max_batches"])
@@ -76,6 +77,11 @@ def configure_settings client, is_reload = nil
   set :automatic_index_updates, ENV['AUTOMATIC_INDEX_UPDATES'] ?
     parse_boolean_var(ENV['AUTOMATIC_INDEX_UPDATES']) : configuration["automatic_index_updates"]
 
+  set :delta_parser, MuSearch::DeltaHandler.new({
+                                                  auto_index_updates: settings.automatic_index_updates,
+                                                  logger: SinatraTemplate::Utils.log,
+                                                  search_configuration: configuration
+                                                })
   set :attachments_path_base, ENV['ATTACHMENTS_PATH_BASE'] || configuration["attachments_path_base"] || "/data"
 
   set :type_paths, Hash[
@@ -357,7 +363,8 @@ end
 #
 # TODO fleshen out functionality with respect to existing indexes
 get "/:path/search" do |path|
-  log.debug "SEARCH Got allowed groups #{request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]}"
+  groups = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
+  log.debug "SEARCH Got allowed groups #{groups}"
 
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
@@ -429,7 +436,7 @@ get "/:path/search" do |path|
 
   log.debug "Got native results: #{results}"
 
-  count = 
+  count =
     if collapse_uuids
       results["aggregations"]["type_count"]["value"]
     else
@@ -477,22 +484,21 @@ end
 # invalidation when paths are being used to index contents.
 post "/update" do
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-
-  # [[d, s, p, o], ...] where d is :- or :+ for deletes/inserts respectively
   log.debug "Received delta update #{@json_body}"
-  deltas = parse_deltas @json_body
-  # Tabulate first, to avoid duplicate updates
-  # { <uri> => [type, ...] } or { <uri> => false } if document should be deleted
-  if deltas
-    if settings.automatic_index_updates
-      docs_to_update, docs_to_delete = tabulate_updates deltas
-      docs_to_update.each { |s, types| update_document_all_types client, s, types }
-      docs_to_delete.each { |s, types| delete_document_all_types client, s, types }
-    else
-      invalidate_updates deltas
+  docs_to_update, docs_to_delete = settings.delta_parser.parse_deltas @json_body
+  log.debug "docs to update #{docs_to_update.inspect}"
+  log.debug "docs to delete #{docs_to_delete.inspect}"
+  if settings.automatic_index_updates
+    docs_to_update.each { |s, types| update_document_all_types(client, s, types)}
+    docs_to_delete.each { |s, types| delete_document_all_types(client, s, types)}
+  else
+    docs_to_delete.each do |s, types|
+      types.each { |type| invalidate_indexes(s, type) }
+    end
+    docs_to_update.each do |s, types|
+      types.each { |type| invalidate_indexes(s, type) }
     end
   end
-
   { message: "Thanks for all the updates." }.to_json
 end
 
@@ -520,7 +526,7 @@ delete "/settings/persist_indexes" do
 end
 
 # Health report
-# TODO Make this more descriptive - status of all indexes? 
+# TODO Make this more descriptive - status of all indexes?
 get "/health" do
   { status: "up" }.to_json
 end
