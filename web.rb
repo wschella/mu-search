@@ -94,7 +94,7 @@ configure do
       if modified.include? '/config/config.json'
         log.info 'Reloading configuration'
         destroy_existing_indexes client
-        configure_settings client
+        configure_settings
         log.info '== Configuration reloaded'
       end
     end
