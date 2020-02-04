@@ -103,12 +103,6 @@ def configure_settings client, is_reload = nil
     destroy_persisted_indexes client
   end
 
-  # properties and types lookup-tables for updates
-  # { <rdf_property> => [type, ...] }
-  rdf_properties, rdf_types = configure_properties_types_lookup_tables configuration
-  set :rdf_properties, rdf_properties
-  set :rdf_types, rdf_types
-
   # Eager Indexing
   eager_indexing_groups = configuration["eager_indexing_groups"] || []
 
