@@ -272,28 +272,6 @@ def destroy_authorized_indexes client, allowed_groups, used_groups
 end
 
 
-# Invalides indexes of the supplied subject for the given type.
-#
-# TODO: Update the specific documents rather than invalidating the
-# full index.  It seems index invalidation makes subsequent queries
-# take a substantial amount of time (that, or something went wrong).
-# TODO: describe this method further after seeing where it is being
-# used.  I don't understand what the goal of this method is as I don't
-# see how the type filtering helps.
-def invalidate_indexes s, type
-  Indexes.instance.indexes[type].each do |key, index|
-    allowed_groups = index[:allowed_groups]
-    rdf_type = settings.type_definitions[type]["rdf_type"]
-    if is_authorized s, rdf_type, allowed_groups
-      Indexes.instance.mutex(index[:index]).synchronize do
-        Indexes.instance.set_status index[:index], :invalid
-      end
-    else
-      log.info "Not Authorized, nothing doing."
-    end
-  end
-end
-
 # Loads all indexes for the supplied types
 #
 # Searches the triplestore for all indexes of these types and loads

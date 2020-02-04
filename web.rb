@@ -8,12 +8,13 @@ require 'base64'
 
 require_relative 'lib/mu_search/sparql.rb'
 require_relative 'lib/mu_search/delta_handler.rb'
+require_relative 'lib/mu_search/automatic_update_handler.rb'
+require_relative 'lib/mu_search/invalidating_update_handler.rb'
 require_relative 'framework/elastic.rb'
 require_relative 'framework/sparql.rb'
 require_relative 'framework/authorization.rb'
 require_relative 'framework/indexing.rb'
 require_relative 'framework/search.rb'
-require_relative 'framework/update.rb'
 
 before do
   request.path_info.chomp!('/')
@@ -77,11 +78,6 @@ def configure_settings client, is_reload = nil
   set :automatic_index_updates, ENV['AUTOMATIC_INDEX_UPDATES'] ?
     parse_boolean_var(ENV['AUTOMATIC_INDEX_UPDATES']) : configuration["automatic_index_updates"]
 
-  set :delta_parser, MuSearch::DeltaHandler.new({
-                                                  auto_index_updates: settings.automatic_index_updates,
-                                                  logger: SinatraTemplate::Utils.log,
-                                                  search_configuration: configuration
-                                                })
   set :attachments_path_base, ENV['ATTACHMENTS_PATH_BASE'] || configuration["attachments_path_base"] || "/data"
 
   set :type_paths, Hash[
@@ -95,6 +91,25 @@ def configure_settings client, is_reload = nil
           [type_def["type"], type_def]
         end
       ]
+
+  if settings.automatic_index_updates
+    handler = MuSearch::AutomaticUpdateHandler.new({
+                                                     logger: SinatraTemplate::Utils.log,
+                                                     elastic_client: Elastic.new(host: 'elasticsearch', port: 9200),
+                                                     attachment_path_base: settings.attachments_path_base,
+                                                     type_definitions: settings.type_definitions
+                                                   })
+  else
+    handler = MuSearch::InvalidatingUpdateHandler.new({
+                                                        logger: SinatraTemplate::Utils.log,
+                                                        type_definitions: settings.type_definitions
+                                                      })
+  end
+  set :delta_parser, MuSearch::DeltaHandler.new({
+                                                  update_handler: handler,
+                                                  logger: SinatraTemplate::Utils.log,
+                                                  search_configuration: configuration
+                                                })
 
   if settings.persist_indexes
     log.info "Loading persisted indexes"
@@ -476,28 +491,9 @@ end
 
 # Processes an update from the delta system.  Consumes the genesis
 # delta format and invalidates the necessary indexes.
-#
-# TODO it seems this invalidates the full index, rather than trying to
-# add the respective document to all related indexes when
-# automatic_index_updates is set.  We may lack information to handle
-# invalidation when paths are being used to index contents.
 post "/update" do
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
   log.debug "Received delta update #{@json_body}"
-  docs_to_update, docs_to_delete = settings.delta_parser.parse_deltas @json_body
-  log.debug "docs to update #{docs_to_update.inspect}"
-  log.debug "docs to delete #{docs_to_delete.inspect}"
-  if settings.automatic_index_updates
-    docs_to_update.each { |s, types| update_document_all_types(client, s, types)}
-    docs_to_delete.each { |s, types| delete_document_all_types(client, s, types)}
-  else
-    docs_to_delete.each do |s, types|
-      types.each { |type| invalidate_indexes(s, type) }
-    end
-    docs_to_update.each do |s, types|
-      types.each { |type| invalidate_indexes(s, type) }
-    end
-  end
+  settings.delta_parser.parse_deltas(@json_body)
   { message: "Thanks for all the updates." }.to_json
 end
 

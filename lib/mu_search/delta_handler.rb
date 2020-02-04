@@ -3,7 +3,7 @@ require 'set'
 module MuSearch
   ##
   # the delta handler is a service for that parses deltas and triggers
-  # the necessary updates on the search indexes.
+  # the necessary updates the (index) update handler.
   # Assumes that it is safe to remove objects for which the type was removed
   # updates documents for deltas that match the configured property paths
   # NOTE: in theory the handler has a pretty good idea what has changed
@@ -14,14 +14,14 @@ module MuSearch
     # creates a delta handler
     #
     # raises an error if an invalid search config is provided
-    def initialize(auto_index_updates: , logger:, search_configuration: )
+    def initialize(logger:, search_configuration:, update_handler: )
       unless (search_configuration.is_a?(Hash) and search_configuration.has_key?("types"))
         raise ArgumentError.new("invalid search configuration")
       end
       @logger = logger
       @type_to_config_map = map_type_to_config(search_configuration)
       @property_to_config_map = map_property_to_config(search_configuration)
-      @auto_index_updates = auto_index_updates
+      @update_handler = update_handler
     end
 
     ##
@@ -100,7 +100,7 @@ module MuSearch
             inverse = predicate != property
             query_result = query_for_path_and_delta(index, delta, config, inverse, addition)
             if query_result
-              query_result.each {|result| subjects << result["s"]}
+              query_result.each {|result| subjects << result["s"].to_s}
             end
           end
         end
@@ -112,8 +112,6 @@ module MuSearch
     # parses the body of a delta provided, assumes the 0.0.1 format as defined TODO
     # returns a set of documents to update
     def parse_deltas(deltas)
-      docs_to_update = Hash.new { |hash, key| hash[key] = Set.new } # default value is a set
-      docs_to_delete = Hash.new { |hash, key| hash[key] = Set.new }
       deltas.each do |delta|
         unless delta.is_a?(Hash)
           @logger.error "received delta does not seem to be in 0.0.1 format, mu-search requires delta format v0.0.1 "
@@ -124,7 +122,7 @@ module MuSearch
             @logger.debug "matched config #{type}"
             find_subjects_for_delta(triple,config).each do |subject|
               @logger.debug "found subject #{subject} for delta #{triple.inspect}"
-              docs_to_update[subject].add(type)
+              @update_handler.add_update(subject, type)
             end
           end
         end
@@ -138,17 +136,16 @@ module MuSearch
             if triple.dig("predicate","value") == RDF.type.to_s
               @logger.debug "found subject #{triple.dig("subject", "value")} for delta #{triple.inspect}"
               subject = triple.dig("subject","value")
-              docs_to_delete[subject].add(type)
+              @update_handler.add_delete(subject, type)
             else
               find_subjects_for_delta(triple,config, false).each do |subject|
                 @logger.debug "found subject #{subject} for delta #{triple.inspect}"
-                docs_to_update[subject].add(type)
+                @update_handler.add_update(subject, type)
               end
             end
           end
         end
       end
-      [docs_to_update, docs_to_delete]
     end
 
     ##

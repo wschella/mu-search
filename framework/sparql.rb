@@ -62,24 +62,6 @@ SPARQL
   documents_count
 end
 
-
-# Memoized function which verifies whether a user with particular
-# allowed_groups can see that a uri has a particular type.
-#
-#   - s: String URI of the subject.
-#   - rdf_type: String RDF type URI.
-#   - allowed_groups: Ruby JSON representation of the allowed_groups.
-#
-def is_authorized s, rdf_type, allowed_groups
-  @authorizations ||= {}
-  if @authorizations.has_key? [s, rdf_type, allowed_groups]
-    @authorizations[s, rdf_type, allowed_groups]
-  else
-
-    authorized_query "ASK WHERE { #{sparql_escape_uri(s)} a #{sparql_escape_uri(rdf_type)} }", allowed_groups
-  end
-end
-
 # Converts the string predicate from the configuration into a portion
 # for the path used in a SPARQL query.
 #
@@ -146,11 +128,11 @@ end
 
 # helper function for fetch_document_to_index
 # retrieves content of the linked attachments
-def parse_attachment(results, key)
+def parse_attachment(results, key, attachment_path_base)
   attachments = results.collect do |result|
     file_path = result[key]
     if file_path
-      file_path = File.join(settings.attachments_path_base, file_path.to_s.sub("share://",""))
+      file_path = File.join(attachment_path_base, file_path.to_s.sub("share://",""))
       begin
         filesize = File.size(file_path)
         if filesize > ENV['MAXIMUM_FILE_SIZE'].to_i
@@ -202,7 +184,8 @@ end
 #     configuration file.
 #   - allowed_groups: Optional setting allowing to scope down the
 #     retrieved contents by specific access rights.
-def fetch_document_to_index uri: nil, properties: nil, allowed_groups: nil
+#   - attachment_path_base: base path to use for files
+def fetch_document_to_index uri: nil, properties: nil, allowed_groups: nil, attachment_path_base: '.'
   pipeline = false
   # we include uuid because it may be used for folding
   unless properties.has_key?("uuid")
@@ -215,7 +198,7 @@ def fetch_document_to_index uri: nil, properties: nil, allowed_groups: nil
     if val.is_a? Hash
         # file attachment
         if val["attachment_pipeline"]
-          key, value = parse_attachment(results, key)
+          key, value = parse_attachment(results, key, attachment_path_base)
           if value.is_a?(Array)
             pipeline = "#{val["attachment_pipeline"]}_array"
           else

@@ -102,7 +102,9 @@ SPARQL
         document_id = result[:doc].to_s
         log.debug "Fetching document for #{document_id}"
         begin
-          document, attachment_pipeline = fetch_document_to_index uri: document_id, properties: properties, allowed_groups: allowed_groups
+          document, attachment_pipeline = fetch_document_to_index uri: document_id, properties: properties,
+                                                                  attachment_path_base: settings.attachments_path_base,
+                                                                  allowed_groups: allowed_groups
           log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{allowed_groups}"
           if attachment_pipeline
             data.push({ index: { _id: document_id , pipeline: attachment_pipeline } }, document)
