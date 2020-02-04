@@ -55,7 +55,7 @@ module MuSearch
       path = config[:rdf_properties].take(index)
       path_to_delta = MuSearch::SPARQL::make_predicate_string(path)
       # proper escaping of the object, based on type
-      object = delta.dig("object", "type") == "uri" ? sparql_escape_uri(delta.dig("object", "value")) : delta.dig("object", "value").sparql_escape
+      object = delta.dig("object", "type") == "uri" ? sparql_escape_uri(delta.dig("object", "value")) : %(""#{delta.dig("object", "value").sparql_escape}"")
       # based on the direction of the predicate, determine "real" subject
       true_s = inverse ? object : sparql_escape_uri(delta.dig("subject", "value"))
       # path after the added triple
