@@ -61,7 +61,7 @@ module MuSearch
       # path after the added triple
       properties_after_delta = path.slice(index+1, path.size)
       # building the SPARQL query, looks more complex than it is
-      sparql_query = "SELECT ?s WHERE {\n"
+      sparql_query = "SELECT DISTINCT ?s WHERE {\n"
       if addition
         sparql_query += "#{sparql_escape_uri(delta.dig("subject", "value"))} #{sparql_escape_uri(delta.dig("predicate","value"))} #{object}. \n"
       end
