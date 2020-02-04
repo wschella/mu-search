@@ -10,6 +10,7 @@ require_relative 'lib/mu_search/sparql.rb'
 require_relative 'lib/mu_search/delta_handler.rb'
 require_relative 'lib/mu_search/automatic_update_handler.rb'
 require_relative 'lib/mu_search/invalidating_update_handler.rb'
+require_relative 'lib/mu_search/config_parser.rb'
 require_relative 'framework/elastic.rb'
 require_relative 'framework/sparql.rb'
 require_relative 'framework/authorization.rb'
@@ -20,96 +21,22 @@ before do
   request.path_info.chomp!('/')
 end
 
-def parse_integer_var var, default
-  begin
-    Integer(var)
-  rescue Exception
-    default
-  end
-end
-
-def parse_float_var var, default
-  begin
-    Float(var)
-  rescue Exception
-    default
-  end
-end
-
-def parse_boolean_var var
-  ['true','True','TRUE'].include?(var)
-end
 
 # Applies basic configuration from environment variables and from
-# configuration file (environment variables win).  Ensures
-# elasticsearch is up and the database is set up.
+# configuration file (environment variables win).
 #
 # Called from the configure block.
-#
-# TODO is_reload is supplied but does not seem to be used.
-#
-# TODO This seems to contain both configuration as well as setup.  It
-# would make sense to split both.
-def configure_settings client, is_reload = nil
-  configuration = JSON.parse File.read('/config/config.json')
-
+def configure_settings
   set :protection, :except => [:json_csrf]
-
-  set :master_mutex, Mutex.new
-
   set :dev, (ENV['RACK_ENV'] == 'development')
-  set :batch_size, parse_integer_var(ENV['BATCH_SIZE'], configuration["batch_size"]) || 100
+  configuration = MuSearch::ConfigParser.parse('/config/config.json')
+  set configuration
+end
 
-  set :max_batches, parse_integer_var(ENV['MAX_BATCHES'], configuration["max_batches"])
-
-  set :persist_indexes, ENV['PERSIST_INDEXES'] ?
-    parse_boolean_var(ENV['PERSIST_INDEXES']) : configuration["persist_indexes"]
-
-  set :additive_indexes, ENV['ADDITIVE_INDEXES'] ?
-  parse_boolean_var(ENV['ADDITIVE_INDEXES']) : configuration["additive_indexes"]
-
-  set :raw_dsl_endpoint, ENV['ENABLE_RAW_DSL_ENDPOINT'] ?
-    parse_boolean_var(ENV['ENABLE_RAW_DSL_ENDPOINT']) : configuration["enable_raw_dsl_endpoint"]
-
-  set :default_index_settings, configuration["default_settings"]
-
-  set :common_terms_cutoff_frequency, parse_float_var(ENV['COMMON_TERMS_CUTOFF_FREQUENCY'], configuration["common_terms_cutoff_frequency"]) || 0.001
-
-  set :automatic_index_updates, ENV['AUTOMATIC_INDEX_UPDATES'] ?
-    parse_boolean_var(ENV['AUTOMATIC_INDEX_UPDATES']) : configuration["automatic_index_updates"]
-
-  set :attachments_path_base, ENV['ATTACHMENTS_PATH_BASE'] || configuration["attachments_path_base"] || "/data"
-
-  set :type_paths, Hash[
-        configuration["types"].collect do |type_def|
-          [type_def["on_path"], type_def["type"]]
-        end
-      ]
-
-  set :type_definitions, Hash[
-        configuration["types"].collect do |type_def|
-          [type_def["type"], type_def]
-        end
-      ]
-
-  if settings.automatic_index_updates
-    handler = MuSearch::AutomaticUpdateHandler.new({
-                                                     logger: SinatraTemplate::Utils.log,
-                                                     elastic_client: Elastic.new(host: 'elasticsearch', port: 9200),
-                                                     attachment_path_base: settings.attachments_path_base,
-                                                     type_definitions: settings.type_definitions
-                                                   })
-  else
-    handler = MuSearch::InvalidatingUpdateHandler.new({
-                                                        logger: SinatraTemplate::Utils.log,
-                                                        type_definitions: settings.type_definitions
-                                                      })
-  end
-  set :delta_parser, MuSearch::DeltaHandler.new({
-                                                  update_handler: handler,
-                                                  logger: SinatraTemplate::Utils.log,
-                                                  search_configuration: configuration
-                                                })
+def setup_indexes(client)
+    # hardcoded pipeline names (for now)
+  client.create_attachment_pipeline "attachment", "data"
+  client.create_attachment_array_pipeline "attachment_array", "data"
 
   if settings.persist_indexes
     log.info "Loading persisted indexes"
@@ -118,43 +45,36 @@ def configure_settings client, is_reload = nil
     destroy_persisted_indexes client
   end
 
-  # Eager Indexing
-  eager_indexing_groups = configuration["eager_indexing_groups"] || []
-
-  # if configuration["eager_indexing_sparql_query"]
-  #   query_result = query configuration["eager_indexing_sparql_query"]
-  #   eager_indexing_groups += query_result.map { |key, value| value.to_s }
-  # end
-
-  unless eager_indexing_groups.empty?
-    settings.master_mutex.synchronize do
-      eager_indexing_groups.each do |groups|
-        settings.type_definitions.keys.each do |type|
-          index = get_matching_index_name type, groups, []
-          index_name = index ? index[:index] : nil
-          if !(settings.persist_indexes) and index and client.index_exists(index_name)
-            log.info "deleting index for type #{type} - #{index_name}."
-            client.delete_index index_name
-          end
-          unless index and client.index_exists(index_name)
-            index_name = create_index(client, type, groups, [])
-            log.debug "Indexing documents for #{type} into #{index_name.inspect}"
-            index_documents client, type, index_name, groups
-            Indexes.instance.set_status index_name, :valid
-          else
-            log.info "Using persisted index: #{index_name}"
-          end
+  settings.master_mutex.synchronize do
+    settings.eager_indexing_groups.each do |groups|
+      settings.type_definitions.keys.each do |type|
+        index = get_matching_index_name type, groups, []
+        index_name = index ? index[:index] : nil
+        if !(settings.persist_indexes) and index and client.index_exists(index_name)
+          log.info "deleting index for type #{type} - #{index_name}."
+          client.delete_index index_name
+        end
+        unless index and client.index_exists(index_name)
+          index_name = create_index(client, type, groups, [])
+          log.debug "Indexing documents for #{type} into #{index_name.inspect}"
+          index_documents client, type, index_name, groups
+          Indexes.instance.set_status index_name, :valid
+        else
+          log.info "Using persisted index: #{index_name}"
         end
       end
     end
   end
 end
 
+
 # Configures the system and makes sure everything is up.  Heavily
 # relies on configure_settings.
 #
 # TODO: get attachment pipeline names from configuration
 configure do
+  configure_settings
+
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
   while !client.up
@@ -162,29 +82,19 @@ configure do
     sleep 1
   end
 
-  # TODO provide more explicit abstraction to send out sudo calls. All
-  # calls that go through this endpoint (rather than the one provided
-  # by the mu-ruby-template seem to be mu-auth-sudo calls so it's easy
-  # to replace.
-  set :db, SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], { headers: { 'mu-auth-sudo': 'true' } } )
   while !sparql_up do
     log.info "...waiting for SPARQL endpoint..."
     sleep 1
   end
 
-  # hardcoded pipeline names (for now)
-  client.create_attachment_pipeline "attachment", "data"
-  client.create_attachment_array_pipeline "attachment_array", "data"
-
-  configure_settings client
-
+  setup_indexes(client)
 
   if settings.dev
     listener = Listen.to('/config/') do |modified, added, removed|
       if modified.include? '/config/config.json'
         log.info 'Reloading configuration'
         destroy_existing_indexes client
-        configure_settings client, true
+        configure_settings client
         log.info '== Configuration reloaded'
       end
     end
@@ -466,7 +376,7 @@ end
 
 # Raw ES Query DSL
 # Need to think through several things, such as pagination
-if settings.raw_dsl_endpoint
+if settings.enable_raw_dsl_endpoint
   post "/:path/search" do |path|
     content_type 'application/json'
     client = Elastic.new(host: 'elasticsearch', port: 9200)
@@ -489,8 +399,7 @@ if settings.raw_dsl_endpoint
   end
 end
 
-# Processes an update from the delta system.  Consumes the genesis
-# delta format and invalidates the necessary indexes.
+# Processes an update from the delta system. See MuSearch::DeltaHandler and MuSearch::UpdateHandler for more info
 post "/update" do
   log.debug "Received delta update #{@json_body}"
   settings.delta_parser.parse_deltas(@json_body)

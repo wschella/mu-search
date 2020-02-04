@@ -14,44 +14,54 @@ module MuSearch
     ##
     # default interval to wait before applying changes
     DEFAULT_WAIT_INTERVAL_MINUTES = 8
+    ##
+    # default number of threads to use for handling updates
+    DEFAULT_NUMBER_OF_THREADS = 2
 
     ##
     # creates an update handler
-    def initialize(logger:, wait_interval: DEFAULT_WAIT_INTERVAL_MINUTES, &block)
+    def initialize(logger: Logger.new(STDOUT),
+                   wait_interval: DEFAULT_WAIT_INTERVAL_MINUTES,
+                   number_of_threads: DEFAULT_NUMBER_OF_THREADS,
+                   &block
+                  )
       @logger = logger
       @min_wait_time = wait_interval * 60 / 86400.0
+      @number_of_threads = number_of_threads > 0 ? number_of_threads : DEFAULT_NUMBER_OF_THREADS
       @queue = []
       @index = Hash.new { |hash, key| hash[key] = Set.new() }
       @mutex = Mutex.new
       if block_given?
         define_method(:handler, block)
       end
-
-      @runner = Thread.new(abort_on_exception: true) do
-        while true do
-          change = subject = index_names = type = nil
-          begin
-            @mutex.synchronize do
-              @logger.debug "UPDATE HANDLER: #{@queue.length} updates remain to be handled"
-              if @queue.length > 1000
-                @logger.warn "UPDATE HANDLER: large number #{@queue.length} of updates remain to be handled"
+      @logger.info "UPDATE HANDLER: configured with #{@number_of_threads} threads and wait time of #{wait_interval} minutes"
+      @runners = (0...@number_of_threads).map do |i|
+        Thread.new(abort_on_exception: true) do
+          @logger.info "UPDATE HANDLER: runner #{i} ready for duty"
+          while true do
+            change = subject = index_names = type = nil
+            begin
+              @mutex.synchronize do
+                if @queue.length > 1000
+                  @logger.info "UPDATE HANDLER: large number of updates (#{@queue.length}) to be handled"
+                end
+                if @queue.length > 0 && (DateTime.now - @queue[0][:timestamp]) > @min_wait_time
+                  change = @queue.shift
+                  subject = change[:subject]
+                  type = change[:type]
+                  index_names = @index.delete(subject)
+                end
               end
-              if @queue.length > 0 && (DateTime.now - @queue[0][:timestamp]) > @min_wait_time
-                change = @queue.shift
-                subject = change[:subject]
-                type = change[:type]
-                index_names = @index.delete(subject)
+              if ! change.nil?
+                @logger.debug "UPDATE HANDLER: handling update of #{subject}"
+                handler(subject, index_names, type)
               end
+            rescue StandardError => e
+              @logger.warn "UPDATE HANDLER: update of #{subject} failed"
+              @logger.error e
             end
-            if ! change.nil?
-              @logger.debug "UPDATE HANDLER: handling update of #{subject}"
-              handler(subject, index_names, type)
-            end
-          rescue StandardError => e
-            @logger.warn "UPDATE HANDLER: update of #{subject} failed"
-            @logger.error e
+            sleep 5
           end
-          sleep 30
         end
       end
     end

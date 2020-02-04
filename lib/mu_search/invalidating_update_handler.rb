@@ -8,9 +8,9 @@ module MuSearch
 
     ##
     # creates an invalidating update handler
-    def initialize(logger: , type_definitions:)
+    def initialize(type_definitions:, **args)
       @type_definitions = type_definitions
-      super(logger: logger)
+      super(args)
     end
 
     def handler(subject, index_types, type)

@@ -12,11 +12,11 @@ module MuSearch
 
     ##
     # creates an automatic update handler
-    def initialize(logger: , elastic_client:, type_definitions:, attachment_path_base:)
+    def initialize(elastic_client:, type_definitions:, attachment_path_base:, **args)
       @client = elastic_client
       @type_definitions = type_definitions
       @attachment_path_base = attachment_path_base
-      super(logger: logger)
+      super(**args)
     end
 
     def handler(subject, index_types, type)
