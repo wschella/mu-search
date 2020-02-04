@@ -40,7 +40,7 @@ def setup_indexes(client)
 
   if settings.persist_indexes
     log.info "Loading persisted indexes"
-    load_persisted_indexes configuration["types"]
+    load_persisted_indexes settings.index_config
   else
     destroy_persisted_indexes client
   end

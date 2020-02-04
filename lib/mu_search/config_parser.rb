@@ -39,6 +39,7 @@ module MuSearch
       if json_config["eager_indexing_groups"]
         config[:eager_indexing_groups]  = json_config["eager_indexing_groups"]
       end
+      config[:index_config] = json_config["types"]
       config[:type_paths] = Hash[
         json_config["types"].collect do |type_def|
           [type_def["on_path"], type_def["type"]]
@@ -49,7 +50,7 @@ module MuSearch
           [type_def["type"], type_def]
         end
       ]
-      config[:delta_parser] = setup_parser(config, json_config)
+      config[:delta_parser] = setup_parser(config)
       config[:master_mutex] = Mutex.new
       config
     end
@@ -57,7 +58,7 @@ module MuSearch
     ##
     # set up parser based on config
     # TODO: probably should include this bit in setup and not in config
-    def self.setup_parser(config, json_config)
+    def self.setup_parser(config)
       if config[:automatic_index_updates]
         handler = MuSearch::AutomaticUpdateHandler.new({
                                                          logger: SinatraTemplate::Utils.log,
@@ -78,7 +79,7 @@ module MuSearch
       return MuSearch::DeltaHandler.new({
                                           update_handler: handler,
                                           logger: SinatraTemplate::Utils.log,
-                                          search_configuration: json_config
+                                          search_configuration: { "types" => config[:index_config] }
                                         })
     end
 
