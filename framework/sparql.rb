@@ -80,20 +80,6 @@ def is_authorized s, rdf_type, allowed_groups
   end
 end
 
-# Retrieves the subject for a given UUID from the triplestore.
-#
-#  - s: String uuid of the item.
-#
-# TODO: Consider memoizing this function.
-def get_uuid s
-  query_result = direct_query <<SPARQL
-SELECT ?uuid WHERE {
-   <#{s}> <http://mu.semte.ch/vocabularies/core/uuid> ?uuid
-}
-SPARQL
-  uuid = query_result && query_result.first && query_result.first["uuid"]
-end
-
 # Converts the string predicate from the configuration into a portion
 # for the path used in a SPARQL query.
 #
@@ -126,31 +112,17 @@ end
 
 
 # Constructs a SPARQL query which selects all requested properties for
-# an ElasticSearch document.  Can identify sources either by UUID or
-# by URI.
+# an ElasticSearch document.
 #
-#   - uuid: uuid of the instance as a string.
-#   - uri: URI of the instance as a string (only used when uuid is not
-#     supplied.
+#   - uri: URI of the instance as a string
 #   - properties: properties to be discovered, as an array of
 #     definitions supplied from the configuration.
-def make_property_query uuid, uri, property_key, property_predicate
-  id_line =
-    if uuid
-      "?doc <http://mu.semte.ch/vocabularies/core/uuid> \"#{uuid}\". "
-    else
-      " "
-    end
-
-  s = uuid ? "?doc" : "<#{uri}>"
-
+def make_property_query uri, property_key, property_predicate
   predicate = property_predicate.is_a?(Hash) ? property_predicate["via"] : property_predicate
   predicate_s = make_predicate_string predicate
-
   <<SPARQL
     SELECT DISTINCT ?#{property_key} WHERE {
-     #{id_line}
-     #{s} #{predicate_s} ?#{property_key}
+     #{sparql_escape_uri(uri)} #{predicate_s} ?#{property_key}
     }
 SPARQL
 end
@@ -219,22 +191,25 @@ end
 
 
 # Retrieves a document to index from the available parameters.  Is
-# capable of coping with uuid or uri identification schemes, with
+# capable of coping with uri identification schemes, with
 # properties as configured in the user's config, as well as with
 # optional allowed_groups.
 #
 # This is your one-stop shop to fetch all info to index a document.
 #
-#   - uuid: String uuid representing the item to fetch
-#   - uri: URI of the item to fetch (not used if uuid is suplpied)
+#   - uri: URI of the item to fetch
 #   - properties: Array of properties as configured in the user's
 #     configuration file.
 #   - allowed_groups: Optional setting allowing to scope down the
 #     retrieved contents by specific access rights.
-def fetch_document_to_index uuid: nil, uri: nil, properties: nil, allowed_groups: nil
+def fetch_document_to_index uri: nil, properties: nil, allowed_groups: nil
   pipeline = false
+  # we include uuid because it may be used for folding
+  unless properties.has_key?("uuid")
+    properties["uuid"] = ["http://mu.semte.ch/vocabularies/core/uuid"]
+  end
   key_value_tuples = properties.collect do |key, val|
-    query = make_property_query(uuid, uri, key, val)
+    query = make_property_query(uri, key, val)
     results = allowed_groups ? authorized_query(query, allowed_groups) : request_authorized_query(query)
 
     if val.is_a? Hash

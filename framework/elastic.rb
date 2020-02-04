@@ -65,7 +65,7 @@ class Elastic
       run_rescue(uri, req, retries, res)
     else
       log.warn "#{req.method} request on #{uri} resulted in response: #{res}"
-      log.debug "Request body for #{uri} was: #{req.body}\n Response: #{res.inspect}"
+      log.debug "Request body for #{uri} was: #{req.body.to_s[0...1024]}\n Response: #{res.inspect}"
       res
     end
   end
@@ -141,7 +141,7 @@ class Elastic
     begin
       run(uri, req)
       log.info "Deleted #{index}"
-      log.info "Status: #{index_exists index}"
+      log.debug "Index #{index} exists: #{index_exists index}"
     rescue
       if !client.index_exists index
         log.info "Index not deleted, does not exist: #{index}"
@@ -173,7 +173,7 @@ class Elastic
   #   - index: Index to retrieve the document from.
   #   - id: ElasticSearch ID of the document.
   def get_document index, id
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}")
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
     req = Net::HTTP::Get.new(uri)
     run(uri, req)
   end
@@ -185,7 +185,7 @@ class Elastic
   #   - document: Document contents (as a ruby json object) to be
   #     stored.
   def put_document index, id, document
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}")
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
     req = Net::HTTP::Put.new(uri)
     req.body = document.to_json
     run(uri, req)
@@ -200,7 +200,8 @@ class Elastic
   # TODO: describe if this is a full replace, or if this updates the
   # document partially.
   def update_document index, id, document
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}/_update")
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}/_update")
+    log.debug(uri)
     req = Net::HTTP::Post.new(uri)
     req.body = { "doc": document }.to_json
     run(uri, req)
@@ -266,7 +267,7 @@ class Elastic
   #   - index: Index to remove the document from
   #   - id: ElasticSearch identifier of the document
   def delete_document index, id
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}")
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
     req = Net::HTTP::Delete.new(uri)
     run(uri, req)
   end
@@ -331,12 +332,12 @@ class Elastic
     document_for_reporting = document.clone
     document_for_reporting["data"] = document_for_reporting["data"] ? "[...#{document_for_reporting["data"].length} characters long]" : "none"
 
-    es_uri = "http://#{@host}:#{@port_s}/#{index}/_doc/#{id}?pipeline=#{pipeline}"
+    es_uri = "http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}?pipeline=#{pipeline}"
 
     log.debug("Uploading attachment through call: #{es_uri}")
     log.debug("Uploading approximate body: #{document_for_reporting}")
 
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{id}?pipeline=#{pipeline}")
+    uri = URI(es_uri)
     req = Net::HTTP::Put.new(uri)
     req.body = document.to_json
     run(uri, req)

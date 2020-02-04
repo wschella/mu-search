@@ -80,9 +80,8 @@ def index_documents client, type, index, allowed_groups = nil
       offset = i*settings.batch_size
 
       q = <<SPARQL
-    SELECT DISTINCT ?id WHERE {
-      ?doc a <#{rdf_type}>;
-           <http://mu.semte.ch/vocabularies/core/uuid> ?id
+    SELECT DISTINCT ?doc ?id WHERE {
+      ?doc a <#{rdf_type}>.
     } LIMIT #{settings.batch_size} OFFSET #{offset}
 SPARQL
 
@@ -100,16 +99,15 @@ SPARQL
       number_of_threads = settings.batch_size > ENV['NUMBER_OF_THREADS'].to_i ? ENV['NUMBER_OF_THREADS'].to_i: settings.batch_size
       Parallel.each( query_result, in_threads: number_of_threads ) do |result|
         data = []
-        uuid = result[:id].to_s
-        log.debug "Fetching document for uuid #{uuid}"
+        document_id = result[:doc].to_s
+        log.debug "Fetching document for #{document_id}"
         begin
-          document, attachment_pipeline = fetch_document_to_index uuid: uuid, properties: properties, allowed_groups: allowed_groups
-          document["uuid"] = uuid
-          log.debug "Uploading document #{uuid} - batch #{i} - allowed groups #{allowed_groups}"
+          document, attachment_pipeline = fetch_document_to_index uri: document_id, properties: properties, allowed_groups: allowed_groups
+          log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{allowed_groups}"
           if attachment_pipeline
-            data.push({ index: { _id: uuid , pipeline: attachment_pipeline } }, document)
+            data.push({ index: { _id: document_id , pipeline: attachment_pipeline } }, document)
           else
-            data.push({ index: { _id: uuid } }, document)
+            data.push({ index: { _id: document_id } }, document)
           end
 
           begin
@@ -124,7 +122,7 @@ SPARQL
             log.warn "Failed to ingest batch for ids #{ids_as_string}"
           end
         rescue StandardError => e
-          log.warn "Failed to fetch document or upload it or somesuch.  ID #{uuid} error #{e.inspect}"
+          log.warn "Failed to fetch document or upload it or somesuch.  ID #{document_id} error #{e.inspect}"
         end
       end
 

@@ -19,6 +19,7 @@ module MuSearch
       begin
         allowed_groups_object = allowed_groups.select { |group| group }
         log.debug "Authorized query with allowed groups object #{allowed_groups_object}"
+        log.debug query_string
         authorized_client(allowed_groups_object).query(query_string)
       rescue StandardError => e
         next_retries = retries - 1
