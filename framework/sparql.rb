@@ -140,7 +140,7 @@ def parse_attachment(results, key, attachment_path_base)
             Base64.strict_encode64 file.read
           end
         else
-          log.warn "Ignoring attachment #{file_path}: #{filesize} bytes exceeds allowed size of #{ENV["MAXIMUM_FILE_SIZE]} bytes"
+          log.warn "Ignoring attachment #{file_path}: #{filesize} bytes exceeds allowed size of #{ENV["MAXIMUM_FILE_SIZE"]} bytes"
           nil
         end
       rescue Errno::ENOENT, IOError => e
