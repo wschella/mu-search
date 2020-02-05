@@ -82,9 +82,6 @@ module MuSearch
             change = subject = index_names = type = nil
             begin
               @mutex.synchronize do
-                if @queue.length > 500
-                  @logger.info "UPDATE HANDLER: large number of updates (#{@queue.length}) to be handled"
-                end
                 if @queue.length > 0 && (DateTime.now - @queue[0][:timestamp]) > @min_wait_time
                   change = @queue.shift
                   subject = change[:subject]
@@ -93,6 +90,9 @@ module MuSearch
                 end
               end
               if ! change.nil?
+                if @queue.length > 500
+                  @logger.info "UPDATE HANDLER: large number of updates (#{@queue.length}) to be handled"
+                end
                 @logger.debug "UPDATE HANDLER: handling update of #{subject}"
                 handler(subject, index_names, type)
               end
