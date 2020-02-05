@@ -1,4 +1,5 @@
 require 'set'
+require 'yaml/store'
 
 module MuSearch
   ##
@@ -34,36 +35,9 @@ module MuSearch
       if block_given?
         define_method(:handler, block)
       end
+      restore_queue_and_setup_persistence
+      setup_runners
       @logger.info "UPDATE HANDLER: configured with #{@number_of_threads} threads and wait time of #{wait_interval} minutes"
-      @runners = (0...@number_of_threads).map do |i|
-        Thread.new(abort_on_exception: true) do
-          @logger.info "UPDATE HANDLER: runner #{i} ready for duty"
-          while true do
-            change = subject = index_names = type = nil
-            begin
-              @mutex.synchronize do
-                if @queue.length > 1000
-                  @logger.info "UPDATE HANDLER: large number of updates (#{@queue.length}) to be handled"
-                end
-                if @queue.length > 0 && (DateTime.now - @queue[0][:timestamp]) > @min_wait_time
-                  change = @queue.shift
-                  subject = change[:subject]
-                  type = change[:type]
-                  index_names = @index.delete(subject)
-                end
-              end
-              if ! change.nil?
-                @logger.debug "UPDATE HANDLER: handling update of #{subject}"
-                handler(subject, index_names, type)
-              end
-            rescue StandardError => e
-              @logger.warn "UPDATE HANDLER: update of #{subject} failed"
-              @logger.error e
-            end
-            sleep 5
-          end
-        end
-      end
     end
 
     ##
@@ -98,7 +72,66 @@ module MuSearch
       @logger.debug "document exists: #{res.inspect}"
       res
     end
+
+    private
+    def setup_runners
+      @runners = (0...@number_of_threads).map do |i|
+        Thread.new(abort_on_exception: true) do
+          @logger.debug "UPDATE HANDLER: runner #{i} ready for duty"
+          while true do
+            change = subject = index_names = type = nil
+            begin
+              @mutex.synchronize do
+                if @queue.length > 500
+                  @logger.info "UPDATE HANDLER: large number of updates (#{@queue.length}) to be handled"
+                end
+                if @queue.length > 0 && (DateTime.now - @queue[0][:timestamp]) > @min_wait_time
+                  change = @queue.shift
+                  subject = change[:subject]
+                  type = change[:type]
+                  index_names = @index.delete(subject)
+                end
+              end
+              if ! change.nil?
+                @logger.debug "UPDATE HANDLER: handling update of #{subject}"
+                handler(subject, index_names, type)
+              end
+            rescue StandardError => e
+              @logger.warn "UPDATE HANDLER: update of #{subject} failed"
+              @logger.error e
+            end
+            sleep 5
+          end
+        end
+      end
+    end
+
+    def restore_queue_and_setup_persistence
+      @store = YAML::Store.new("/config/update-handler.store", true)
+      @store.transaction do
+        @queue = @store.fetch("queue", [])
+        @index = @index.merge(@store.fetch("index", {}))
+        @logger.info "UPDATE HANDLER: restored queue (length: #{@queue.length})"
+      end
+
+      @persister =  Thread.new(abort_on_exception: true) do
+        sleep 300
+        @mutex.synchronize do
+          if @queue.length > 0
+            @logger.info "UPDATE HANDLER: persisting queue (length: #{@queue.length}) to disk"
+            begin
+              @store.transaction do
+                store["queue"] = @queue
+                store["index"] = @index
+              end
+            rescue StandardError => e
+              @logger.warn "UPDATE HANDLER: failed to persist queue. #{e.message}"
+              @logger.error e
+            end
+          end
+        end
+      end
+    end
   end
 end
-
 

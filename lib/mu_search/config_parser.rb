@@ -50,37 +50,8 @@ module MuSearch
           [type_def["type"], type_def]
         end
       ]
-      config[:delta_parser] = setup_parser(config)
       config[:master_mutex] = Mutex.new
       config
-    end
-
-    ##
-    # set up parser based on config
-    # TODO: probably should include this bit in setup and not in config
-    def self.setup_parser(config)
-      if config[:automatic_index_updates]
-        handler = MuSearch::AutomaticUpdateHandler.new({
-                                                         logger: SinatraTemplate::Utils.log,
-                                                         elastic_client: Elastic.new(host: 'elasticsearch', port: 9200),
-                                                         attachment_path_base: config[:attachments_path_base],
-                                                         type_definitions: config[:type_definitions],
-                                                         wait_interval: config[:update_wait_interval_minutes],
-                                                         number_of_threads: config[:number_of_threads]
-                                                   })
-      else
-        handler = MuSearch::InvalidatingUpdateHandler.new({
-                                                            logger: SinatraTemplate::Utils.log,
-                                                            type_definitions: config[:type_definitions],
-                                                            wait_interval: config[:update_wait_interval_minutes],
-                                                            number_of_threads: config[:number_of_threads]
-                                                      })
-      end
-      return MuSearch::DeltaHandler.new({
-                                          update_handler: handler,
-                                          logger: SinatraTemplate::Utils.log,
-                                          search_configuration: { "types" => config[:index_config] }
-                                        })
     end
 
     ##

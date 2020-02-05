@@ -31,7 +31,37 @@ def configure_settings
   set :dev, (ENV['RACK_ENV'] == 'development')
   configuration = MuSearch::ConfigParser.parse('/config/config.json')
   set configuration
+  configuration
 end
+
+##
+# set up parser based on config
+def setup_parser(client, config)
+  if config[:automatic_index_updates]
+    handler = MuSearch::AutomaticUpdateHandler.new({
+                                                     logger: SinatraTemplate::Utils.log,
+                                                     elastic_client: client,
+                                                     attachment_path_base: config[:attachments_path_base],
+                                                     type_definitions: config[:type_definitions],
+                                                     wait_interval: config[:update_wait_interval_minutes],
+                                                     number_of_threads: config[:number_of_threads]
+                                                   })
+  else
+    handler = MuSearch::InvalidatingUpdateHandler.new({
+                                                        logger: SinatraTemplate::Utils.log,
+                                                        type_definitions: config[:type_definitions],
+                                                        wait_interval: config[:update_wait_interval_minutes],
+                                                        number_of_threads: config[:number_of_threads]
+                                                      })
+  end
+  delta_parser = MuSearch::DeltaHandler.new({
+                                      update_handler: handler,
+                                      logger: SinatraTemplate::Utils.log,
+                                      search_configuration: { "types" => config[:index_config] }
+                                    })
+  set :delta_parser, delta_parser
+end
+
 
 def setup_indexes(client)
     # hardcoded pipeline names (for now)
@@ -73,7 +103,7 @@ end
 #
 # TODO: get attachment pipeline names from configuration
 configure do
-  configure_settings
+  configuration = configure_settings
 
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
@@ -88,6 +118,7 @@ configure do
   end
 
   setup_indexes(client)
+  setup_parser(client, configuration)
 
   if settings.dev
     listener = Listen.to('/config/') do |modified, added, removed|
