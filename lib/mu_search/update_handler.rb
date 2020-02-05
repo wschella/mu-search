@@ -117,17 +117,15 @@ module MuSearch
       @persister =  Thread.new(abort_on_exception: true) do
         sleep 300
         @mutex.synchronize do
-          if @queue.length > 0
-            @logger.info "UPDATE HANDLER: persisting queue (length: #{@queue.length}) to disk"
-            begin
-              @store.transaction do
-                store["queue"] = @queue
-                store["index"] = @index
-              end
-            rescue StandardError => e
-              @logger.warn "UPDATE HANDLER: failed to persist queue. #{e.message}"
-              @logger.error e
+          @logger.info "UPDATE HANDLER: persisting queue (length: #{@queue.length}) to disk"
+          begin
+            @store.transaction do
+              @store["queue"] = @queue
+              @store["index"] = @index
             end
+          rescue StandardError => e
+            @logger.warn "UPDATE HANDLER: failed to persist queue. #{e.message}"
+            @logger.error e
           end
         end
       end
