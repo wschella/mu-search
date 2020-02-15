@@ -108,6 +108,8 @@ Here is a simple example of a complete `config.json` file.
 }
 ```
 
+*NOTE*: there are two protected fields that should not be used as property keys: "uuid" and "uri" are both used by musearch. they are used to store the uuid and uri of the root resource.
+
 ### Property Paths
 
 Properties can also be mapped to lists of predicates, corresponding to a property path in RDF.
