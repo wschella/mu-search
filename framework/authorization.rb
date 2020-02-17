@@ -707,7 +707,7 @@ SPARQL
     }
   }
 SPARQL
-    allowed_groups = allowed_groups_result.map { |g| JSON.parse g["group"].to_s }.sort_by { |g| g["name"] + group["variables"].join("") }
+    allowed_groups = allowed_groups_result.map { |g| JSON.parse g["group"].to_s }.sort_by { |group| group["name"] + group["variables"].join("") }
 
     used_groups_result = direct_query  <<SPARQL
   SELECT * WHERE {
