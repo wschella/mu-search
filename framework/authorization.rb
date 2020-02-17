@@ -162,7 +162,8 @@ class Indexes
   # lookup...  maybe a confusion in the specs?]
   def find_matching_index type, allowed_groups, used_groups
     log.debug "FIND_MATCHING_INDEX for type #{type} and allowed_groups #{allowed_groups}"
-    index = @indexes[type] && @indexes[type][allowed_groups.sort_by{ |group| group["name"] }]
+    normalized_groups = allowed_groups.sort_by{ |group| group["name"] + group["variables"].join("") }
+    index = @indexes[type] && @indexes[type][normalized_groups]
     index
   end
 
@@ -706,7 +707,7 @@ SPARQL
     }
   }
 SPARQL
-    allowed_groups = allowed_groups_result.map { |g| JSON.parse g["group"].to_s }.sort_by { |g| g["name"] }
+    allowed_groups = allowed_groups_result.map { |g| JSON.parse g["group"].to_s }.sort_by { |g| g["name"] + group["variables"].join("") }
 
     used_groups_result = direct_query  <<SPARQL
   SELECT * WHERE {
