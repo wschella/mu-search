@@ -5,6 +5,7 @@ require 'request_store'
 require 'listen'
 require 'singleton'
 require 'base64'
+require 'open3'
 
 require_relative 'lib/mu_search/sparql.rb'
 require_relative 'lib/mu_search/delta_handler.rb'
@@ -12,6 +13,7 @@ require_relative 'lib/mu_search/automatic_update_handler.rb'
 require_relative 'lib/mu_search/invalidating_update_handler.rb'
 require_relative 'lib/mu_search/config_parser.rb'
 require_relative 'framework/elastic.rb'
+require_relative 'framework/tika.rb'
 require_relative 'framework/sparql.rb'
 require_relative 'framework/authorization.rb'
 require_relative 'framework/indexing.rb'
@@ -64,10 +66,6 @@ end
 
 
 def setup_indexes(client)
-    # hardcoded pipeline names (for now)
-  client.create_attachment_pipeline "attachment", "data"
-  client.create_attachment_array_pipeline "attachment_array", "data"
-
   if settings.persist_indexes
     log.info "Loading persisted indexes"
     load_persisted_indexes settings.index_config
@@ -100,11 +98,20 @@ end
 
 # Configures the system and makes sure everything is up.  Heavily
 # relies on configure_settings.
-#
-# TODO: get attachment pipeline names from configuration
 configure do
   configuration = configure_settings
 
+  # Start Tika server
+  # TODO: this should be moved to the Tika module,
+  # and a single tika_client threaded through index_documents
+  IO.popen("java -jar /app/bin/tika-server-1.23.jar")
+  tika_client = Tika.new(host: 'localhost', port: 9998)
+  
+  while !tika_client.up
+    log.info "...wating for Tika..."
+    sleep 1
+  end
+  
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
   while !client.up
@@ -368,7 +375,7 @@ get "/:path/search" do |path|
   # question: how to specify which fields are included/excluded?
   # or should we simply exclude all attachment fields?
   es_query["_source"] = {
-    excludes: ["data","attachment"]
+    excludes: settings.excluded_fields # ["data","attachment"]
   }
 
   # while Indexes.instance.status index == :updating

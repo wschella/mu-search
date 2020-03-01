@@ -102,15 +102,12 @@ SPARQL
         document_id = result[:doc].to_s
         log.debug "Fetching document for #{document_id}"
         begin
-          document, attachment_pipeline = fetch_document_to_index uri: document_id, properties: properties,
-                                                                  attachment_path_base: settings.attachments_path_base,
-                                                                  allowed_groups: allowed_groups
+          document = fetch_document_to_index uri: document_id, properties: properties,
+                                             attachment_path_base: settings.attachments_path_base,
+                                             allowed_groups: allowed_groups
           log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{allowed_groups}"
-          if attachment_pipeline
-            data.push({ index: { _id: document_id , pipeline: attachment_pipeline } }, document)
-          else
-            data.push({ index: { _id: document_id } }, document)
-          end
+          data.push({ index: { _id: document_id } }, document)
+
 
           begin
             client.bulk_update_document index, data unless data.empty?

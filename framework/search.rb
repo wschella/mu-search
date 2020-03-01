@@ -32,24 +32,6 @@ def es_query_sort_statement
   end
 end
 
-# Yields the attachment's field if a field contains an attachment, or
-# the field itself if it did not.
-#
-# Can be seen as a filter to pass a field through to translate to the
-# attachment field if necessary.
-#
-# TODO: This is named strangely.  Perhaps we should turn this into a
-# name that only indicates that we're translating the publicly visible
-# field name into the internal one.
-def translate_attachment_field type, field
-  properties = settings.type_definitions[type]["properties"]
-  if properties[field].is_a? Hash and properties[field]["attachment_pipeline"]
-    ["attachment.content", "#{field}.attachment.content"]
-  else
-    field
-  end
-end
-
 # Constructs an ElasticSearch query in ruby JSON format based on the
 # supplied filter parameters.
 #
@@ -111,7 +93,6 @@ def parse_filter_argument( filter_argument, type )
   flag, fields_string = split_filter filter_argument
   fields_arr = fields_string
                  .split( "," )
-                 .map { |field| translate_attachment_field( type, field ) }
                  .flatten()
   fields = fields_arr.length > 0 ? fields_arr : nil
 

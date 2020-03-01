@@ -8,7 +8,8 @@ module MuSearch
         eager_indexing_groups: [],
         update_wait_interval_minutes: 1,
         number_of_threads: 1,
-        enable_raw_dsl_endpoint: false
+        enable_raw_dsl_endpoint: false,
+        excluded_fields: ["data","attachment"]
       }
 
       json_config = JSON.parse(File.read(path))
@@ -26,7 +27,8 @@ module MuSearch
         {name: "attachments_path_base", parser: :parse_string},
         {name: "common_terms_cutoff_frequency", parser: :parse_float},
         {name: "update_wait_interval_minutes", parser: :parse_integer},
-        {name: "number_of_threads", parser: :parse_integer}
+        {name: "number_of_threads", parser: :parse_integer},
+        {name: "excluded_fields", parser: :parse_string_array}
       ].each do |setting|
         name = setting[:name]
         value = self.send(setting[:parser], ENV[name.upcase], json_config[name])
@@ -75,6 +77,13 @@ module MuSearch
     def self.parse_string(*possible_values)
       as_type(*possible_values) do |val|
         val.to_s
+      end
+    end
+
+    
+    def self.parse_string_array(*possible_values)
+      as_type(*possible_values) do |val|
+        val.each { |s| s.to_s }
       end
     end
 

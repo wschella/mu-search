@@ -45,41 +45,21 @@ module MuSearch
           if document_exists_for(document_id, rdf_type, allowed_groups)
             @logger.debug "Our current index knows that #{document_id} is of type #{rdf_type} based on allowed groups #{allowed_groups}"
             properties = @type_definitions.dig(index_type, "properties")
-            document, attachment_pipeline =
-                      fetch_document_to_index uri: document_id, properties: properties,
-                                              attachment_path_base: @attachment_path_base,
-                                              allowed_groups: index[:allowed_groups]
+            document = fetch_document_to_index uri: document_id, properties: properties,
+                                               attachment_path_base: @attachment_path_base,
+                                               allowed_groups: index[:allowed_groups]
 
             document_for_reporting = document.clone
             document_for_reporting["data"] = document_for_reporting["data"] ? document_for_reporting["data"].length : "none"
             @logger.debug "Fetched document to index is #{document_for_reporting}"
-            if attachment_pipeline
-              @logger.debug "Document to update has attachment pipeline"
-              begin
-                @client.upload_attachment index[:index], document_id, attachment_pipeline, document
-                @logger.debug "Managed to upload attachment for #{document_id}"
-              rescue
-                @logger.warn "Could not upload attachment #{document_id}"
-                begin
-                  @logger.debug "Trying to update document with id #{document_id}"
-                  @client.update_document index[:index], document_id, document
-                  @logger.debug "Succeeded in updating document with id #{document_id}"
-                rescue
-                  @logger.debug "Failed to update document, trying to put new document #{document_id}"
-                  @client.put_document index[:index], document_id, document
-                  @logger.debug "Succeeded in putting new document #{document_id}"
-                end
-              end
-            else
-              begin
-                @logger.debug "Trying to update document with id #{document_id}"
-                @client.update_document index[:index], document_id, document
-                @logger.debug "Succeeded in updating document with id #{document_id}"
-              rescue
-                @logger.debug "Failed to update document, trying to put new document #{document_id}"
-                @client.put_document index[:index], document_id, document
-                @logger.debug "Succeeded in putting new document #{document_id}"
-              end
+            begin
+              @logger.debug "Trying to update document with id #{document_id}"
+              @client.update_document index[:index], document_id, document
+              @logger.debug "Succeeded in updating document with id #{document_id}"
+            rescue
+              @logger.debug "Failed to update document, trying to put new document #{document_id}"
+              @client.put_document index[:index], document_id, document
+              @logger.debug "Succeeded in putting new document #{document_id}"
             end
           else
             @logger.info "AUTOMATIC UPDATE: Not Authorized."
