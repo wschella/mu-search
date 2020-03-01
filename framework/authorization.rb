@@ -590,7 +590,7 @@ end
 #
 # WARNING: a quick bug fix has introduced some naming ambiguity
 # between indexes and indexs_name(s)
-def get_or_create_indexes client, type
+def get_or_create_indexes client, tika_client, type
   # I doubt this takes care of additive indexes <-- this was from
   # experimentation, this code itself seems correct...
 
@@ -652,7 +652,7 @@ def get_or_create_indexes client, type
         Indexes.instance.mutex(index_name).synchronize do
           begin
             clear_index client, index_name
-            index_documents client, type, index_name, index[:allowed_groups]
+            index_documents client, tika_client, type, index_name, index[:allowed_groups]
             client.refresh_index index_name
             Indexes.instance.set_status index_name, :valid
           rescue

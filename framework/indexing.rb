@@ -43,7 +43,7 @@ end
 # Documents are indexed in batches, thereby lowering the load on
 # ElasticSearch.
 #
-def index_documents client, type, index, allowed_groups = nil
+def index_documents client, tika_client, type, index, allowed_groups = nil
   log.debug "Allowed groups in index #{allowed_groups}"
 
   count_list = [] # for reporting
@@ -102,7 +102,8 @@ SPARQL
         document_id = result[:doc].to_s
         log.debug "Fetching document for #{document_id}"
         begin
-          document = fetch_document_to_index uri: document_id, properties: properties,
+          document = fetch_document_to_index tika_client,
+                                             uri: document_id, properties: properties,
                                              attachment_path_base: settings.attachments_path_base,
                                              allowed_groups: allowed_groups
           log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{allowed_groups}"

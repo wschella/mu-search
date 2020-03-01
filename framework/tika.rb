@@ -1,8 +1,31 @@
 # A quick as-needed Tika API
 #
-# calling directly:
-# o, s = Open3.capture2("java -server -Djava.awt.headless=true -Dfile.encoding=UTF-8 -jar /app/bin/tika-app-1.23.jar #{file_path}")
-#
+# (Existing Tika gems seem not to work out of the box
+# because of dependency problems.)
+class TikaServer
+  # Sets up the Tika instance
+  def initialize(port: 9998)
+    @host = 'localhost'
+    @port_s = port.to_s
+    IO.popen("java -jar /app/bin/tika-server-1.23.jar --host=localhost --port=#{@port_s}")
+    log.info "Starting Tika server on port #{@port}..."
+  end
+
+  def up
+    uri = URI("http://#{@host}:#{@port_s}/tika")
+    log.info "checking http://#{@host}:#{@port_s}/tika"
+    req = Net::HTTP::Get.new(uri)
+    begin
+      Net::HTTP.start(uri.hostname, uri.port) do |http|
+        http.request(req)
+      end
+    rescue Exception => e
+      log.info "An error of type #{e.class} happened, message is #{e.message}"
+      false
+    end
+  end
+end
+
 class Tika
   include SinatraTemplate::Utils
 
@@ -69,18 +92,6 @@ class Tika
       res
     end
   end
-
-  def up
-    uri = URI("http://#{@host}:#{@port_s}/tika")
-    req = Net::HTTP::Get.new(uri)
-    
-    begin
-      run(uri, req)
-    rescue
-      false
-    end
-  end
-
 
   def process_document name, document
     uri = URI("http://#{@host}:#{@port_s}/tika")

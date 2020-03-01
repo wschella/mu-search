@@ -127,9 +127,7 @@ end
 # helper function for fetch_document_to_index
 # retrieves content of the linked attachments
 # TODO: Consider whether it's appropriate to force_encode UTF-8 for attachments
-def parse_attachment(results, key, attachment_path_base)
-  tika_client = Tika.new(host: 'localhost', port: 9998)
-
+def parse_attachment(tika_client, results, key, attachment_path_base)
   attachments = results.collect do |result|
     file_path = result[key]
     if file_path
@@ -204,7 +202,7 @@ end
 #   - allowed_groups: Optional setting allowing to scope down the
 #     retrieved contents by specific access rights.
 #   - attachment_path_base: base path to use for files
-def fetch_document_to_index uri: nil, properties: nil, allowed_groups: nil, attachment_path_base: '.'
+def fetch_document_to_index tika_client, uri: nil, properties: nil, allowed_groups: nil, attachment_path_base: '.'
   # we include uuid because it may be used for folding
   unless properties.has_key?("uuid")
     properties["uuid"] = ["http://mu.semte.ch/vocabularies/core/uuid"]
@@ -216,7 +214,7 @@ def fetch_document_to_index uri: nil, properties: nil, allowed_groups: nil, atta
     if val.is_a? Hash
         # file attachment
         if val["attachment_pipeline"]
-          key, value = parse_attachment(results, key, attachment_path_base)
+          key, value = parse_attachment(tika_client, results, key, attachment_path_base)
           [key, value]
         # nested object
         elsif val["rdf_type"]

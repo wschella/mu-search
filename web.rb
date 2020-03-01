@@ -38,11 +38,12 @@ end
 
 ##
 # set up parser based on config
-def setup_parser(client, config)
+def setup_parser(client, tika, config)
   if config[:automatic_index_updates]
     handler = MuSearch::AutomaticUpdateHandler.new({
                                                      logger: SinatraTemplate::Utils.log,
                                                      elastic_client: client,
+                                                     tika_client: tika,
                                                      attachment_path_base: config[:attachments_path_base],
                                                      type_definitions: config[:type_definitions],
                                                      wait_interval: config[:update_wait_interval_minutes],
@@ -65,7 +66,7 @@ def setup_parser(client, config)
 end
 
 
-def setup_indexes(client)
+def setup_indexes client, tika
   if settings.persist_indexes
     log.info "Loading persisted indexes"
     load_persisted_indexes settings.index_config
@@ -85,7 +86,7 @@ def setup_indexes(client)
         unless index and client.index_exists(index_name)
           index_name = create_index(client, type, groups, [])
           log.debug "Indexing documents for #{type} into #{index_name.inspect}"
-          index_documents client, type, index_name, groups
+          index_documents client, tika, type, index_name, groups
           Indexes.instance.set_status index_name, :valid
         else
           log.info "Using persisted index: #{index_name}"
@@ -101,17 +102,14 @@ end
 configure do
   configuration = configure_settings
 
-  # Start Tika server
-  # TODO: this should be moved to the Tika module,
-  # and a single tika_client threaded through index_documents
-  IO.popen("java -jar /app/bin/tika-server-1.23.jar")
-  tika_client = Tika.new(host: 'localhost', port: 9998)
+  tika_server = TikaServer.new(port:9998)
   
-  while !tika_client.up
+  while !tika_server.up
     log.info "...wating for Tika..."
     sleep 1
   end
-  
+
+  tika = Tika.new(host: 'localhost', port: 9998)
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
   while !client.up
@@ -124,8 +122,8 @@ configure do
     sleep 1
   end
 
-  setup_indexes(client)
-  setup_parser(client, configuration)
+  setup_indexes client, tika
+  setup_parser client, tika, configuration
 
   if settings.dev
     listener = Listen.to('/config/') do |modified, added, removed|
@@ -324,12 +322,14 @@ get "/:path/search" do |path|
   log.debug "SEARCH Got allowed groups #{groups}"
 
   client = Elastic.new(host: 'elasticsearch', port: 9200)
+  tika = Tika.new(host: 'localhost', port: 9998)
+  
   type = get_type_from_path path
   collapse_uuids = (params["collapse_uuids"] == "t")
 
   log.debug "SEARCH Found type #{type}"
 
-  index_names = get_or_create_indexes client, type
+  index_names = get_or_create_indexes client, tika, type
 
   log.debug "SEARCH Found indexes #{index_names}"
 

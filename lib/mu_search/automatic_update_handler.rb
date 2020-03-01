@@ -12,10 +12,11 @@ module MuSearch
 
     ##
     # creates an automatic update handler
-    def initialize(elastic_client:, type_definitions:, attachment_path_base:, **args)
+    def initialize(elastic_client:, tika_client:, type_definitions:, attachment_path_base:, **args)
       @client = elastic_client
       @type_definitions = type_definitions
       @attachment_path_base = attachment_path_base
+      @tika_client = tika_client
       super(**args)
     end
 
@@ -45,7 +46,7 @@ module MuSearch
           if document_exists_for(document_id, rdf_type, allowed_groups)
             @logger.debug "Our current index knows that #{document_id} is of type #{rdf_type} based on allowed groups #{allowed_groups}"
             properties = @type_definitions.dig(index_type, "properties")
-            document = fetch_document_to_index uri: document_id, properties: properties,
+            document = fetch_document_to_index @tika_client, uri: document_id, properties: properties,
                                                attachment_path_base: @attachment_path_base,
                                                allowed_groups: index[:allowed_groups]
 
