@@ -335,28 +335,21 @@ Automatic updates are activated via the environment variable `AUTOMATIC_INDEX_UP
 
 ## Indexing Attachments
 
-Basic indexing of PDF, Word etc. attachments is provided using Elasticsearch's [Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html). Note that this is under development and liable to change.
+Basic indexing of PDF, Word etc. attachments is provided using a local Tika instance.
 
-### Create Attachment Pipeline
+### Data 
 
-Attachment pipelines need to be created in Elasticsearch. A default pipeline called "attachment" is created at build time.
-
-### Data
-
-Currently, only indexing of local files is supported. Files must be present in the docker volume `/data`, as in this excerpt from the docker-compose file:
-
-```
-    volumes:
-      - ./data/files:/data
-```
-
-and the pathname specified in the RDF data:
+Currently, only indexing of local files is supported. Files must be present in the docker volume `/data`, and the pathname specified in the RDF data:
 
 ```
   <DOCUMENT> mu:filename "pdf-sample.pdf"
 ```
 
 This should be extended to reflect URIs and other data storage practices.
+
+### Caching
+
+Attachments processed by Tika are cached in the directory `/cache` (by SHA256 of the file contents). This must be defined as a shared volume for the cache to be persistent.
 
 ### Configuration
 
@@ -370,6 +363,14 @@ In the configuration, a field is defined as an attachment as follows:
 ```
 
 Note that `via` can be a predicate or list of predicates, as with regular definitions.
+
+Volumes can be defined as follows:
+
+```
+    volumes:
+      - ./data/files:/data
+      - ./data/musearch/cache:/cache
+```
 
 ### Searching
 
