@@ -101,7 +101,7 @@ module MuSearch
 
     def self.parse_boolean(*possible_values)
       as_type(*possible_values) do |val|
-        if val.kind_of?(String) && ! val.nil? && ! val.empty?
+        if val.kind_of?(String) && ! val.strip.empty?
           ["true","True","TRUE"].include?(val)
         else
           val
