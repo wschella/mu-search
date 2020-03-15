@@ -380,7 +380,6 @@ get "/:path/search" do |path|
   }
 
   # while Indexes.instance.status index == :updating
-
   while index_names.map { |index| Indexes.instance.status index == :updating }.any?
     sleep 0.5
   end

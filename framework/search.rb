@@ -198,10 +198,11 @@ def format_results type, count, page, size, results
   {
     count: count,
     data: results["hits"]["hits"].map do |result|
+      uuid = result.dig("_source", "uuid") || result["_id"]
       {
         type: type,
-        id: result["_id"],
-        attributes: result["_source"]
+        id: uuid,
+        attributes: result["_source"].merge({ uri: result["_id"]})
       }
     end,
     links: {
