@@ -372,10 +372,11 @@ get "/:path/search" do |path|
   end
 
   # hard-coded example
-  # question: how to specify which fields are included/excluded?
-  # or should we simply exclude all attachment fields?
+  # TODO exclude all attachment fields on a per-document type basis,
+  # with the option to un-exclude fields in config file 
+  # (globally? or per document type?)
   es_query["_source"] = {
-    excludes: settings.excluded_fields # ["data","attachment"]
+    excludes: ["data","attachment"]
   }
 
   # while Indexes.instance.status index == :updating
