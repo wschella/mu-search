@@ -13,7 +13,7 @@
           "analyzer": {
             "dutchanalyzer": {
               "tokenizer": "standard",
-              "filter": ["lowercase", "dutchstemmer"] } },
+              "filter": ["lowercase", "asciifolding", "dutchstemmer"] } },
           "filter": {
             "dutchstemmer": {
               "type": "stemmer",
