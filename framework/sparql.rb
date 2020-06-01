@@ -170,7 +170,7 @@ def parse_attachment(tika_client, results, key, attachment_path_base)
 
   case attachments.length
   when 0
-    [key, ""]
+    [key, nil]
   when 1
     [key, { content: attachments.first}]
   else
