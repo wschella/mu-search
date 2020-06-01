@@ -371,12 +371,12 @@ get "/:path/search" do |path|
     es_query["aggs"] = { "type_count" => { "cardinality" => { "field" => "uuid" } } }
   end
 
-  # hard-coded example
-  # TODO exclude all attachment fields on a per-document type basis,
-  # with the option to un-exclude fields in config file 
-  # (globally? or per document type?)
+  # Exclude all attachment fields for now
+  attachments = settings.type_definitions[type]["properties"].select {|key, val|
+    val.is_a?(Hash) && val["attachment_pipeline"]
+  }
   es_query["_source"] = {
-    excludes: ["data","attachment"]
+    excludes: attachments.keys
   }
 
   # while Indexes.instance.status index == :updating
