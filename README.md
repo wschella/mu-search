@@ -37,26 +37,30 @@ sysctl -w vm.max_map_count=262144
 
 ### Setup
 
-First, add mu-elastic-search and Elasticsearch to your docker-compose file.  A link must be made to the folder containing the configuration file. (The current example is with a local build, since no image has been published yet on docker-hub.)
+Mu-search uses Elasticsearch as a backend. Therefore, apart from the mu-search service, one also needs to add the [mu-search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) to the docker-compose file.
 
 ```
   mu-elastic:
-    build: ./mu-elastic-search
+    image: semtech/mu-search:0.6.0-beta.11
     ports:
       - 8888:80
     links:
       - db:database
     volumes:
-      - ./config/mu-elastic-search:/config
+      - ./config/mu-search:/config
+      - ./data/mu-search/cache:/cache # Tika cache persistence
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:6.4.1
+    image: semtech/mu-search-elastic-backend:1.0.0
+    environment:
+      - cluster.initial_master_nodes=elasticsearch
+      - node.name=elasticsearch
     volumes:
-      - ./data/elasticsearch:/usr/share/elasticsearch/data
+      - ./data/elasticsearch/:/usr/share/elasticsearch/data
     ports:
       - 9200:9200
 ```
 
-Then, create the `./config/mu-elastic-search` directory, copy `config.json` into it, and modify this file to define how RDF triples are indexed as Elasticsearch documents, as described [below](#configuration).
+Then, create the `./config/mu-search` directory, copy `config.json` into it, and modify this file to define how RDF triples are indexed as Elasticsearch documents, as described [below](#configuration).
 
 
 ## Access Rights
