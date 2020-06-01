@@ -343,10 +343,10 @@ Basic indexing of PDF, Word etc. attachments is provided using a local Tika inst
 
 ### Data 
 
-Currently, only indexing of local files is supported. Files must be present in the docker volume `/data`, and the pathname specified in the RDF data:
+Currently, only indexing of local files is supported. The files' logical path as well as other metadata is expected to be in the format specified by the [file-service](https://github.com/mu-semtech/file-service#data-model). Files must be present in the docker volume `/data`, and the pathname specified in the RDF data:
 
 ```
-  <DOCUMENT> mu:filename "pdf-sample.pdf"
+  <DOCUMENT> ^nie:dataSource "share://pdf-sample.pdf"
 ```
 
 This should be extended to reflect URIs and other data storage practices.
@@ -361,7 +361,7 @@ In the configuration, a field is defined as an attachment as follows:
 
 ```
              "data" : {
-                 "via" : "http://mu.semte.ch/vocabularies/core/filename",
+                 "via" : "^http://www.semanticdesktop.org/ontologies/2007/01/19/nie#dataSource",
                  "attachment_pipeline" : "attachment"
              }
 ```
