@@ -376,12 +376,29 @@ Volumes can be defined as follows:
       - ./data/musearch/cache:/cache
 ```
 
+### Results
+
+For each file retrieved through the `via`-definition, the Tika-processing results in an object containing the extracted text, as well as other extracted metadata (in the future). Such object may look like this:
+```
+{
+  content: "Extracted text here"
+}
+```
+These objects are structured in the same way as the `attachment` objects resulting from the [ES attachment processor plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/7.x/using-ingest-attachment.html).
+
+Keep in mind that this implies you need to specify the path to a specific property when defining a mapping. An example of a mapping on the attachment's text content may look as follows:
+```
+"data.content": {
+  "type": "text",
+}
+```
+
 ### Searching
 
-Searching is done on the defined field name, as any other field:
+Searching is done on a specific field of the resulting object:
 
 ```
-/documents/search?filter\[data\]=Adobe"
+/documents/search?filter\[data.content\]=Adobe"
 ```
 
 
