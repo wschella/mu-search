@@ -172,7 +172,7 @@ def parse_attachment(tika_client, results, key, attachment_path_base)
   when 0
     [key, ""]
   when 1
-    [key, attachments.first]
+    [key, { content: attachments.first}]
   else
     attachments = attachments.keep_if { |v| v } # filter out falsy values (If one of the array is falsy, others are not taken into account)
     [key, attachments.collect { |attachment| { content: attachment} }]
