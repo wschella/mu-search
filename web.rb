@@ -105,7 +105,7 @@ configure do
   tika_server = TikaServer.new(port:9998)
   
   while !tika_server.up
-    log.info "...wating for Tika..."
+    log.info "...waiting for Tika..."
     sleep 1
   end
 
