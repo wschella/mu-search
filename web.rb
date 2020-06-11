@@ -331,7 +331,10 @@ get "/:path/search" do |path|
   # TOOD: Not sure how this could ever be empty.  We should at least
   # be able to build some indexes if we have received some groups.
   # This is a method of last resort which currently does the job.
-  return [].to_json if index_names.length == 0
+  if index_names.length == 0
+    log.info "SEARCH no matching indexes found for type: #{type.inspect} and groups: #{groups.inspect}"
+    error("no index matching your request")
+  end
 
   index_string = index_names.join(',')
 
