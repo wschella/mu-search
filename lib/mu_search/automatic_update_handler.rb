@@ -60,26 +60,11 @@ module MuSearch
                 @logger.debug "Managed to upload attachment for #{document_id}"
               rescue
                 @logger.warn "Could not upload attachment #{document_id}"
-                begin
-                  @logger.debug "Trying to update document with id #{document_id}"
-                  @client.update_document index[:index], document_id, document
-                  @logger.debug "Succeeded in updating document with id #{document_id}"
-                rescue
-                  @logger.debug "Failed to update document, trying to put new document #{document_id}"
-                  @client.put_document index[:index], document_id, document
-                  @logger.debug "Succeeded in putting new document #{document_id}"
-                end
+                @client.upsert_document index[:index], document_id, document
               end
             else
-              begin
-                @logger.debug "Trying to update document with id #{document_id}"
-                @client.update_document index[:index], document_id, document
-                @logger.debug "Succeeded in updating document with id #{document_id}"
-              rescue
-                @logger.debug "Failed to update document, trying to put new document #{document_id}"
-                @client.put_document index[:index], document_id, document
-                @logger.debug "Succeeded in putting new document #{document_id}"
-              end
+              @client.upsert_document index[:index], document_id, document
+              @logger.debug "Succeeded in updating document with id #{document_id}"
             end
           else
             @logger.info "AUTOMATIC UPDATE: Not Authorized."

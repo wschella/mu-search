@@ -191,6 +191,25 @@ class Elastic
     run(uri, req)
   end
 
+
+  ## updates or insert the document if it doesn't exist yet
+  ##
+  # - index: Index to store document in
+  # - id: elastic identifier to store the document under
+  # - document: Document contents (as a ruby json object)
+  def upsert_document(index, id, document)
+    log.debug "Trying to update document with id #{document_id}"
+    result = update_document(index, id, document)
+    if (result.is_a?(Net::HTTPNotFound))
+      @logger.debug "Failed to update document, trying to put new document #{document_id}"
+      result = put_document(index, id, document)
+      @logger.debug "Succeeded in putting new document #{document_id}"
+    else
+      log.debug "Succeeded in updating document with id #{document_id}"
+    end
+    result
+  end
+
   # Updates a document in ElasticSearch by id
   #
   #   - index: Index to update the document in
