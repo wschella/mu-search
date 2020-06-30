@@ -64,7 +64,6 @@ module MuSearch
               end
             else
               @client.upsert_document index[:index], document_id, document
-              @logger.debug "Succeeded in updating document with id #{document_id}"
             end
           else
             @logger.info "AUTOMATIC UPDATE: Not Authorized."
