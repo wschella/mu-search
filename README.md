@@ -39,7 +39,7 @@ sysctl -w vm.max_map_count=262144
 
 ### Setup
 
-Mu-search uses Elasticsearch as a backend. Therefore, apart from the mu-search service, one also needs to add the [mu-search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) to the docker-compose file.
+Mu-search uses Elasticsearch as a backend. Therefore, apart from the mu-search service, one also needs to add the [mu-search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) to the docker-compose file. For (optionally) indexing files mu-search requires a tika server to extract the content.
 
 ```
   mu-elastic:
@@ -60,6 +60,8 @@ Mu-search uses Elasticsearch as a backend. Therefore, apart from the mu-search s
       - ./data/elasticsearch/:/usr/share/elasticsearch/data
     ports:
       - 9200:9200
+  tika:
+    image: apache/tika:1.24-full
 ```
 
 Then, create the `./config/mu-search` directory, copy `config.json` into it, and modify this file to define how RDF triples are indexed as Elasticsearch documents, as described [below](#configuration).
