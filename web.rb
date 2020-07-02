@@ -21,6 +21,8 @@ require_relative 'framework/search.rb'
 
 before do
   request.path_info.chomp!('/')
+  content_type 'application/vnd.api+json'
+
 end
 
 
@@ -336,7 +338,10 @@ get "/:path/search" do |path|
   # TOOD: Not sure how this could ever be empty.  We should at least
   # be able to build some indexes if we have received some groups.
   # This is a method of last resort which currently does the job.
-  return [].to_json if index_names.length == 0
+  if index_names.length == 0
+    log.info "SEARCH no matching indexes found for type: #{type.inspect} and groups: #{groups.inspect}"
+    error("no index matching your request")
+  end
 
   index_string = index_names.join(',')
 
@@ -400,14 +405,11 @@ get "/:path/search" do |path|
       end
 
     log.debug "Got #{count} results"
-    content_type 'application/json'
     format_results(type, count, page, size, results).to_json
   else
     log.info "ES query failed: #{response}"
     log.debug response.body
-    content_type 'application/json'
-    status response.code
-    { errors: [{ title: response.message}] }.to_json
+    error(response.message)
   end
 end
 
@@ -416,7 +418,6 @@ end
 # Need to think through several things, such as pagination
 if settings.enable_raw_dsl_endpoint
   post "/:path/search" do |path|
-    content_type 'application/json'
     client = Elastic.new(host: 'elasticsearch', port: 9200)
     type = get_type_from_path path
     index_names = get_or_create_indexes client, type

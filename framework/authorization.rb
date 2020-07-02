@@ -470,9 +470,13 @@ end
 # Returns the allowed_groups from the request
 def get_allowed_groups
   allowed_groups_s = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
-  allowed_groups =
-    allowed_groups_s ? JSON.parse(allowed_groups_s) : []
-
+  if allowed_groups_s.nil? || allowed_groups_s.length == 0
+    # TODO: this isn't very clean and relies on ruby-template internals
+    response = query("ASK {?s ?p ?o}")
+    allowed_groups = JSON.parse(RequestStore.store[:mu_auth_allowed_groups])
+  else
+    allowed_groups =  JSON.parse(allowed_groups_s)
+  end
   return sort_groups(allowed_groups)
 end
 

@@ -53,15 +53,7 @@ module MuSearch
             document_for_reporting = document.clone
             document_for_reporting["data"] = document_for_reporting["data"] ? document_for_reporting["data"].length : "none"
             @logger.debug "Fetched document to index is #{document_for_reporting}"
-            begin
-              @logger.debug "Trying to update document with id #{document_id}"
-              @client.update_document index[:index], document_id, document
-              @logger.debug "Succeeded in updating document with id #{document_id}"
-            rescue
-              @logger.debug "Failed to update document, trying to put new document #{document_id}"
-              @client.put_document index[:index], document_id, document
-              @logger.debug "Succeeded in putting new document #{document_id}"
-            end
+            @client.upsert_document index[:index], document_id, document
           else
             @logger.info "AUTOMATIC UPDATE: Not Authorized."
           end

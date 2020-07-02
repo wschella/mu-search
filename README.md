@@ -202,7 +202,7 @@ Elasticsearch index settings can optionally be specified for the whole domain, a
           "analyzer": {
             "dutchanalyzer": {
               "tokenizer": "standard",
-              "filter": ["lowercase", "dutchstemmer"] } },
+              "filter": ["lowercase", "asciifolding", "dutchstemmer"] } },
           "filter": {
             "dutchstemmer": {
               "type": "stemmer",
@@ -221,7 +221,7 @@ To specify them for a single type, use `settings`:
           "analyzer": {
             "dutchanalyzer": {
               "tokenizer": "standard",
-              "filter": ["lowercase", "dutchstemmer"] } },
+              "filter": ["lowercase", "asciifolding", "dutchstemmer"] } },
           "filter": {
             "dutchstemmer": {
               "type": "stemmer",
