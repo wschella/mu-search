@@ -2,6 +2,8 @@
 
 A component to integrate authorization-aware search via Elasticsearch into the mu.semte.ch stack.
 
+## WARNING: You are looking at a work-in-progress branch with a potentially unstable API.
+
 ## Table of Contents
 
 - [Using mu-elastic-search](#using-mu-elastic-search)
