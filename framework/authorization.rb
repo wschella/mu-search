@@ -405,7 +405,7 @@ end
 
 def get_request_index_names type
   indexes = get_request_indexes type
-  indexes ? indexes.map { |index| index[:index] } : []    
+  indexes ? indexes.map { |index| index[:index] } : []
 end
 
 
@@ -472,10 +472,12 @@ def get_allowed_groups
   allowed_groups_s = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
   if allowed_groups_s.nil? || allowed_groups_s.length == 0
     # TODO: this isn't very clean and relies on ruby-template internals
-    response = query("ASK {?s ?p ?o}")
+    # - Send simple query to mu-auth
+    query("ASK {?s ?p ?o}")
+    # - Parse allowed groups from mu-ruby-template internals
     allowed_groups = JSON.parse(RequestStore.store[:mu_auth_allowed_groups])
   else
-    allowed_groups =  JSON.parse(allowed_groups_s)
+    allowed_groups = JSON.parse(allowed_groups_s)
   end
   return sort_groups(allowed_groups)
 end
