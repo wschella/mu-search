@@ -96,7 +96,6 @@ class Tika
   def process_document name, document
     uri = URI("http://#{@host}:#{@port_s}/tika")
     req = Net::HTTP::Put.new(uri)
-    req['Content-type'] = "application/pdf"
     req['Accept'] = "text/plain"
     req.body = document
 
