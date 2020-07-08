@@ -1,60 +1,61 @@
 module MuSearch
   class IndexBuilder
 
-    def initialize(elastic_client:, number_of_threads:, logger:, index_definitions:, index_id:, allowed_groups:  )
+    def initialize(elastic_client:, number_of_threads:, logger:, batch_size:, max_batches:,  index_definitions:, index_id:, allowed_groups:  )
       @logger = logger
       @elastic_client = elastic_client
       @number_of_threads = number_of_threads
       @batch_size = batch_size
-      @max_batches = max_batches
-      sparql_options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object.to_json } }
-      @sparql_connection_pool = ConnectionPool.new(size: number_of_threads, timeout: 3) { ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], sparql_options) }
+      @allowed_groups = allowed_groups
+      if allowed_groups && allowed_groups.length > 0
+        allowed_groups_object = allowed_groups.select { |group| group }
+        sparql_options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object.to_json } }
+        @sparql_connection_pool = ConnectionPool.new(size: number_of_threads, timeout: 3) { ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], sparql_options) }
+      else
+        # assumes we're building the index for a request from a logged in user
+        @sparql_connection_pool = ConnectionPool.new(size: number_of_threads, timeout: 3) {  SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT']) }
+      end
       @tika_client = Tika.new(host: 'localhost', port: 9998)
       @index_definitions = index_definitions
       @index_id = index_id
-
+      log.info "Index builder initialized"
     end
 
     def build
       @index_definitions.each do |type_def|
-        log.info "Building index of type #{@type_def["type"]}"
+        log.info "Building index of type #{type_def["type"]}"
         rdf_type = type_def["rdf_type"]
-        number_of_document = count_documents(rdf_type)
-        log.info "Found #{count} documents of type #{rdf_type} to index"
+        number_of_documents = count_documents(rdf_type)
+        log.info "Found #{number_of_documents} documents of type #{rdf_type} to index"
 
         batches =
           if @max_batches and @max_batches != 0
-            [@max_batches, count/@number_of_batches].min
+            [@max_batches, number_of_documents/@batch_size].min
           else
-            count/@batch_size
+            number_of_documents/@batch_size
           end
         log.info "Number of batches: #{batches}"
-        Parallel.each (0..batches, in_threads: @number_of_threads) do |i|
+        Parallel.each( 0..batches, in_threads: @number_of_threads ) do |i|
           batch_start_time = Time.now
           log.info "Indexing batch #{i} of #{batches}"
-          offset = i*settings.batch_size
+          offset = i*@batch_size
           @sparql_connection_pool.with do |sparql_client|
-            q = " SELECT DISTINCT ?doc ?id WHERE { ?doc a <#{rdf_type}>.  } LIMIT #{settings.batch_size} OFFSET #{offset} "
+            q = " SELECT DISTINCT ?doc WHERE { ?doc a <#{rdf_type}>.  } LIMIT #{@batch_size} OFFSET #{offset} "
             log.debug "selecting documents for batch #{i}"
-            query_result = client.query(q)
+            query_result = sparql_client.query(q)
             log.debug "Discovered identifiers for this batch: #{query_result}"
             query_result.each do |result|
+              document_id = result[:doc].to_s
               log.debug "Fetching document for #{document_id}"
               document = fetch_document_to_index(tika_client: @tika_client,
-                                                 elastic_client: @elastic_client,
-                                                 sparql_client: sparql_client
+                                                 sparql_client: sparql_client,
                                                  uri: document_id,
                                                  properties: type_def["properties"])
-              log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{allowed_groups}"
-              begin
-                @elastic_client.bulk_update_document({ index: { _id: document_id } }, document)
-              rescue StandardError => e
-                log.warn e
-                log.warn "Failed to ingest batch for id #{document_id}"
-              end
+              log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{@allowed_groups}"
+                @elastic_client.put_document(@index_id, document_id, document)
             rescue StandardError => e
               log.warn e
-              log.warn "Failed to fetch document or upload it or somesuch.  ID #{document_id} error #{e.inspect}"
+              log.warn "Failed to ingest document #{document_id}"
             end
           end
           log.info "Processed batch in #{(Time.now - batch_start_time).round} seconds"
@@ -71,7 +72,7 @@ module MuSearch
       @sparql_connection_pool.with do |client|
         result = client.query("SELECT (COUNT(?doc) as ?count) WHERE { ?doc a #{SinatraTemplate::Utils.sparql_escape_uri(rdf_type)} }")
         documents_count = result.first["count"].to_i
-        log.info "Found #{documents_count} documents for #{allowed_groups}."
+        log.info "Found #{documents_count} documents for #{@allowed_groups}."
         documents_count
       end
     end
@@ -97,7 +98,6 @@ module MuSearch
       key_value_tuples = properties.collect do |key, val|
         query = make_property_query(uri, key, val)
         results = sparql_client.query(query)
-
         if val.is_a? Hash
           # file attachment
           if val["attachment_pipeline"]

@@ -152,7 +152,6 @@ def parse_attachment(tika_client, results, key, attachment_path_base)
                 file.puts contents
               end
             end
-            
             contents
           end
         else
