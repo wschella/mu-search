@@ -45,9 +45,6 @@ end
 #
 def index_documents client, tika_client, type, index, allowed_groups = nil
   log.debug "Allowed groups in index #{allowed_groups}"
-
-  count_list = [] # for reporting
-
   type_def = settings.type_definitions[type]
 
   if is_multiple_type?(type_def)
@@ -56,79 +53,93 @@ def index_documents client, tika_client, type, index, allowed_groups = nil
     type_defs = [type_def]
   end
 
-  type_defs.each do |type_def|
-    rdf_type = type_def["rdf_type"]
-    count = count_documents rdf_type, allowed_groups
-    count_list.push({type: type_def["type"], count: count})
-    properties = type_def["properties"]
+  if allowed_groups
+    log.debug "starting indexbuilder"
+    builder = MuSearch::IndexBuilder.new(elastic_client: client,
+                                         number_of_threads: number_of_threads,
+                                         logger: log,
+                                         index_definitions: type_defs,
+                                         index_id: index,
+                                         allowed_groups: allowed_groups
+                                        )
+    builder.build
+  else
+    count_list = [] # for reporting
 
-    log.info "Indexing #{count} documents of type: #{type_def["type"]}"
+    type_defs.each do |type_def|
+      rdf_type = type_def["rdf_type"]
+      count = count_documents rdf_type, allowed_groups
+      count_list.push({type: type_def["type"], count: count})
+      properties = type_def["properties"]
 
-    batches =
-      if settings.max_batches and settings.max_batches != 0
-        [settings.max_batches, count/settings.batch_size].min
-      else
-        count/settings.batch_size
-      end
+      log.info "Indexing #{count} documents of type: #{type_def["type"]}"
 
-    log.info "Number of batches: #{batches}"
+      batches =
+        if settings.max_batches and settings.max_batches != 0
+          [settings.max_batches, count/settings.batch_size].min
+        else
+          count/settings.batch_size
+        end
 
-    Parallel.each( 0..batches, in_threads: 8 ) do |i|
-      # TODO: make this thread number configurable, was (0..batches).each do |i|
-      batch_start_time = Time.now
-      log.info "Indexing batch #{i} of #{count/settings.batch_size}"
-      offset = i*settings.batch_size
+      log.info "Number of batches: #{batches}"
 
-      q = <<SPARQL
+      Parallel.each( 0..batches, in_threads: 8 ) do |i|
+        # TODO: make this thread number configurable, was (0..batches).each do |i|
+        batch_start_time = Time.now
+        log.info "Indexing batch #{i} of #{count/settings.batch_size}"
+        offset = i*settings.batch_size
+
+        q = <<SPARQL
     SELECT DISTINCT ?doc ?id WHERE {
-      ?doc a <#{rdf_type}>.
+              ?doc a <#{rdf_type}>.
     } LIMIT #{settings.batch_size} OFFSET #{offset}
 SPARQL
 
-      log.debug "selecting documents for batch #{i}"
+        log.debug "selecting documents for batch #{i}"
 
-      query_result =
-        if allowed_groups
-          authorized_query q, allowed_groups
-        else
-          request_authorized_query q
-        end
-
-      log.debug "Discovered identifiers for this batch: #{query_result}"
-
-      number_of_threads = settings.batch_size > ENV['NUMBER_OF_THREADS'].to_i ? ENV['NUMBER_OF_THREADS'].to_i: settings.batch_size
-      Parallel.each( query_result, in_threads: number_of_threads ) do |result|
-        data = []
-        document_id = result[:doc].to_s
-        log.debug "Fetching document for #{document_id}"
-        begin
-          document = fetch_document_to_index tika_client,
-                                             uri: document_id, properties: properties,
-                                             attachment_path_base: settings.attachments_path_base,
-                                             allowed_groups: allowed_groups
-          log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{allowed_groups}"
-          data.push({ index: { _id: document_id } }, document)
-
-
-          begin
-            client.bulk_update_document index, data unless data.empty?
-          rescue StandardError => e
-            log.warn e
-            ids_as_string =
-              data
-                .select { |d| d[:index] && d[:index][:_id] }
-                .map { |d| d[:index][:_id] }
-                .join( "," )
-            log.warn "Failed to ingest batch for ids #{ids_as_string}"
+        query_result =
+          if allowed_groups
+            authorized_query q, allowed_groups
+          else
+            request_authorized_query q
           end
-        rescue StandardError => e
-          log.warn "Failed to fetch document or upload it or somesuch.  ID #{document_id} error #{e.inspect}"
+
+        log.debug "Discovered identifiers for this batch: #{query_result}"
+
+        number_of_threads = settings.batch_size > ENV['NUMBER_OF_THREADS'].to_i ? ENV['NUMBER_OF_THREADS'].to_i: settings.batch_size
+        Parallel.each( query_result, in_threads: number_of_threads ) do |result|
+          data = []
+          document_id = result[:doc].to_s
+          log.debug "Fetching document for #{document_id}"
+          begin
+            document = fetch_document_to_index tika_client,
+                                               uri: document_id, properties: properties,
+                                               attachment_path_base: settings.attachments_path_base,
+                                               allowed_groups: allowed_groups
+            log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{allowed_groups}"
+            data.push({ index: { _id: document_id } }, document)
+
+
+            begin
+              client.bulk_update_document index, data unless data.empty?
+            rescue StandardError => e
+              log.warn e
+              ids_as_string =
+                data
+                  .select { |d| d[:index] && d[:index][:_id] }
+                  .map { |d| d[:index][:_id] }
+                  .join( "," )
+              log.warn "Failed to ingest batch for ids #{ids_as_string}"
+            end
+          rescue StandardError => e
+            log.warn "Failed to fetch document or upload it or somesuch.  ID #{document_id} error #{e.inspect}"
+          end
         end
+
+        log.info "Processed batch in #{(Time.now - batch_start_time).round} seconds"
       end
-
-      log.info "Processed batch in #{(Time.now - batch_start_time).round} seconds"
     end
-  end
 
-  { index: index, document_types: count_list }
+    { index: index, document_types: count_list }
+  end
 end
