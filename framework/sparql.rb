@@ -194,7 +194,7 @@ def fetch_document_to_index uri: nil, properties: nil, allowed_groups: nil, atta
   end
   key_value_tuples = properties.collect do |key, val|
     query = make_property_query(uri, key, val)
-    results = allowed_groups ? authorized_query(query, allowed_groups) : request_authorized_query(query)
+    results = allowed_groups ? MuSearch::SPARQL.pooled_authorized_query(query, allowed_groups) : request_authorized_query(query)
 
     if val.is_a? Hash
         # file attachment

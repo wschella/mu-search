@@ -89,7 +89,7 @@ SPARQL
 
       query_result =
         if allowed_groups
-          authorized_query q, allowed_groups
+          MuSearch::SPARQL.pooled_authorized_query q, allowed_groups
         else
           request_authorized_query q
         end
