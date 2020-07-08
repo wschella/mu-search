@@ -270,9 +270,9 @@ PUT /index4901823098
 
 ## Index Lifecycle
 
-In the base scenario, indexes are created on an as-needed basis, whenever a new search profile (authorization rights and data type) is received. Indexes can be manually re-indexed by triggering the `POST /:type/index` endpoint (see [below)(#api)).
+In the base scenario, indexes are created on an as-needed basis, whenever a new search profile (authorization rights and data type) is received. Indexes can be manually re-indexed by triggering the `POST /:type/index` endpoint (see [below](#api)).
 
-When an index is created, it is registered in the triplestore in the `<http://mu.semte.ch/authorization>` graph. On startup, all existing indexes are deleted, since data might have changed in the meantime. 
+When an index is created, it is registered in the triplestore in the `<http://mu.semte.ch/authorization>` graph. On startup, all existing indexes are deleted, since data might have changed in the meantime.
 
 ### Persistent Indexes
 
