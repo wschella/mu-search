@@ -1,12 +1,13 @@
 module MuSearch
   class IndexBuilder
 
-    def initialize(elastic_client:, number_of_threads:, logger:, batch_size:, max_batches:,  index_definitions:, index_id:, allowed_groups:  )
+    def initialize(elastic_client:, number_of_threads:, logger:, batch_size:, max_batches:,  index_definitions:, index_id:, allowed_groups:, attachment_path_base: )
       @logger = logger
       @elastic_client = elastic_client
       @number_of_threads = number_of_threads
       @batch_size = batch_size
       @allowed_groups = allowed_groups
+      @attachment_path_base = attachment_path_base
       if allowed_groups && allowed_groups.length > 0
         allowed_groups_object = allowed_groups.select { |group| group }
         sparql_options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object.to_json } }
@@ -89,8 +90,7 @@ module MuSearch
     #     configuration file.
     #   - allowed_groups: Optional setting allowing to scope down the
     #     retrieved contents by specific access rights.
-    #   - attachment_path_base: base path to use for files
-    def fetch_document_to_index tika_client: , sparql_client: , uri: nil, properties: nil, attachment_path_base: '.'
+    def fetch_document_to_index tika_client: , sparql_client: , uri: nil, properties: nil
       # we include uuid because it may be used for folding
       unless properties.has_key?("uuid")
         properties["uuid"] = ["http://mu.semte.ch/vocabularies/core/uuid"]
@@ -101,7 +101,7 @@ module MuSearch
         if val.is_a? Hash
           # file attachment
           if val["attachment_pipeline"]
-            key, value = parse_attachment(tika_client, results, key, attachment_path_base)
+            key, value = parse_attachment(tika_client, results, key, @attachment_path_base)
             [key, value]
           # nested object
           elsif val["rdf_type"]

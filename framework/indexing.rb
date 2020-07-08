@@ -59,7 +59,8 @@ def index_documents client, tika_client, type, index, allowed_groups = nil
                                          index_id: index,
                                          batch_size: settings.batch_size,
                                          max_batches: settings.max_batches,
-                                         allowed_groups: allowed_groups
+                                         allowed_groups: allowed_groups,
+                                         attachment_path_base: settings.attachment_path_base
                                       )
     builder.build
 end
