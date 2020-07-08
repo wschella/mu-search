@@ -16,11 +16,13 @@ module MuSearch
     ##
     # perform a query as if authenticated to access specific groups
     def self.authorized_query(query_string, allowed_groups, retries = 6)
+      allowed_groups_object = allowed_groups.select { |group| group }
+      client = authorized_client(allowed_groups_object)
       begin
-        allowed_groups_object = allowed_groups.select { |group| group }
         log.debug "Authorized query with allowed groups object #{allowed_groups_object}"
         log.debug query_string
-        authorized_client(allowed_groups_object).query(query_string)
+        result = client.query(query_string)
+        result
       rescue StandardError => e
         next_retries = retries - 1
         if next_retries == 0
@@ -32,6 +34,8 @@ module MuSearch
           sleep timeout
           authorized_query query_string, allowed_groups, next_retries
         end
+      ensure
+        client.close
       end
     end
 
