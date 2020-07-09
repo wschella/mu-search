@@ -161,6 +161,9 @@ def parse_attachment(tika_client, results, key, attachment_path_base)
       rescue Errno::ENOENT, IOError => e
         log.warn "Error reading \"#{file_path}\": #{e.inspect}"
         nil
+      rescue StandardError => e
+        log.warn e
+        log.warn "Failed to parse attachment #{file_path}"
       end
     else
       nil
