@@ -67,9 +67,8 @@ module MuSearch
     end
 
     def document_exists_for(client, document_id, rdf_type)
-      query = "ASK { #{sparql_escape_uri(document_id)} a #{sparql_escape_uri(rdf_type)}}"
-      res = client.query(query)
-      @logger.debug "document exists: #{res.inspect}"
+      res = client.query("ASK { #{sparql_escape_uri(document_id)} a #{sparql_escape_uri(rdf_type)}}")
+      @logger.debug "document #{document_id} of type #{rdf_type} exists: #{res.inspect}"
       res
     end
 

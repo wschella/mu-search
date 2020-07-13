@@ -6,7 +6,6 @@ module MuSearch
       SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], { headers: { 'mu-auth-sudo': 'true' } } )
     end
 
-
     ##
     # perform a query with access to all data
     def self.direct_query(query_string, retries = 6)

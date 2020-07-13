@@ -41,17 +41,19 @@ module MuSearch
         indexes.each do |key, index|
           allowed_groups = index[:allowed_groups]
           sparql_client = build_sparql_client(allowed_groups)
-          document_builder = DocumentBuilder.new(tika_client: @tika_client, sparql_client: sparql_client)
+          document_builder = DocumentBuilder.new(
+            tika_client: @tika_client,
+            sparql_client: sparql_client,
+            attachment_path_base: @attachment_path_base,
+            logger: @logger
+          )
           @logger.debug "Got allowed groups for updated_document_all_types #{allowed_groups}"
           rdf_type = @type_definitions.dig(index_type, "rdf_type")
           @logger.debug "Got RDF type for updated_document_all_types #{rdf_type}"
-          if document_exists_for(client, document_id, rdf_type)
+          if document_exists_for(sparql_client, document_id, rdf_type)
             @logger.debug "Our current index knows that #{document_id} is of type #{rdf_type} based on allowed groups #{allowed_groups}"
             properties = @type_definitions.dig(index_type, "properties")
-            document = fetch_document_to_index @tika_client, uri: document_id, properties: properties,
-                                               attachment_path_base: @attachment_path_base,
-                                               allowed_groups: index[:allowed_groups]
-
+            document = document_builder.fetch_document_to_index(uri: document_id, properties: properties)
             document_for_reporting = document.clone
             document_for_reporting["data"] = document_for_reporting["data"] ? document_for_reporting["data"].length : "none"
             @logger.debug "Fetched document to index is #{document_for_reporting}"
@@ -76,7 +78,7 @@ module MuSearch
           allowed_groups = index[:allowed_groups]
           sparql_client = build_sparql_client(allowed_groups)
           type = @type_definitions.dig(index_type, "rdf_type")
-          if document_exists_for(client, document_id, type) == "true"
+          if document_exists_for(sparql_client, document_id, type)
             @logger.debug "Not deleting document #{document_id} from #{index[:index]}, it still exists"
           else
             @logger.debug "Deleting document #{document_id} from #{index[:index]}"
@@ -91,7 +93,7 @@ module MuSearch
     end
 
     private
-    def build_sparql_client
+    def build_sparql_client(allowed_groups)
       allowed_groups_object = allowed_groups.select { |group| group }
       sparql_options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object.to_json } }
       ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], sparql_options)
