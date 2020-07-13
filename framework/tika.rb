@@ -7,7 +7,7 @@ class TikaServer
   def initialize(port: 9998)
     @host = 'localhost'
     @port_s = port.to_s
-    IO.popen("java -jar /app/bin/tika-server-1.23.jar --host=localhost --port=#{@port_s}")
+    IO.popen("java -jar /app/bin/tika-server-1.23.jar --host=localhost --port=#{@port_s} > tika.log")
     log.info "Starting Tika server on port #{@port}..."
   end
 
