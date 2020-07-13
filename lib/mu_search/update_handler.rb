@@ -66,10 +66,9 @@ module MuSearch
      add(subject, index_name, :delete)
     end
 
-    def document_exists_for(document_id, rdf_type, allowed_groups)
-      query = "ASK { #{sparql_escape_uri(document_id)} a #{sparql_escape_uri(rdf_type)}}"
-      res = MuSearch::SPARQL.authorized_query(query, allowed_groups)
-      @logger.debug "document exists: #{res.inspect}"
+    def document_exists_for(client, document_id, rdf_type)
+      res = client.query("ASK { #{sparql_escape_uri(document_id)} a #{sparql_escape_uri(rdf_type)}}")
+      @logger.debug "document #{document_id} of type #{rdf_type} exists: #{res.inspect}"
       res
     end
 
