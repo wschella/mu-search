@@ -6,39 +6,6 @@ module MuSearch
       SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], { headers: { 'mu-auth-sudo': 'true' } } )
     end
 
-    ##
-    # provides a client with access to the provided groups
-    def self.authorized_client(allowed_groups_object)
-      options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object.to_json } }
-      ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], options)
-    end
-
-    ##
-    # perform a query as if authenticated to access specific groups
-    def self.authorized_query(query_string, allowed_groups, retries = 6)
-      allowed_groups_object = allowed_groups.select { |group| group }
-      client = authorized_client(allowed_groups_object)
-      begin
-        log.debug "Authorized query with allowed groups object #{allowed_groups_object}"
-        log.debug query_string
-        result = client.query(query_string)
-        result
-      rescue StandardError => e
-        next_retries = retries - 1
-        if next_retries == 0
-          raise e
-        else
-          log.debug e
-          log.warn "Could not execute authorized query (attempt #{6 - next_retries}): #{query_string} \n #{allowed_groups}"
-          timeout = (6 - next_retries) ** 2
-          sleep timeout
-          authorized_query query_string, allowed_groups, next_retries
-        end
-      ensure
-        client.close
-      end
-    end
-
 
     ##
     # perform a query with access to all data

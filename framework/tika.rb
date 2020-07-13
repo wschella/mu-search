@@ -93,12 +93,13 @@ class Tika
     end
   end
 
-  def process_document name, document
+  def process_document name, document, mime_type = nil
+    mime_type = determine_mimetype(name, document)
     uri = URI("http://#{@host}:#{@port_s}/tika")
     req = Net::HTTP::Put.new(uri)
     req['Accept'] = "text/plain"
+    req['Content-Type'] = mime_type
     req.body = document
-
     result = run(uri, req)
     # TODO: check could be better, but on success run returns the body
     if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
@@ -106,6 +107,16 @@ class Tika
     else
       result
     end
+  end
+
+  def determine_mimetype name, document
+    uri = URI("http://#{@host}:#{@port_s}/detect/stream")
+    req = Net::HTTP::Put.new(uri)
+    req['Content-Disposition'] = "attachment; filename=#{File.basename(name)}"
+    req.body = document
+    result = run(uri, req)
+    log.debug result.inspect
+    result
   end
 
   def extract_metadata name, document
