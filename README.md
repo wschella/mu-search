@@ -36,7 +36,7 @@ Create the `./config/search` directory and create a `config.json` with the follo
         {
             "type" : "document",
             "on_path" : "documents",
-            "rdf_type" : "http://xmlns.com/foaf/0.1/Document"
+            "rdf_type" : "http://xmlns.com/foaf/0.1/Document",
             "properties" : {
                 "title" : "http://purl.org/dc/elements/1.1/title",
                 "description" : "http://purl.org/dc/elements/1.1/description"
@@ -45,7 +45,7 @@ Create the `./config/search` directory and create a `config.json` with the follo
         {
             "type" : "user",
             "on_path" : "users",
-            "rdf_type" : "http://xmlns.com/foaf/0.1/Person"
+            "rdf_type" : "http://xmlns.com/foaf/0.1/Person",
             "properties" : {
                 "fullname" : "http://xmlns.com/foaf/0.1/name"
             }
@@ -99,7 +99,7 @@ docker-compose up -d
 ```
 
 Next, enable the persistent indexes flag in the root of the search configuration file `./config/search/config.json` of your project.
-```json
+```javascript
 {
   "persist_indexes": true,
   "types": [
@@ -145,7 +145,7 @@ Open the delta-notifier rules configuration `./config/delta/rules.js` and add th
 
 Enable automatic index updates (not only invalidation) in mu-search by setting the `automatic_index_updates` flag at the root of `./config/search/config.json`.
 
-```json
+```javascript
 {
   "automatic_index_updates": true,
   "types": [
@@ -179,13 +179,13 @@ services:
 
 Next, add a property `files` in the `project` type index configuration. The property `files` will hold the contents of the files.
 
-```json
+```javascript
 {
     "types" : [
         {
             "type" : "project",
             "on_path" : "projects",
-            "rdf_type" : "http://schema.org/Project"
+            "rdf_type" : "http://schema.org/Project",
             "properties" : {
                 "name" : "http://schema.org/name",
                 "files" : {
@@ -237,7 +237,7 @@ This section describes how to mapping between RDF triples and Elasticsearch docu
 
 The `config.json` file contains a JSON object with a property `types`. This property contains an array of objects, one per document type that must be searchable.
 
-```json
+```javascript
 {
   "types": [
     // object per searchable document type
@@ -264,13 +264,13 @@ In the simplest scenario, the properties that need to be searchable map one-by-o
 
 In the example below, a search index per user group will be created for documents and users. The documetns index contains resources of type `foaf:Document`s with a `title` and `description`. The users index contains `foaf:Person`s with only `fullname` as searchable property.
 
-```json
+```javascript
 {
     "types" : [
         {
             "type" : "document",
             "on_path" : "documents",
-            "rdf_type" : "http://xmlns.com/foaf/0.1/Document"
+            "rdf_type" : "http://xmlns.com/foaf/0.1/Document",
             "properties" : {
                 "title" : "http://purl.org/dc/elements/1.1/title",
                 "description" : "http://purl.org/dc/elements/1.1/description"
@@ -279,7 +279,7 @@ In the example below, a search index per user group will be created for document
         {
             "type" : "user",
             "on_path" : "users",
-            "rdf_type" : "http://xmlns.com/foaf/0.1/Person"
+            "rdf_type" : "http://xmlns.com/foaf/0.1/Person",
             "properties" : {
                 "fullname" : "http://xmlns.com/foaf/0.1/name"
             }
@@ -295,13 +295,13 @@ A property of the search document may also map to an inverse predicate. I.e. res
 
 In the example below the users index contains a property `group` that maps to the inverse predicate `foaf:member` relating a group to a user.
 
-```json
+```javascript
 {
     "types" : [
         {
             "type" : "user",
             "on_path" : "users",
-            "rdf_type" : "http://xmlns.com/foaf/0.1/Person"
+            "rdf_type" : "http://xmlns.com/foaf/0.1/Person",
             "properties" : {
                 "fullname" : "http://xmlns.com/foaf/0.1/name",
                 "group": "^http://xmlns.com/foaf/0.1/member"
@@ -317,7 +317,7 @@ Properties can also be mapped to lists of predicates, corresponding to a propert
 
 In the example below the documents index contains a property `topics` that maps to the label of the document's primary topic and a property `publishers` that maps to the names of the publishers via the inverse `foaf:publications` predicate.
 
-```json
+```javascript
 {
     "types" : [
         {
@@ -355,7 +355,7 @@ Objects can be nested to arbitrary depth. The properties object is defined the s
 
 In the example below the document's creator is nested in the `author` property of the search document. The nested person object contains properties `fullname` and the current project's title as `project`.
 
-```json
+```javascript
 {
     "types" : [
         {
@@ -366,18 +366,18 @@ In the example below the document's creator is nested in the `author` property o
                 "title" : "http://purl.org/dc/elements/1.1/title",
                 "description" : "http://purl.org/dc/elements/1.1/description",
                 "author" : {
-                  "via" : "http://purl.org/dc/elements/1.1/creator",
-                  "rdf_type" : "http://xmlns.com/foaf/0.1/Person",
-                  "properties" : {
-                     "fullname" : "http://xmlns.com/foaf/0.1/name",
-                     "project": [
-                         "http://xmlns.com/foaf/0.1/currentProject",
-                         "http://purl.org/dc/elements/1.1/title"
-                     ]
-                  }
+                    "via" : "http://purl.org/dc/elements/1.1/creator",
+                    "rdf_type" : "http://xmlns.com/foaf/0.1/Person",
+                    "properties" : {
+                        "fullname" : "http://xmlns.com/foaf/0.1/name",
+                        "project": [
+                            "http://xmlns.com/foaf/0.1/currentProject",
+                            "http://purl.org/dc/elements/1.1/title"
+                        ]
+                    }
                 }
             },
-            mappings: {
+            "mappings": {
                 "title" : { "type" : "text" },
                 "author.fullname": { "type" : "text" }
             }
@@ -397,13 +397,13 @@ Defining a property to index the content of a file requires the following keys:
 
 The example below adds a property `files` in the `project` type index configuration. The property `files` will hold the contents of the files related to the project via `dct:hasPart/^nie:dataSource`.
 
-```json
+```javascript
 {
     "types" : [
         {
             "type" : "project",
             "on_path" : "projects",
-            "rdf_type" : "http://schema.org/Project"
+            "rdf_type" : "http://schema.org/Project",
             "properties" : {
                 "name" : "http://schema.org/name",
                 "files" : {
@@ -436,13 +436,13 @@ In contrast to the `properties` of a simple index, the `properties` of a composi
 
 The example below contains 2 simple indexes for documents and creative works, and a composite index `dossier` containing both simple index types. The composite index contains (1) a property `name` mapping to the document's `title` and creative work's `name` property respectively, and (2) a property `description` mapping to the `description` property for both simple types.
 
-```json
+```javascript
 {
     "types" : [
         {
             "type" : "document",
             "on_path" : "documents",
-            "rdf_type" : "http://xmlns.com/foaf/0.1/Document"
+            "rdf_type" : "http://xmlns.com/foaf/0.1/Document",
             "properties" : {
                 "title" : "http://purl.org/dc/elements/1.1/title",
                 "description" : "http://purl.org/dc/elements/1.1/description"
@@ -487,7 +487,7 @@ Elasticsearch provides a lot of [index configuration settings](https://www.elast
 
 To specify Elasticsearch settings for all indexes, use `default_settings` next to the `types` specification:
 
-```json
+```javascript
   "types" : [
      // definition of the indexed types
   ],
@@ -513,7 +513,7 @@ The content of the `default_settings` object is not elaborated here but can be f
 
 To specify Elasticsearch settings for a single type, use `settings` on the type index specification:
 
-```json
+```javascript
 {
   "types": [
     {
@@ -545,7 +545,7 @@ To specify Elasticsearch settings for a single type, use `settings` on the type 
 Elasticsearch provides the option to configure [a mapping per index](https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html) to specify how the properties of a document are stored and indexed. E.g. the type of the property value (string, date, boolean, ...), text-analysis to be applied on the value, etc.
 
 In the mu-search configuration the Elasticsearch mappings can be passed via the `mappings` property per index type specification.
-```json
+```javascript
 {
   "types": [
     {
@@ -576,7 +576,7 @@ All created indexes are stored in the triplestore in the `<http://mu.semte.ch/au
 By default, on startup or restart of mu-search, all existing indexes are deleted, since data might have changed in the meantime. However, for sure in production environments, regenerating indexes might be a costly operation.
 
 Persistence of indexes can be enabled via the `persist_indexes` flag at the root of the mu-search configuration file:
-```json
+```javascript
 {
   "persist_indexes": true,
   "types": [
@@ -592,7 +592,7 @@ Note that if set to `true`, the indexes may be out-of-date if data has changed i
 #### Eager indexes
 Configure indexes to be pre-built when the application starts. For each user search profile for which the indexes needs to be prepared, the authorization group names and their corresponding variables needs to be passed.
 
-```json
+```javascript
 {
   "eager_indexing_groups": [
     [{"variables":[], "name":"clean"}, {"variables":["company-x"], "name":"organization-read"}, {"variables":["company-x"], "name":"organization-write"}, {"variables":[], "name":"public"}],
@@ -612,7 +612,7 @@ Additive indexes are indexes per authorization group where indexes are combined 
 Assume your application contains a company-specific user group in the authorization configuration; 2 companies: company X and company Y; and mu-search contains one search index definition for documents. If additive indexes are enabled, a search index will be generated for documents of company X and another index will be generated for documens of company Y. If a user is granted access for documents of company X as well as for documents of comany Y, a search query performed by this user will be effectuated by combining both search indexes.
 
 Additive indexes can be enabled via the `additive_indexes` flag at the root of the mu-search configuration file. Possible values are `true` or `false`. It defaults to `false`.
-```json
+```javascript
 {
   "additive_indexes": true,
   "types": [
@@ -623,7 +623,7 @@ Additive indexes can be enabled via the `additive_indexes` flag at the root of t
 
 To prebuilt indexes on startup the `eager_indexing_groups` option can still be used, but each eager group entry must be singleton list:
 
-```json
+```javascript
   "additive_indexes": true,
   "eager_indexing_groups" : [
     [ {"name" : "organization-read", "variables" : ["company-x"]} ],
@@ -648,7 +648,7 @@ Note that a change on one resource may trigger the update of multiple indexes de
 
 Partial index updates are enabled by setting the `automatic_index_updates` flag at the root of the search configuation:
 
-```json
+```javascript
 {
   "automatic_index_updates": true,
   "types": [
@@ -712,12 +712,15 @@ The following sections list the flags that are currently implemented:
 
 - `:common:` [Common terms query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-common-terms-query.html). The flag takes additional options `cutoff_frequency` and `minimum_should_match` appended with commas such as `:common,{cutoff_frequence},{minimum_should_match}:{field}`. The `cutoff_frequency` can also be set application-wide in [the configuration file](#configuration-options).
 
-    /documents/search?filter[:common:description]=a+cat+named+Barney
+Examples
 
-    /documents/search?filter[:common,0.002:description]=a+cat+named+Barney
+```
+GET /documents/search?filter[:common:description]=a+cat+named+Barney
 
-    /documents/search?filter[:common,0.002,2:description]=a+cat+named+Barney
+GET /documents/search?filter[:common,0.002:description]=a+cat+named+Barney
 
+GET /documents/search?filter[:common,0.002,2:description]=a+cat+named+Barney
+```
 
 ##### Sorting
 Sorting is specified using the `sort` query parameter, providing the field to sort on and the sort direction (`asc` or `desc`):
@@ -759,7 +762,7 @@ Accepts a raw [Elasticsearch Query DSL](https://www.elastic.co/guide/en/elastics
 This endpoint is mainly intended for testing purposes and sending more complex queries than can be expressed with the `GET /:type/search` endpoint.
 
 For security reasons, the endpoint is disabled by default. It can be enabled by setting the `enable_raw_dsl_endpoint` flag in the root of the configuration file:
-```json
+```javascript
 {
   "enable_raw_dsl_endpoint": true,
   "types": [
