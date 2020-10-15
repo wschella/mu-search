@@ -131,7 +131,8 @@ SPARQL
       links = results.collect do |result|
         link_uri = result[key]
         if link_uri
-          fetch_document_to_index(uri: link_uri, properties: properties)
+          document, _ = fetch_document_to_index(uri: link_uri, properties: properties)
+          document
         else
           nil
         end
