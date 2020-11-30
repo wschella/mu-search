@@ -796,6 +796,11 @@ All options prefixed with (*) can also be configured using an UPPERCASED variant
 
 In development mode (setting the environment variable `RACK_ENV` to `development`), the application will listen for changes in `config.json`. Any change will trigger a complete reload of the full application, including deleting existing indexes, and building any default indexes specified in eager indexing. This behaviour overrules the `persist_indexes` flag.
 
+### Environment variables
+This section gives an overview of all options that are configurable via environment variables. The options that can be configured in the `config.json` file as well are not repeated here. This list contains options that can only be configured via environment variables.
+
+- **MAX_REQUEST_URI_LENGTH** : maximum length of an incoming request URL. Defaults to 10240.
+- **MAX_REQUEST_HEADER_LENGTH** : maximum length of the headers of an incoming request. Defaults to 1024000.
 ## Discussions
 ### Why a custom Elasticsearch docker image?
 The [mu-semtech/search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) is a custom Docker image based on the official Elasticsearch image. Providing a custom image allows better control on the version of Elasticsearch, currently v7.2.0, used in combination with the mu-search service.

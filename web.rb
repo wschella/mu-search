@@ -5,6 +5,7 @@ require 'request_store'
 require 'listen'
 require 'singleton'
 require 'base64'
+require 'webrick'
 
 require_relative 'lib/mu_search/sparql.rb'
 require_relative 'lib/mu_search/delta_handler.rb'
@@ -19,10 +20,20 @@ require_relative 'framework/authorization.rb'
 require_relative 'framework/indexing.rb'
 require_relative 'framework/search.rb'
 
+##
+# WEBrick setup
+##
+max_uri_length = ENV["MAX_REQUEST_URI_LENGTH"].to_i > 0 ? ENV["MAX_REQUEST_URI_LENGTH"].to_i : 10240
+log.info "Set WEBrick MAX_URI_LENGTH to #{max_uri_length}"
+WEBrick::HTTPRequest.const_set("MAX_URI_LENGTH", max_uri_length)
+max_header_length = ENV["MAX_REQUEST_HEADER_LENGTH"].to_i > 0 ? ENV["MAX_REQUEST_HEADER_LENGTH"].to_i : 1024000
+log.info "Set WEBrick MAX_HEADER_LENGTH to #{max_header_length}"
+WEBrick::HTTPRequest.const_set("MAX_HEADER_LENGTH", max_header_length)
+
+
 before do
   request.path_info.chomp!('/')
   content_type 'application/vnd.api+json'
-
 end
 
 
