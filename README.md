@@ -777,10 +777,10 @@ For security reasons, the endpoint is disabled by default. It can be enabled by 
 }
 ```
 
-#### POST `/:type/index`
+#### [Experimental] POST `/:type/index`
 Reindex index(es) of type `:type`. If the request is sent with authorization headers, only the authorized indexes are re-indexed. Otherwise, all pertaining indexes are reindexed
 
-#### DELETE `/:type/delete`
+#### [Experimental] DELETE `/:type/delete`
 Delete index(es) of type `:type`. If the request is sent with authorization headers, only the authorized indexes are deleted. Otherwise, all pertaining indexes are deleted.
 
 ### Configuration options
