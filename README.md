@@ -663,7 +663,7 @@ This section describes the REST API provided by mu-search.
 In order to take access rights into account, each request requires the `MU_AUTH_ALLOWED_GROUPS` and `MU_AUTH_USED_GROUPS` headers to be present.
 
 #### GET `/:type/search`
-Endpoint to seach the given `:type` index. The request format is JSON-API compliant and intended to match the request format of [mu-cl-resources](https://github.com/mu-semtech/mu-cl-resources). Search filters are passed using query params.
+Endpoint to search the given `:type` index. The request format is JSON-API compliant and intended to match the request format of [mu-cl-resources](https://github.com/mu-semtech/mu-cl-resources). Search filters are passed using query params.
 
 A subset of the [Elasticsearch Query DSL](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html) is supported, via the `filter`, `page`, and `sort` query parameters. More complex queries should be sent via `POST /:type/search` endpoint.
 
@@ -711,6 +711,10 @@ The following sections list the flags that are currently implemented:
 - `:query:` : [Query string query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-query-string-query.html)
 
 - `:common:` [Common terms query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-common-terms-query.html). The flag takes additional options `cutoff_frequency` and `minimum_should_match` appended with commas such as `:common,{cutoff_frequence},{minimum_should_match}:{field}`. The `cutoff_frequency` can also be set application-wide in [the configuration file](#configuration-options).
+
+Currently searching on multiple fields is only supported for the following flag:
+- `:phrase:`
+- `:phrase_prefix:`
 
 Examples
 

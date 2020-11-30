@@ -139,9 +139,9 @@ def construct_es_query_term type, filter_argument, val
       { flag => { field => val } }
     end
   when 'phrase', 'phrase_prefix'
-    ensuring_single_field_for 'phrase and phrase_prefix', fields do |field|
-      { 'match_' + flag => { field => val } }
-    end
+    { multi_match:
+        { query: val, type: flag, fields: fields }
+    }
   when "terms"
     ensuring_single_field_for 'terms', fields do |field|
       { terms: { field => val.split(',') } }
