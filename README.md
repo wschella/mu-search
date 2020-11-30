@@ -697,13 +697,15 @@ The following sections list the flags that are currently implemented:
 
 ###### Term-level queries
 - `:term:` : [Term query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-term-query.html)
-- `:terms:` : [Terms query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-terms-query.html), terms should be comma-separated, such as: `GET /documents/search?filter[:terms:tag]=fish,seafood`
+- `:terms:` : [Terms query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-terms-query.html), terms should be comma-separated, such as: `filter[:terms:tag]=fish,seafood`
 - `:prefix:` : [Prefix query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-prefix-query.html)
 - `:wildcard:` : [Wildcard query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-wildcard-query.html)
 - `:regexp:` : [Regexp query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-regexp-query.html)
 - `:fuzzy:` : [Fuzzy query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-fuzzy-query.html)
 - `:gt:`,`lt:`, `:gte:`, `:lte:` : [Range query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-range-query.html)
 - `:lt,gt:`, `:lte,gte:`, `:lt,gte:`, `:lte,gt:` : Combined [range query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-range-query.html), range limits should be comma-separated such as: `GET /documents/search?filter[:lte,gte:importance]=3,7`
+- `:has:`: Filter on documents having any value for the supplied field. To enable the filter, it's value must be `t`. E.g. `filter[:has:translation]=t`.
+- `:has-no:`: Filter on documents not having a value for the supplied field. To enable the filter, it's value must be `t`. E.g. `filter[:has-no:translation]=t`.
 
 ###### Full text queries
 - `:phrase:` : [Match phrase query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase.html)
