@@ -120,9 +120,9 @@ def construct_es_query_term type, filter_argument, val
       { flag => { field => val } }
     end
   when 'phrase', 'phrase_prefix'
-    ensuring_single_field_for 'phrase and phrase_prefix', fields do |field|
-      { 'match_' + flag => { field => val } }
-    end
+    { multi_match:
+        { query: val, type: flag, fields: fields }
+    }
   when "terms"
     ensuring_single_field_for 'terms', fields do |field|
       { terms: { field => val.split(',') } }
@@ -136,6 +136,32 @@ def construct_es_query_term type, filter_argument, val
       flags = flag.split(',')
       vals = val.split(',')
       { range: { field => { flags[0] => vals[0], flags[1] => vals[1] } } }
+    end
+  when 'has'
+    ensuring_single_field_for 'has', fields do |field|
+      if val == 't'
+        { exists: { field: field }}
+      else
+        log.error("The 'has'-modifier only works for value 't'.")
+        { }
+      end
+    end
+  when 'has-no'
+    ensuring_single_field_for 'has-no', fields do |field|
+      if val == 't'
+        {
+          bool: {
+            must_not: {
+              exists: {
+                field: field
+              }
+            }
+          }
+        }
+      else
+        log.error("The 'has-no'-modifier only works for value 't'.")
+        { }
+      end
     end
   when 'query'
     ensuring_single_field_for 'query', fields do |field|
