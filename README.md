@@ -28,8 +28,9 @@ services:
     image: semtech/mu-search-elastic-backend:1.0.0
     volumes:
       - ./data/elasticsearch/:/usr/share/elasticsearch/data
-    ports:
-      - 9200:9200
+    environment:
+      - discovery.type=single-node
+
 ```
 
 The indices will be persisted in `./data/elasticsearch`. The `search` service needs to be linked to an instance of the [mu-authorization](https://github.com/mu-semtech/mu-authorization) service.
