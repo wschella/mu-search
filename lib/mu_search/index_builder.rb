@@ -16,7 +16,7 @@ module MuSearch
         # assumes we're building the index for a request from a logged in user
         @sparql_connection_pool = ConnectionPool.new(size: number_of_threads, timeout: 3) {  SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT']) }
       end
-      @tika_client = Tika.new(host: 'localhost', port: 9998)
+      @tika_client = Tika.new(host: 'tika', port: 9998)
       @index_definitions = index_definitions
       @index_id = index_id
       log.info "Index builder initialized"

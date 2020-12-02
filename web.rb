@@ -329,8 +329,8 @@ get "/:path/search" do |path|
   log.debug "SEARCH Got allowed groups #{groups}"
 
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  tika = Tika.new(host: 'localhost', port: 9998)
-  
+  tika = Tika.new(host: 'tika', port: 9998)
+
   type = get_type_from_path path
   collapse_uuids = (params["collapse_uuids"] == "t")
 
