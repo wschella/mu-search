@@ -8,7 +8,7 @@ A component to integrate [authorization-aware](https://github.com/mu-semtech/mu-
 
 ## Tutorials
 ### Add mu-search to a stack
-The mu-search service is based on Elasticsearch. Since the Elasticsearch docker image requires a lot of memory, increase the maximum on your system by executing the following command:
+The mu-search service uses Elasticsearch as a backend. Since the Elasticsearch docker image requires a lot of memory, increase the maximum on your system by executing the following command:
 
 ```bash
 sysctl -w vm.max_map_count=262144
@@ -28,6 +28,8 @@ services:
     image: semtech/mu-search-elastic-backend:1.0.0
     volumes:
       - ./data/elasticsearch/:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
 ```
 
 The indices will be persisted in `./data/elasticsearch`. The `search` service needs to be linked to an instance of the [mu-authorization](https://github.com/mu-semtech/mu-authorization) service.
@@ -170,7 +172,18 @@ This guide explains how to make the content of files attached to a project resou
 
 This guide assumes you have already integrated mu-search in your application and configured an index for resources of type `schema:Project`.
 
-First, add the following mounted volumes to the mu-search service in `docker-compose.yml`:
+For indexing files mu-search requires a Tika server to extract the content. Add the `tika` service next to the `search` and `elasticsearch` services in `docker-compose.yml`:
+```yml
+services:
+  search:
+    ...
+  elasticsearch:
+    ...
+  tika:
+    image: apache/tika:1.24-full
+```
+
+Next, add the following mounted volumes to the mu-search service in `docker-compose.yml`:
 - `/data`: folder containing the files to be indexed
 - `/cache`: folder to persist Tika's search cache
 

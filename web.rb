@@ -116,15 +116,7 @@ end
 # relies on configure_settings.
 configure do
   configuration = configure_settings
-
-  tika_server = TikaServer.new(port:9998)
-  
-  while !tika_server.up
-    log.info "...waiting for Tika..."
-    sleep 1
-  end
-
-  tika = Tika.new(host: 'localhost', port: 9998)
+  tika = Tika.new(host: 'tika', port: 9998)
   client = Elastic.new(host: 'elasticsearch', port: 9200)
 
   while !client.up
