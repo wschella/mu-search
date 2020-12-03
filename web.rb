@@ -39,18 +39,6 @@ before do
 end
 
 
-# Applies basic configuration from environment variables and from
-# configuration file (environment variables win).
-#
-# Called from the configure block.
-def configure_settings
-  set :protection, :except => [:json_csrf]
-  set :dev, (ENV['RACK_ENV'] == 'development')
-  configuration = MuSearch::ConfigParser.parse('/config/config.json')
-  set configuration
-  configuration
-end
-
 ##
 # set up parser based on config
 def setup_parser(client, tika, config)
@@ -111,15 +99,18 @@ def setup_indexes client, tika
   end
 end
 
-
-# Configures the system and makes sure everything is up.  Heavily
-# relies on configure_settings.
+# Configures the system and makes sure everything is up.
 configure do
-  configuration = configure_settings
-  tika = Tika.new(host: 'tika', port: 9998)
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
+  set :protection, :except => [:json_csrf]
+  set :dev, (ENV['RACK_ENV'] == 'development')
 
-  while !client.up
+  configuration = MuSearch::ConfigParser.parse('/config/config.json')
+  set configuration
+
+  tika = Tika.new(host: 'tika', port: 9998)
+  elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200)
+
+  while !elasticsearch.up
     log.info "...waiting for elasticsearch..."
     sleep 1
   end
@@ -129,15 +120,16 @@ configure do
     sleep 1
   end
 
-  setup_indexes client, tika
-  setup_parser client, tika, configuration
+  setup_indexes elasticsearch, tika
+  setup_parser elasticsearch, tika, configuration
 
   if settings.dev
     listener = Listen.to('/config/') do |modified, added, removed|
       if modified.include? '/config/config.json'
         log.info 'Reloading configuration'
-        destroy_existing_indexes client
-        configure_settings
+        destroy_existing_indexes elasticsearch
+        configuration = MuSearch::ConfigParser.parse('/config/config.json')
+        set configuration
         log.info '== Configuration reloaded'
       end
     end
