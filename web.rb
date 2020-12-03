@@ -70,6 +70,37 @@ def setup_indexes elasticsearch, tika
 end
 
 ##
+# Setup delta handling based on configuration
+##
+def setup_delta_handling(elasticsearch, tika, config)
+  if config[:automatic_index_updates]
+    handler = MuSearch::AutomaticUpdateHandler.new({
+                                                     logger: SinatraTemplate::Utils.log,
+                                                     elastic_client: elasticsearch,
+                                                     tika_client: tika,
+                                                     attachment_path_base: config[:attachments_path_base],
+                                                     type_definitions: config[:type_definitions],
+                                                     wait_interval: config[:update_wait_interval_minutes],
+                                                     number_of_threads: config[:number_of_threads]
+                                                   })
+  else
+    handler = MuSearch::InvalidatingUpdateHandler.new({
+                                                        logger: SinatraTemplate::Utils.log,
+                                                        type_definitions: config[:type_definitions],
+                                                        wait_interval: config[:update_wait_interval_minutes],
+                                                        number_of_threads: config[:number_of_threads]
+                                                      })
+  end
+
+  delta_handler = MuSearch::DeltaHandler.new({
+                                      update_handler: handler,
+                                      logger: SinatraTemplate::Utils.log,
+                                      search_configuration: { "types" => config[:index_config] }
+                                    })
+  delta_handler
+end
+
+##
 # Configures the system and makes sure everything is up.
 ##
 configure do
@@ -110,38 +141,6 @@ configure do
     listener.start
   end
 end
-
-##
-# Setup delta handling based on configuration
-##
-def setup_delta_handling(elasticsearch, tika, config)
-  if config[:automatic_index_updates]
-    handler = MuSearch::AutomaticUpdateHandler.new({
-                                                     logger: SinatraTemplate::Utils.log,
-                                                     elastic_client: elasticsearch,
-                                                     tika_client: tika,
-                                                     attachment_path_base: config[:attachments_path_base],
-                                                     type_definitions: config[:type_definitions],
-                                                     wait_interval: config[:update_wait_interval_minutes],
-                                                     number_of_threads: config[:number_of_threads]
-                                                   })
-  else
-    handler = MuSearch::InvalidatingUpdateHandler.new({
-                                                        logger: SinatraTemplate::Utils.log,
-                                                        type_definitions: config[:type_definitions],
-                                                        wait_interval: config[:update_wait_interval_minutes],
-                                                        number_of_threads: config[:number_of_threads]
-                                                      })
-  end
-
-  delta_handler = MuSearch::DeltaHandler.new({
-                                      update_handler: handler,
-                                      logger: SinatraTemplate::Utils.log,
-                                      search_configuration: { "types" => config[:index_config] }
-                                    })
-  delta_handler
-end
-
 
 # Provides the type which matches the given path based on the supplied
 # configuration.
