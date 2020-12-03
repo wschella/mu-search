@@ -39,42 +39,12 @@ before do
 end
 
 
-##
-# set up parser based on config
-def setup_parser(client, tika, config)
-  if config[:automatic_index_updates]
-    handler = MuSearch::AutomaticUpdateHandler.new({
-                                                     logger: SinatraTemplate::Utils.log,
-                                                     elastic_client: client,
-                                                     tika_client: tika,
-                                                     attachment_path_base: config[:attachments_path_base],
-                                                     type_definitions: config[:type_definitions],
-                                                     wait_interval: config[:update_wait_interval_minutes],
-                                                     number_of_threads: config[:number_of_threads]
-                                                   })
-  else
-    handler = MuSearch::InvalidatingUpdateHandler.new({
-                                                        logger: SinatraTemplate::Utils.log,
-                                                        type_definitions: config[:type_definitions],
-                                                        wait_interval: config[:update_wait_interval_minutes],
-                                                        number_of_threads: config[:number_of_threads]
-                                                      })
-  end
-  delta_parser = MuSearch::DeltaHandler.new({
-                                      update_handler: handler,
-                                      logger: SinatraTemplate::Utils.log,
-                                      search_configuration: { "types" => config[:index_config] }
-                                    })
-  set :delta_parser, delta_parser
-end
-
-
-def setup_indexes client, tika
+def setup_indexes elasticsearch, tika
   if settings.persist_indexes
     log.info "Loading persisted indexes"
     load_persisted_indexes settings.index_config
   else
-    destroy_persisted_indexes client
+    destroy_persisted_indexes elasticsearch
   end
 
   settings.master_mutex.synchronize do
@@ -82,14 +52,14 @@ def setup_indexes client, tika
       settings.type_definitions.keys.each do |type|
         index = get_matching_index_name type, groups, []
         index_name = index ? index[:index] : nil
-        if !(settings.persist_indexes) and index and client.index_exists(index_name)
+        if !(settings.persist_indexes) and index and elasticsearch.index_exists(index_name)
           log.info "deleting index for type #{type} - #{index_name}."
-          client.delete_index index_name
+          elasticsearch.delete_index index_name
         end
-        unless index and client.index_exists(index_name)
-          index_name = create_index(client, type, groups, [])
+        unless index and elasticsearch.index_exists(index_name)
+          index_name = create_index(elasticsearch, type, groups, [])
           log.debug "Indexing documents for #{type} into #{index_name.inspect}"
-          index_documents client, tika, type, index_name, groups
+          index_documents elasticsearch, tika, type, index_name, groups
           Indexes.instance.set_status index_name, :valid
         else
           log.info "Using persisted index: #{index_name}"
@@ -99,7 +69,9 @@ def setup_indexes client, tika
   end
 end
 
+##
 # Configures the system and makes sure everything is up.
+##
 configure do
   set :protection, :except => [:json_csrf]
   set :dev, (ENV['RACK_ENV'] == 'development')
@@ -121,7 +93,8 @@ configure do
   end
 
   setup_indexes elasticsearch, tika
-  setup_parser elasticsearch, tika, configuration
+  delta_handler = setup_delta_handling elasticsearch, tika, configuration
+  set :delta_handler, delta_handler
 
   if settings.dev
     listener = Listen.to('/config/') do |modified, added, removed|
@@ -136,6 +109,37 @@ configure do
 
     listener.start
   end
+end
+
+##
+# Setup delta handling based on configuration
+##
+def setup_delta_handling(elasticsearch, tika, config)
+  if config[:automatic_index_updates]
+    handler = MuSearch::AutomaticUpdateHandler.new({
+                                                     logger: SinatraTemplate::Utils.log,
+                                                     elastic_client: elasticsearch,
+                                                     tika_client: tika,
+                                                     attachment_path_base: config[:attachments_path_base],
+                                                     type_definitions: config[:type_definitions],
+                                                     wait_interval: config[:update_wait_interval_minutes],
+                                                     number_of_threads: config[:number_of_threads]
+                                                   })
+  else
+    handler = MuSearch::InvalidatingUpdateHandler.new({
+                                                        logger: SinatraTemplate::Utils.log,
+                                                        type_definitions: config[:type_definitions],
+                                                        wait_interval: config[:update_wait_interval_minutes],
+                                                        number_of_threads: config[:number_of_threads]
+                                                      })
+  end
+
+  delta_handler = MuSearch::DeltaHandler.new({
+                                      update_handler: handler,
+                                      logger: SinatraTemplate::Utils.log,
+                                      search_configuration: { "types" => config[:index_config] }
+                                    })
+  delta_handler
 end
 
 
@@ -438,7 +442,7 @@ end
 # Processes an update from the delta system. See MuSearch::DeltaHandler and MuSearch::UpdateHandler for more info
 post "/update" do
   log.debug "Received delta update #{@json_body}"
-  settings.delta_parser.parse_deltas(@json_body)
+  settings.delta_handler.parse_deltas(@json_body)
   { message: "Thanks for all the updates." }.to_json
 end
 

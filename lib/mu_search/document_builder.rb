@@ -203,10 +203,10 @@ SPARQL
       when 0
         [key, nil]
       when 1
-        [key, { content: attachments.first}]
+        [key, { content: attachments.first }]
       else
         attachments = attachments.keep_if { |v| v } # filter out falsy values (If one of the array is falsy, others are not taken into account)
-        [key, attachments.collect { |attachment| { content: attachment} }]
+        [key, attachments.collect { |attachment| { content: attachment } }]
       end
     end
   end
