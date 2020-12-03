@@ -157,7 +157,7 @@ SPARQL
         filehash = Digest::SHA256.hexdigest blob
         hash_path = '/cache/' + filehash
         if File.exists?(hash_path)
-          contents = File.open(hash_path, "rb") do |file|
+          contents = File.open(hash_path, "r") do |file|
             log.debug "Tika: reading cached file: #{hash_path}"
             file.read
           end
