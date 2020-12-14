@@ -44,6 +44,7 @@ def setup_indexes elasticsearch, tika
     log.info "Loading persisted indexes"
     load_persisted_indexes settings.index_config
   else
+    log.info "Removing indexes as they're configured not to be persisted. Update the 'persist_indexes' flag in the configuration to enable index persistence."
     destroy_persisted_indexes elasticsearch
   end
 
