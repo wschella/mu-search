@@ -181,7 +181,7 @@ services:
   elasticsearch:
     ...
   tika:
-    image: apache/tika:1.24-full
+    image: apache/tika:1.25-full
 ```
 
 Next, add the following mounted volumes to the mu-search service in `docker-compose.yml`:
