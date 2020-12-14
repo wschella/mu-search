@@ -164,8 +164,10 @@ SPARQL
         else
           log.debug "Tika: processing #{file_path} to #{hash_path}"
           contents = @tika_client.process_document(file_path, blob)
-          File.open(hash_path, 'w') do |file|
-            file.puts contents.force_encoding('utf-8').unicode_normalize
+          unless contents.nil?
+            File.open(hash_path, 'w') do |file|
+              file.puts contents.force_encoding('utf-8').unicode_normalize
+            end
           end
         end
         contents

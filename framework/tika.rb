@@ -73,11 +73,19 @@ class Tika
     req['Content-Type'] = mime_type
     req.body = document
     result = run(uri, req)
-    # TODO: check could be better, but on success run returns the body
-    if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
-      raise "failed to process document #{name}, response was #{result.code} #{result.msg}"
+
+    if result.kind_of?(Net::HTTPResponse)
+      if result.kind_of?(Net::HTTPSuccess)
+        result
+      elsif result.kind_of?(Net::HTTPUnprocessableEntity)
+        log.info "Tika returned [#{result.code} #{result.msg}] for document #{name}. The document may be encrypted and will not be processed."
+        nil
+      else
+        raise "Tika returned [#{result.code} #{result.msg}] for document #{name}. The document will not be processed."
+      end
     else
-      result
+      log.debug "Failed to process document #{name}\n #{result.inspect}"
+      raise "Failed to process document #{name}."
     end
   end
 
