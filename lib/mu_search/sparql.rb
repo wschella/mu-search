@@ -6,9 +6,13 @@ module MuSearch
       SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], { headers: { 'mu-auth-sudo': 'true' } } )
     end
 
+    def self.direct_query(query_string, retries = 6)
+      self.sudo_query(query_string, retries)
+    end
+
     ##
     # perform a query with access to all data
-    def self.direct_query(query_string, retries = 6)
+    def self.sudo_query(query_string, retries = 6)
       begin
         sudo_client.query query_string
       rescue StandardError => e
@@ -19,7 +23,7 @@ module MuSearch
           log.warn "Could not execute raw query (attempt #{6 - next_retries}): #{query_string}"
           timeout = (6 - next_retries) ** 2
           sleep timeout
-          direct_query query_string, next_retries
+          sudo_query query_string, next_retries
         end
       end
     end

@@ -9,12 +9,15 @@ require 'open3'
 require 'webrick'
 
 require_relative 'lib/mu_search/sparql.rb'
+require_relative 'lib/mu_search/authorization_utils.rb'
 require_relative 'lib/mu_search/delta_handler.rb'
 require_relative 'lib/mu_search/automatic_update_handler.rb'
 require_relative 'lib/mu_search/invalidating_update_handler.rb'
 require_relative 'lib/mu_search/config_parser.rb'
 require_relative 'lib/mu_search/document_builder.rb'
 require_relative 'lib/mu_search/index_builder.rb'
+require_relative 'lib/mu_search/index_manager.rb'
+require_relative 'lib/mu_search/search_index.rb'
 require_relative 'framework/elastic.rb'
 require_relative 'framework/tika.rb'
 require_relative 'framework/sparql.rb'
@@ -39,35 +42,52 @@ before do
 end
 
 
-def setup_indexes elasticsearch, tika
-  if settings.persist_indexes
-    log.info "Loading persisted indexes"
-    load_persisted_indexes settings.index_config
+def setup_indexes elasticsearch, tika, config
+  index_manager = MuSearch::IndexManager.new({
+                                               logger: SinatraTemplate::Utils.log,
+                                               elasticsearch: elasticsearch,
+                                               tika: tika,
+                                               search_configuration: {
+                                                 types: config[:index_config],
+                                                 default_index_settings: config[:default_index_settings],
+                                                 additive_indexes: config[:additive_indexes]
+                                               }
+                                             })
+
+  # TODO move to IndexManager.setup_indexes
+  if config[:persist_indexes]
+    log.info "[Index mgmt] Loading persisted indexes from the triplestore"
+    index_manager.load_configured_indexes
   else
-    log.info "Removing indexes as they're configured not to be persisted. Update the 'persist_indexes' flag in the configuration to enable index persistence."
-    destroy_persisted_indexes elasticsearch
+    log.info "[Index mgmt] Removing indexes as they're configured not to be persisted.\nSet the 'persist_indexes' flag to 'true' to enable index persistence (recommended in production environment)."
+    index_manager.destroy_persisted_indexes
   end
 
-  settings.master_mutex.synchronize do
-    settings.eager_indexing_groups.each do |groups|
-      settings.type_definitions.keys.each do |type|
-        index = get_matching_index_name type, groups, []
-        index_name = index ? index[:index] : nil
-        if !(settings.persist_indexes) and index and elasticsearch.index_exists(index_name)
-          log.info "deleting index for type #{type} - #{index_name}."
-          elasticsearch.delete_index index_name
+  # TODO move to IndexManager.setup_indexes
+  log.info "[Index mgmt] Start initializing all configured eager indexing groups..."
+  index_manager.master_mutex.synchronize do
+    total = config[:eager_indexing_groups].length * config[:type_definitions].keys.length
+    count = 0
+    config[:eager_indexing_groups].each do |allowed_groups|
+      config[:type_definitions].keys.each do |type_name|
+        count = count + 1
+        unless config[:persist_indexes]
+          log.info "[Index mgmt] Removing eager index for type '#{type_name}' and allowed_groups #{allowed_groups} since indexes are configured not to be persisted."
+          index_manager.remove_index type_name, allowed_groups
         end
-        unless index and elasticsearch.index_exists(index_name)
-          index_name = create_index(elasticsearch, type, groups, [])
-          log.debug "Indexing documents for #{type} into #{index_name.inspect}"
-          index_documents elasticsearch, tika, type, index_name, groups
-          Indexes.instance.set_status index_name, :valid
-        else
-          log.info "Using persisted index: #{index_name}"
+        index = index_manager.ensure_index type_name, allowed_groups
+        log.info "[Index mgmt] (#{count}/#{total}) Eager index #{index.name} created for type '#{index.type_name}' and allowed_groups #{allowed_groups}. Current status: #{index.status}."
+        if index.status == :invalid
+          log.info "[Index mgmt] Eager index #{index.name} not up-to-date. Start reindexing documents."
+          index_documents elasticsearch, tika, type_name, index.name, allowed_groups
+          index.status = :valid
         end
       end
     end
+    log.info "[Index mgmt] Completed initialization of #{total} eager indexes"
   end
+
+  index_manager
 end
 
 ##
@@ -124,37 +144,20 @@ configure do
     sleep 1
   end
 
-  setup_indexes elasticsearch, tika
+  index_manager = setup_indexes elasticsearch, tika, configuration
+  set :index_manager, index_manager
   delta_handler = setup_delta_handling elasticsearch, tika, configuration
   set :delta_handler, delta_handler
-
-  if settings.dev
-    listener = Listen.to('/config/') do |modified, added, removed|
-      if modified.include? '/config/config.json'
-        log.info 'Reloading configuration'
-        destroy_existing_indexes elasticsearch
-        configuration = MuSearch::ConfigParser.parse('/config/config.json')
-        set configuration
-        log.info '== Configuration reloaded'
-      end
-    end
-
-    listener.start
-  end
 end
 
-# Provides the type which matches the given path based on the supplied
-# configuration.
-def get_type_from_path path
-  settings.type_paths[path]
-end
+
 
 # Invalidates the indexes resulting them to be updated in a next
 # search query.
 post "/:path/invalidate" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = get_type_from_path path
+  type = settings.type_paths[path]
   allowed_groups = get_allowed_groups
   used_groups = []
 
@@ -171,7 +174,7 @@ post "/:path/invalidate" do |path|
   else
     settings.master_mutex.synchronize do
       if allowed_groups.empty?
-        type = get_type_from_path path
+        type = settings.type_paths[path]
         indexes_invalidated =
           Indexes.instance.invalidate_all_by_type type
         { indexes: indexes_invalidated, status: "invalid" }.to_json
@@ -195,7 +198,7 @@ end
 delete "/:path/delete" do |path|
   content_type 'application/json'
   client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = get_type_from_path path
+  type = settings.type_paths[path]
   allowed_groups = get_allowed_groups
   used_groups = []
 
@@ -212,7 +215,7 @@ delete "/:path/delete" do |path|
   else
     settings.master_mutex.synchronize do
       if allowed_groups.empty?
-        type = get_type_from_path path
+        type = settings.type_paths[path]
 
         indexes_deleted = Indexes.instance.get_indexes(type).map do |groups, index|
           destroy_index client, index[:index], groups
@@ -282,7 +285,7 @@ post "/:path/index" do |path|
           end
         end
       else
-        type = get_type_from_path path
+        type = settings.type_paths[path]
         index_names = sync client, type
         index_names.each do |index|
           index_index client, index, type
@@ -297,7 +300,7 @@ post "/:path/index" do |path|
         end
         report.reduce([], :concat)
       else
-        type = get_type_from_path path
+        type = settings.type_paths[path]
         if Indexes.instance.get_indexes(type)
           Indexes.instance.get_indexes(type).map do |groups, index|
             index_index client, index[:index], type, groups
@@ -321,45 +324,17 @@ end
 #
 # TODO fleshen out functionality with respect to existing indexes
 get "/:path/search" do |path|
-  groups = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
-  log.debug "SEARCH Got allowed groups #{groups}"
+  allowed_groups = get_allowed_groups
+  used_groups = []
+  log.debug "[Authorization] Search request received allowed groups #{allowed_groups}"
 
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
-  tika = Tika.new(host: 'tika', port: 9998)
+  elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200)
 
-  type = get_type_from_path path
+  index_manager = settings.index_manager
+  type_def = settings.type_paths[path]
+  type_name = type_def and type_def["type"]
+
   collapse_uuids = (params["collapse_uuids"] == "t")
-
-  log.debug "SEARCH Found type #{type}"
-
-  index_names = get_or_create_indexes client, tika, type
-
-  log.debug "SEARCH Found indexes #{index_names}"
-
-  # TOOD: Not sure how this could ever be empty.  We should at least
-  # be able to build some indexes if we have received some groups.
-  # This is a method of last resort which currently does the job.
-  if index_names.length == 0
-    log.info "SEARCH no matching indexes found for type: #{type.inspect} and groups: #{groups.inspect}"
-    error("no index matching your request")
-  end
-
-  index_string = index_names.join(',')
-
-  log.debug "SEARCH Searching index(es): #{index_string}"
-
-  es_query = construct_es_query type
-
-  log.debug "SEARCH ElasticSearch query: #{es_query}"
-  log.debug "SEARCH ElasticSearch query as json: #{es_query.to_json}"
-
-  count_query = es_query.clone
-
-  sort_statement = es_query_sort_statement
-
-  if sort_statement
-    es_query['sort'] = sort_statement
-  end
 
   if params["page"]
     page = (params["page"]["number"] && params["page"]["number"].to_i) || 0
@@ -369,48 +344,73 @@ get "/:path/search" do |path|
     size = 10
   end
 
-  es_query["from"] = page * size
-  es_query["size"] = size
+  indexes = update_indexes_for_type_and_groups type_name, allowed_groups, used_groups
 
-  if collapse_uuids
-    es_query["collapse"] = { field: "uuid" }
-    es_query["aggs"] = { "type_count" => { "cardinality" => { "field" => "uuid" } } }
-  end
-
-  # Exclude all attachment fields for now
-  attachments = settings.type_definitions[type]["properties"].select {|key, val|
-    val.is_a?(Hash) && val["attachment_pipeline"]
-  }
-  es_query["_source"] = {
-    excludes: attachments.keys
-  }
-
-  # while Indexes.instance.status index == :updating
-  while index_names.map { |index| Indexes.instance.status index == :updating }.any?
-    sleep 0.5
-  end
-
-  log.debug "All indexes are up to date"
-  log.debug "Running ES query: #{es_query.to_json}"
-  response = client.search(index: index_string, query: es_query)
-  if response.kind_of?(String) # assume success
-    results = JSON.parse(response)
-    log.debug "Got native results: #{results}"
-
-    count =
-      if collapse_uuids
-        results["aggregations"]["type_count"]["value"]
-      else
-        count_result = JSON.parse(client.count index: index_string, query: count_query)
-        count_result["count"]
-      end
-
-    log.debug "Got #{count} results"
-    format_results(type, count, page, size, results).to_json
+  if indexes.length == 0
+    log.info "[Search] No indexes found to search in. Returning empty result"
+    format_results(type_def, 0, page, size, []).to_json
   else
-    log.info "ES query failed: #{response}"
-    log.debug response.body
-    error(response.message)
+    # TODO << start move to ES query utils
+    es_query = construct_es_query type_def
+
+    log.debug "[Search] ElasticSearch query: #{es_query}"
+    log.debug "[Search] ElasticSearch query as json: #{es_query.to_json}"
+
+    count_query = es_query.clone
+
+    sort_statement = es_query_sort_statement
+
+    if sort_statement
+      es_query['sort'] = sort_statement
+    end
+
+    es_query["from"] = page * size
+    es_query["size"] = size
+
+    if collapse_uuids
+      es_query["collapse"] = { field: "uuid" }
+      es_query["aggs"] = { "type_count" => { "cardinality" => { "field" => "uuid" } } }
+    end
+
+    # Exclude all attachment fields for now
+    attachments = settings.type_definitions[type_def]["properties"].select {|key, val|
+      val.is_a?(Hash) && val["attachment_pipeline"]
+    }
+    es_query["_source"] = {
+      excludes: attachments.keys
+    }
+    # TODO end move to ES query utils >>
+
+    index_names = indexes.map { |index| index.name }
+    index_string = index_names.join(',')
+
+    while indexes.any? { |index| index.status == :updating }
+      log.info "[Search] Waiting for indexes to be up-to-date..."
+      sleep 0.5
+    end
+
+    log.debug "[Search] All indexes are up to date"
+    log.debug "[Elasticsearch] Running ES query: #{es_query.to_json}"
+
+    response = elasticsearch.search(index: index_string, query: es_query)
+    if response.kind_of?(String) # assume success
+      results = JSON.parse(response)
+
+      count =
+        if collapse_uuids
+          results["aggregations"]["type_count"]["value"]
+        else
+          count_result = JSON.parse(elasticsearch.count index: index_string, query: count_query)
+          count_result["count"]
+        end
+
+      log.debug "[Search] Found #{count} results"
+      format_results(type_def, count, page, size, results).to_json
+    else
+      log.warn "[Search] Execution of search query failed: #{response}"
+      log.debug response.body
+      error(response.message)
+    end
   end
 end
 
@@ -420,7 +420,7 @@ end
 if settings.enable_raw_dsl_endpoint
   post "/:path/search" do |path|
     client = Elastic.new(host: 'elasticsearch', port: 9200)
-    type = get_type_from_path path
+    type = settings.type_paths[path]
     index_names = get_or_create_indexes client, type
 
     return [].to_json if index_names.length == 0
@@ -479,7 +479,7 @@ get "/:path/health" do |path|
   if path == '_all'
     { status: "up" }.to_json
   else
-    type = get_type_from_path path
+    type = settings.type_paths[path]
     index_names = get_or_create_indexes client, type
     Hash[
       index_names.map { |index| [index, Indexes.instance.status(index)] }

@@ -143,7 +143,7 @@ class Elastic
       log.info "Deleted #{index}"
       log.debug "Index #{index} exists: #{index_exists index}"
     rescue
-      if !client.index_exists index
+      if !index_exists index
         log.info "Index not deleted, does not exist: #{index}"
       else
         raise "Error deleting index: #{index}"
@@ -309,6 +309,15 @@ class Elastic
     req.body = query.to_json
     run(uri, req)
   end
+
+  # Deletes all documents from an index in Elasticsearch
+  #   - index: Index name to be removed
+  def clear_index client, index
+    if index_exists index
+      delete_by_query(index, { query: { match_all: {} } }, true)
+    end
+  end
+
 
   # Searches for documents in an index
   #
