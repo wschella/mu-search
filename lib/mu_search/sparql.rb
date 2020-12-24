@@ -28,6 +28,24 @@ module MuSearch
       end
     end
 
+    ##
+    # perform an update with access to all data
+    def self.sudo_update(query_string, retries = 6)
+      begin
+        sudo_client.update query_string
+      rescue StandardError => e
+        next_retries = retries - 1
+        if next_retries == 0
+          raise e
+        else
+          log.warn "Could not execute raw query (attempt #{6 - next_retries}): #{query_string}"
+          timeout = (6 - next_retries) ** 2
+          sleep timeout
+          sudo_update query_string, next_retries
+        end
+      end
+    end
+
     # Converts the given predicate to an escaped predicate used in a SPARQL query.
     #
     # The string may start with a ^ sign to indicate inverse.

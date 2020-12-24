@@ -15,6 +15,9 @@ module MuSearch
       initialize_indexes
     end
 
+    # Initialize indexes based on the search configuration
+    # Ensures all configured eager indexes exist
+    # and removes indexes found in the triplestore if index peristentce is disabled
     def initialize_indexes
       if @configuration[:persist_indexes]
         log.info "[Index mgmt] Loading persisted indexes from the triplestore"
@@ -22,7 +25,7 @@ module MuSearch
           @indexes[type_name] = get_indexes_from_triplestore_by_type type_name
         end
       else
-        log.info "[Index mgmt] Removing indexes as they're configured not to be persisted.\nSet the 'persist_indexes' flag to 'true' to enable index persistence (recommended in production environment)."
+        log.info "[Index mgmt] Removing indexes as they're configured not to be persisted. Set the 'persist_indexes' flag to 'true' to enable index persistence (recommended in production environment)."
         remove_persisted_indexes
       end
 
@@ -57,7 +60,7 @@ module MuSearch
     #   - used_groups: used groups to find index for (array of {group, variables}-objects)
     #
     # In case of additive indexes, returns one index per allowed group
-    # Otherwise, returns an array of a single group
+    # Otherwise, returns an array of a single index
     # Returns an empty array if no index is found
     def update_indexes_for_type_and_groups type_name, allowed_groups, used_groups
       def update_index type_name, allowed_groups, used_groups
@@ -145,7 +148,7 @@ module MuSearch
       index = find_matching_index type_name, allowed_groups, used_groups
       unless index
         log.debug "[Index mgmt] Add index #{index_name} to cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
-        index = ::SearchIndex.new(
+        index = MuSearch::SearchIndex.new(
           uri: index_uri,
           name: index_name,
           type_name: type_name,
@@ -163,7 +166,7 @@ module MuSearch
         type_definition = @configuration[:type_definitions][type_name]
         if type_definition
           mappings = type_definition["mappings"] || {}
-          settings = type_definition["settings"] || @configuration[:default_index_settings] # TODO merge custom and default settings
+          settings = type_definition["settings"] || @configuration[:default_index_settings] || {} # TODO merge custom and default settings
           @elasticsearch.create_index index_name, mappings, settings
         else
           raise "No type definition found in search config for type '#{type_name}'. Unable to create Elasticsearch index."
@@ -178,7 +181,7 @@ module MuSearch
     #   - index: Index to push the indexed documents in
     #   - allowed_groups: Groups used for querying the database
     def index_documents type_name, index, allowed_groups = nil
-      search_configuration = @configuration.keep_if do |key|
+      search_configuration = @configuration.select do |key|
         [:number_of_threads, :batch_size, :max_batches, :attachment_path_base, :type_definitions].include? key
       end
       builder = MuSearch::IndexBuilder.new(
@@ -205,7 +208,7 @@ SELECT ?name WHERE {
     }
   }
 SPARQL
-      index_names = result.map { |r| r.id }
+      index_names = result.map { |r| r.name }
       index_names.each do |index_name|
         remove_index_by_name index_name
         log.info "[Index mgmt] Remove persisted index #{index_name} in triplestore and Elasticsearch"
@@ -229,14 +232,12 @@ SPARQL
 
     # Removes the index from the triplestore and Elasticsearch
     # Does not yield an error if index doesn't exist
-    def remove_index_by_name
-      # Remove index from triplestore
-      remove_index_from_triplestore index_name
+    def remove_index_by_name index_name
       log.debug "[Index mgmt] Removing index #{index_name} from triplestore"
+      remove_index_from_triplestore index_name
 
-      # Remove index from Elasticseach
       if @elasticsearch.index_exists index_name
-        log.debug "[Index mgmt] Removing index from Elasticsearch: #{index_name}"
+        log.debug "[Index mgmt] Removing index #{index_name} from Elasticsearch"
         @elasticsearch.delete_index index_name
       end
     end
@@ -253,24 +254,24 @@ SPARQL
       uuid = generate_uuid()
       uri = "http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}"  # TODO update base URI
 
-      def groups_term group
+      def groups_term groups
         groups.map { |g| sparql_escape_string g.to_json }.join(",")
       end
 
       allowed_group_statement = allowed_groups.empty? ? "" : "search:hasAllowedGroup #{groups_term(allowed_groups)} ; "
       used_group_statement = used_groups.empty? ? "" : "search:hasUsedGroup #{groups_term(used_groups)} ; "
 
-      query_result = direct_query  <<SPARQL
+      query_result = MuSearch::SPARQL::sudo_update <<SPARQL
   PREFIX mu: <http://mu.semte.ch/vocabularies/core/>
   PREFIX search: <http://mu.semte.ch/vocabularies/authorization/>
   INSERT DATA {
     GRAPH <http://mu.semte.ch/authorization> {
-        <#{uri}> a search:ElasticsearchIndex> ;
+        <#{uri}> a search:ElasticsearchIndex ;
                mu:uuid "#{uuid}" ;
-               search:objectType "#{type}" ;
+               search:objectType "#{type_name}" ;
                #{allowed_group_statement}
                #{used_group_statement}
-               search:indexName "#{index}" .
+               search:indexName "#{index_name}" .
     }
   }
 SPARQL
@@ -281,18 +282,19 @@ SPARQL
     #
     #   - index_name: name of the index to remove
     def remove_index_from_triplestore index_name
-      MuSearch::SPARQL::sudo_query <<SPARQL
+      MuSearch::SPARQL::sudo_update <<SPARQL
 DELETE {
   GRAPH <http://mu.semte.ch/authorization> {
-    ?s ?p ?o
+    ?s ?p ?o .
   }
-} WHERE {
+}
+WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?s a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex> ;
            <http://mu.semte.ch/vocabularies/authorization/indexName> #{sparql_escape_string index_name} ;
-           ?p ?o
+           ?p ?o .
     }
-  }
+}
 SPARQL
     end
 

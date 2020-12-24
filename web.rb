@@ -16,8 +16,8 @@ require_relative 'lib/mu_search/invalidating_update_handler.rb'
 require_relative 'lib/mu_search/config_parser.rb'
 require_relative 'lib/mu_search/document_builder.rb'
 require_relative 'lib/mu_search/index_builder.rb'
-require_relative 'lib/mu_search/index_manager.rb'
 require_relative 'lib/mu_search/search_index.rb'
+require_relative 'lib/mu_search/index_manager.rb'
 require_relative 'framework/elastic.rb'
 require_relative 'framework/tika.rb'
 require_relative 'framework/sparql.rb'
@@ -42,21 +42,16 @@ end
 
 
 def setup_index_manager elasticsearch, tika, config
+  search_configuration = config.select do |key|
+    [:type_definitions, :default_index_settings, :additive_indexes,
+     :persist_indexes, :eager_indexing_groups, :number_of_threads,
+     :batch_size, :max_batches, :attachment_path_base].include? key
+  end
   MuSearch::IndexManager.new({
                                logger: SinatraTemplate::Utils.log,
                                elasticsearch: elasticsearch,
                                tika: tika,
-                               search_configuration: {
-                                 type_definitions: config[:type_definitions],
-                                 default_index_settings: config[:default_index_settings],
-                                 additive_indexes: config[:additive_indexes],
-                                 persist_indexes: config[:persist_indexes],
-                                 eager_indexing_groups: config[:eager_indexing_groups],
-                                 number_of_threads: config[:number_of_threads],
-                                 batch_size: config[:batch_size],
-                                 max_batches: config[:max_batches],
-                                 attachment_path_base: config[:attachment_path_base]
-                               }
+                               search_configuration: search_configuration
                              })
 end
 
