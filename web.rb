@@ -22,7 +22,6 @@ require_relative 'framework/elastic.rb'
 require_relative 'framework/tika.rb'
 require_relative 'framework/sparql.rb'
 require_relative 'framework/authorization.rb'
-require_relative 'framework/indexing.rb'
 require_relative 'framework/search.rb'
 
 ##
@@ -52,7 +51,11 @@ def setup_index_manager elasticsearch, tika, config
                                  default_index_settings: config[:default_index_settings],
                                  additive_indexes: config[:additive_indexes],
                                  persist_indexes: config[:persist_indexes],
-                                 eager_indexing_groups: config[:eager_indexing_groups]
+                                 eager_indexing_groups: config[:eager_indexing_groups],
+                                 number_of_threads: config[:number_of_threads],
+                                 batch_size: config[:batch_size],
+                                 max_batches: config[:max_batches],
+                                 attachment_path_base: config[:attachment_path_base]
                                }
                              })
 end

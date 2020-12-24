@@ -472,7 +472,7 @@ Attachments processed by Tika are cached in the directory `/cache` (by SHA256 of
 See also "How to specify a file's content as property".
 
 ##### Multiple types
-A search index can contain documents of different types. E.g. documents (`foaf:Document`) as well as creative works (`schema:CreativeWork`). Currently, each simple types the composite index is constituted of must be defined seperately in the index configuration as well.
+A search index can contain documents of different types. E.g. documents (`foaf:Document`) as well as creative works (`schema:CreativeWork`). Currently, each simple type the composite index is constituted of must be defined seperately in the index configuration as well.
 
 A definition of a composite type index consists of the following properties:
 - **type** : name of the composite type

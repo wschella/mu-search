@@ -41,7 +41,7 @@ module MuSearch
             log.info "[Index mgmt] (#{count}/#{total}) Eager index #{index.name} created for type '#{index.type_name}' and allowed_groups #{allowed_groups}. Current status: #{index.status}."
             if index.status == :invalid
               log.info "[Index mgmt] Eager index #{index.name} not up-to-date. Start reindexing documents."
-              index_documents elasticsearch, tika, type_name, index.name, allowed_groups
+              index_documents type_name, index.name, allowed_groups
               index.status = :valid
             end
           end
@@ -74,8 +74,7 @@ module MuSearch
             index.status = :updating
             begin
               @elasticsearch.clear_index index.name
-              # TODO move index_documents to IndexManager
-              index_documents @elasticsearch, @tika, type_name, index.name, allowed_groups
+              index_documents type_name, index.name, allowed_groups
               @elasticsearch.refresh_index index.name
               index.status = :valid
             rescue
@@ -146,13 +145,12 @@ module MuSearch
       index = find_matching_index type_name, allowed_groups, used_groups
       unless index
         log.debug "[Index mgmt] Add index #{index_name} to cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
-        index = ::SearchIndex.new({
-                                    uri: index_uri,
-                                    name: index_name,
-                                    type_name: type_name,
-                                    allowed_groups: sorted_allowed_groups,
-                                    used_groups: sorted_used_groups
-                                  })
+        index = ::SearchIndex.new(
+          uri: index_uri,
+          name: index_name,
+          type_name: type_name,
+          allowed_groups: sorted_allowed_groups,
+          used_groups: sorted_used_groups)
         @indexes[type_name] = {} unless @indexes.has_key? type_name
         group_key = serialize_authorization_groups sorted_allowed_groups
         @indexes[type_name][group_key] = index
@@ -172,6 +170,26 @@ module MuSearch
         end
       end
       index
+    end
+
+    # Indexes documents for the given type in the given Elasticsearch index
+    # taking the authorization groups into account. Documents are indexed in batches.
+    #   - type_name: Type of content which needs to be indexed
+    #   - index: Index to push the indexed documents in
+    #   - allowed_groups: Groups used for querying the database
+    def index_documents type_name, index, allowed_groups = nil
+      search_configuration = @configuration.keep_if do |key|
+        [:number_of_threads, :batch_size, :max_batches, :attachment_path_base, :type_definitions].include? key
+      end
+      builder = MuSearch::IndexBuilder.new(
+        logger: log,
+        elasticsearch: @elasticsearch,
+        tika: @tika,
+        type_name: type_name,
+        index_id: index,
+        allowed_groups: allowed_groups,
+        search_configuration: search_configuration)
+      builder.build
     end
 
     # Removes all persisted indexes from the triplestore as well as from Elasticsearch
@@ -276,10 +294,6 @@ DELETE {
     }
   }
 SPARQL
-    end
-
-    # Get all index names from the triplestore
-    def get_index_names_from_triplestore
     end
 
     # Find index by name in the triplestore
