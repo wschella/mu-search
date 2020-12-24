@@ -42,52 +42,19 @@ before do
 end
 
 
-def setup_indexes elasticsearch, tika, config
-  index_manager = MuSearch::IndexManager.new({
-                                               logger: SinatraTemplate::Utils.log,
-                                               elasticsearch: elasticsearch,
-                                               tika: tika,
-                                               search_configuration: {
-                                                 types: config[:index_config],
-                                                 default_index_settings: config[:default_index_settings],
-                                                 additive_indexes: config[:additive_indexes]
-                                               }
-                                             })
-
-  # TODO move to IndexManager.setup_indexes
-  if config[:persist_indexes]
-    log.info "[Index mgmt] Loading persisted indexes from the triplestore"
-    index_manager.load_configured_indexes
-  else
-    log.info "[Index mgmt] Removing indexes as they're configured not to be persisted.\nSet the 'persist_indexes' flag to 'true' to enable index persistence (recommended in production environment)."
-    index_manager.destroy_persisted_indexes
-  end
-
-  # TODO move to IndexManager.setup_indexes
-  log.info "[Index mgmt] Start initializing all configured eager indexing groups..."
-  index_manager.master_mutex.synchronize do
-    total = config[:eager_indexing_groups].length * config[:type_definitions].keys.length
-    count = 0
-    config[:eager_indexing_groups].each do |allowed_groups|
-      config[:type_definitions].keys.each do |type_name|
-        count = count + 1
-        unless config[:persist_indexes]
-          log.info "[Index mgmt] Removing eager index for type '#{type_name}' and allowed_groups #{allowed_groups} since indexes are configured not to be persisted."
-          index_manager.remove_index type_name, allowed_groups
-        end
-        index = index_manager.ensure_index type_name, allowed_groups
-        log.info "[Index mgmt] (#{count}/#{total}) Eager index #{index.name} created for type '#{index.type_name}' and allowed_groups #{allowed_groups}. Current status: #{index.status}."
-        if index.status == :invalid
-          log.info "[Index mgmt] Eager index #{index.name} not up-to-date. Start reindexing documents."
-          index_documents elasticsearch, tika, type_name, index.name, allowed_groups
-          index.status = :valid
-        end
-      end
-    end
-    log.info "[Index mgmt] Completed initialization of #{total} eager indexes"
-  end
-
-  index_manager
+def setup_index_manager elasticsearch, tika, config
+  MuSearch::IndexManager.new({
+                               logger: SinatraTemplate::Utils.log,
+                               elasticsearch: elasticsearch,
+                               tika: tika,
+                               search_configuration: {
+                                 type_definitions: config[:type_definitions],
+                                 default_index_settings: config[:default_index_settings],
+                                 additive_indexes: config[:additive_indexes],
+                                 persist_indexes: config[:persist_indexes],
+                                 eager_indexing_groups: config[:eager_indexing_groups]
+                               }
+                             })
 end
 
 ##
@@ -144,7 +111,7 @@ configure do
     sleep 1
   end
 
-  index_manager = setup_indexes elasticsearch, tika, configuration
+  index_manager = setup_index_manager elasticsearch, tika, configuration
   set :index_manager, index_manager
   delta_handler = setup_delta_handling elasticsearch, tika, configuration
   set :delta_handler, delta_handler

@@ -11,6 +11,43 @@ module MuSearch
       @master_mutex = Mutex.new
       @configuration = search_configuration
       @indexes = {} # indexes per type
+
+      initialize_indexes
+    end
+
+    def initialize_indexes
+      if @configuration[:persist_indexes]
+        log.info "[Index mgmt] Loading persisted indexes from the triplestore"
+        @configuration[:type_definitions].keys.each do |type_name|
+          @indexes[type_name] = get_indexes_from_triplestore_by_type type_name
+        end
+      else
+        log.info "[Index mgmt] Removing indexes as they're configured not to be persisted.\nSet the 'persist_indexes' flag to 'true' to enable index persistence (recommended in production environment)."
+        remove_persisted_indexes
+      end
+
+      log.info "[Index mgmt] Start initializing all configured eager indexing groups..."
+      @master_mutex.synchronize do
+        total = @configuration[:eager_indexing_groups].length * @configuration[:type_definitions].keys.length
+        count = 0
+        @configuration[:eager_indexing_groups].each do |allowed_groups|
+          @configuration[:type_definitions].keys.each do |type_name|
+            count = count + 1
+            unless @configuration[:persist_indexes]
+              log.info "[Index mgmt] Removing eager index for type '#{type_name}' and allowed_groups #{allowed_groups} since indexes are configured not to be persisted."
+              remove_index type_name, allowed_groups
+            end
+            index = ensure_index type_name, allowed_groups
+            log.info "[Index mgmt] (#{count}/#{total}) Eager index #{index.name} created for type '#{index.type_name}' and allowed_groups #{allowed_groups}. Current status: #{index.status}."
+            if index.status == :invalid
+              log.info "[Index mgmt] Eager index #{index.name} not up-to-date. Start reindexing documents."
+              index_documents elasticsearch, tika, type_name, index.name, allowed_groups
+              index.status = :valid
+            end
+          end
+        end
+        log.info "[Index mgmt] Completed initialization of #{total} eager indexes"
+      end
     end
 
     # Updates and returns an array of indexes for the given type and allowed/used groups
@@ -67,6 +104,27 @@ module MuSearch
       indexes
     end
 
+
+    private
+
+    def log
+      @logger
+    end
+
+    # Find a single matching index for the given type and allowed/used groups
+    #   - type_name: type to find index for
+    #   - allowed_groups: allowed groups to find index for (array of {group, variables}-objects)
+    #   - used_groups: used groups to find index for (array of {group, variables}-objects)
+    # Returns nil if no index is found
+    #
+    # TODO take used_groups into account when they are supported by mu-authorization
+    def find_matching_index type_name, allowed_groups, used_groups = []
+      log.debug "[Index mgmt] Find matching index in cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
+      group_key = serialize_authorization_groups allowed_groups
+      index = @indexes[type_name] && @indexes[type_name][group_key]
+      index
+    end
+
     # Ensure index exists in the triplestore, in Elasticsearch and
     # in the in-memory indexes cache of the IndexManager
     #
@@ -104,7 +162,7 @@ module MuSearch
       unless @elasticsearch.index_exists index_name
         log.debug "[Index mgmt] Creating index #{index_name} in Elasticsearch for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
         index.status = :invalid
-        type_definition = @configuration[:types].find { |type_def| type_def.type == type_name }
+        type_definition = @configuration[:type_definitions][type_name]
         if type_definition
           mappings = type_definition["mappings"] || {}
           settings = type_definition["settings"] || @configuration[:default_index_settings] # TODO merge custom and default settings
@@ -114,6 +172,26 @@ module MuSearch
         end
       end
       index
+    end
+
+    # Removes all persisted indexes from the triplestore as well as from Elasticsearch
+    #
+    # NOTE this method does not check the current search configuration.
+    #      It only removes indexes found in the triplestore and destroys those.
+    def remove_persisted_indexes
+      result = MuSearch::SPARQL::sudo_query <<SPARQL
+SELECT ?name WHERE {
+    GRAPH <http://mu.semte.ch/authorization> {
+        ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
+               <http://mu.semte.ch/vocabularies/authorization/indexName> ?name
+    }
+  }
+SPARQL
+      index_names = result.map { |r| r.id }
+      index_names.each do |index_name|
+        remove_index_by_name index_name
+        log.info "[Index mgmt] Remove persisted index #{index_name} in triplestore and Elasticsearch"
+      end
     end
 
     # Removes the index from the triplestore, Elasticsearch and
@@ -131,51 +209,6 @@ module MuSearch
       remove_index_by_name index_name
     end
 
-    # Loads all indexes for the configured types
-    # in the in-memory index cache of the IndexManager
-    #
-    # NOTE this method does not check the existance of an index in Elasticsearch
-    def load_configured_indexes
-      @configuration[:types].each do |type_def|
-        type_name = type_def["type"]
-        @indexes[type_name] = get_indexes_from_triplestore_by_type type_name
-      end
-    end
-
-    # Destroys all persisted indexes from the triplestore as well as from Elasticsearch
-    #
-    # NOTE this method does not check the current search configuration.
-    #      It only removes indexes found in the triplestore and destroys those.
-    def destroy_persisted_indexes
-      index_names = get_index_names_from_triplestore
-      index_names.each do |index_name|
-        remove_index_by_name index_name
-        log.info "[Index mgmt] Destroyed index #{index_name} in triplestore and Elasticsearch"
-      end
-    end
-
-
-    private
-
-    def log
-      @logger
-    end
-
-
-    # Find a single matching index for the given type and allowed/used groups
-    #   - type_name: type to find index for
-    #   - allowed_groups: allowed groups to find index for (array of {group, variables}-objects)
-    #   - used_groups: used groups to find index for (array of {group, variables}-objects)
-    # Returns nil if no index is found
-    #
-    # TODO take used_groups into account when they are supported by mu-authorization
-    def find_matching_index type_name, allowed_groups, used_groups = []
-      log.debug "[Index mgmt] Find matching index in cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
-      group_key = serialize_authorization_groups allowed_groups
-      index = @indexes[type_name] && @indexes[type_name][group_key]
-      index
-    end
-
     # Removes the index from the triplestore and Elasticsearch
     # Does not yield an error if index doesn't exist
     def remove_index_by_name
@@ -188,19 +221,6 @@ module MuSearch
         log.debug "[Index mgmt] Removing index from Elasticsearch: #{index_name}"
         @elasticsearch.delete_index index_name
       end
-    end
-
-    # Get all index names from the triplestore
-    def get_index_names_from_triplestore
-      result = MuSearch::SPARQL::sudo_query <<SPARQL
-SELECT ?name WHERE {
-    GRAPH <http://mu.semte.ch/authorization> {
-        ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
-               <http://mu.semte.ch/vocabularies/authorization/indexName> ?name
-    }
-  }
-SPARQL
-      result.map { |r| r.id }
     end
 
     # Stores a new index in the triplestore
@@ -256,6 +276,10 @@ DELETE {
     }
   }
 SPARQL
+    end
+
+    # Get all index names from the triplestore
+    def get_index_names_from_triplestore
     end
 
     # Find index by name in the triplestore
@@ -327,6 +351,7 @@ SPARQL
       indexes
     end
 
+    # Generate a unique name for an index based on the given type and allowed/used groups
     def generate_index_name type_name, sorted_allowed_groups, sorted_used_groups
       # TODO does .to_json always return same serialization, independent of the order of the keys (group vs variables first)?
       Digest::MD5.hexdigest (type_name + "-" + sorted_allowed_groups.map { |g| g.to_json }.join("-"))
