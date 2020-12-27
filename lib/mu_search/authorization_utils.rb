@@ -49,5 +49,5 @@ def get_allowed_groups
   else
     allowed_groups = JSON.parse(allowed_groups_s)
   end
-  return sort_authorization_groups allowed_groups
+  sort_authorization_groups allowed_groups
 end

@@ -19,16 +19,16 @@ module MuSearch
     # and removes indexes found in the triplestore if index peristentce is disabled
     def initialize_indexes
       if @configuration[:persist_indexes]
-        log.info "[Index mgmt] Loading persisted indexes from the triplestore"
+        log.info("INDEX MGMT") { "Loading persisted indexes from the triplestore" }
         @configuration[:type_definitions].keys.each do |type_name|
           @indexes[type_name] = get_indexes_from_triplestore_by_type type_name
         end
       else
-        log.info "[Index mgmt] Removing indexes as they're configured not to be persisted. Set the 'persist_indexes' flag to 'true' to enable index persistence (recommended in production environment)."
+        log.info("INDEX MGMT") { "Removing indexes as they're configured not to be persisted. Set the 'persist_indexes' flag to 'true' to enable index persistence (recommended in production environment)." }
         remove_persisted_indexes
       end
 
-      log.info "[Index mgmt] Start initializing all configured eager indexing groups..."
+      log.info("INDEX MGMT") { "Start initializing all configured eager indexing groups..." }
       @master_mutex.synchronize do
         total = @configuration[:eager_indexing_groups].length * @configuration[:type_definitions].keys.length
         count = 0
@@ -36,19 +36,19 @@ module MuSearch
           @configuration[:type_definitions].keys.each do |type_name|
             count = count + 1
             unless @configuration[:persist_indexes]
-              log.info "[Index mgmt] Removing eager index for type '#{type_name}' and allowed_groups #{allowed_groups} since indexes are configured not to be persisted."
+              log.info("INDEX MGMT") { "Removing eager index for type '#{type_name}' and allowed_groups #{allowed_groups} since indexes are configured not to be persisted." }
               remove_index type_name, allowed_groups
             end
             index = ensure_index type_name, allowed_groups
-            log.info "[Index mgmt] (#{count}/#{total}) Eager index #{index.name} created for type '#{index.type_name}' and allowed_groups #{allowed_groups}. Current status: #{index.status}."
+            log.info("INDEX MGMT") { "(#{count}/#{total}) Eager index #{index.name} created for type '#{index.type_name}' and allowed_groups #{allowed_groups}. Current status: #{index.status}." }
             if index.status == :invalid
-              log.info "[Index mgmt] Eager index #{index.name} not up-to-date. Start reindexing documents."
+              log.info("INDEX MGMT") { "Eager index #{index.name} not up-to-date. Start reindexing documents." }
               index_documents type_name, index.name, allowed_groups
               index.status = :valid
             end
           end
         end
-        log.info "[Index mgmt] Completed initialization of #{total} eager indexes"
+        log.info("INDEX MGMT") { "Completed initialization of #{total} eager indexes" }
       end
     end
 
@@ -65,25 +65,25 @@ module MuSearch
       def update_index type_name, allowed_groups, used_groups
         index = find_matching_index type_name, allowed_groups, used_groups
         if index
-          log.debug "[Index mgmt] Found matching index in cache"
+          log.debug("INDEX MGMT") { "Found matching index in cache" }
         else
-          log.info "[Index mgmt] Didn't find matching index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups} in cache. Going to fetch index from triplestore or create it if it doesn't exist yet. Configure eager indexes to avoid building indexes at runtime."
+          log.info("INDEX MGMT") { "Didn't find matching index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups} in cache. Going to fetch index from triplestore or create it if it doesn't exist yet. Configure eager indexes to avoid building indexes at runtime." }
           index = ensure_index type_name, allowed_groups, used_groups
         end
         if index.status == :invalid
           index.mutex.synchronize do
-            log.info "[Index mgmt] Updating index #{index.name}"
+            log.info("INDEX MGMT") { "Updating index #{index.name}" }
             index.status = :updating
             begin
               @elasticsearch.clear_index index.name
               index_documents type_name, index.name, allowed_groups
               @elasticsearch.refresh_index index.name
               index.status = :valid
-              log.info "[Index mgmt] Index #{index.name} is up-to-date"
+              log.info("INDEX MGMT") { "Index #{index.name} is up-to-date" }
             rescue => e
               index.status = :invalid
-              log.error "[Index mgmt] Failed to update index #{index.name}."
-              log.error e
+              log.error("INDEX MGMT") { "Failed to update index #{index.name}." }
+              log.error("INDEX MGMT") { e }
             end
           end
         end
@@ -97,16 +97,16 @@ module MuSearch
             update_index type_name, [allowed_group], used_groups
           end
           index_names = indexes.map { |index| index.name }
-          log.debug "[Index mgmt] Fetched and updated #{indexes.length} additive indexes for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index_names.join(", ")}"
+          log.debug("INDEX MGMT") { "Fetched and updated #{indexes.length} additive indexes for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index_names.join(", ")}" }
         else
           index = update_index type_name, allowed_groups, used_groups
-          log.debug "[Index mgmt] Fetched and updated index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index.name}"
+          log.debug("INDEX MGMT") { "Fetched and updated index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index.name}" }
           indexes = [index]
         end
       end
 
       if indexes.any? { |index| index.status == :invalid }
-        log.warn "[Index mgmt] Not all indexes are up-to-date. Search results may be incomplete."
+        log.warn("INDEX MGMT") { "Not all indexes are up-to-date. Search results may be incomplete." }
       end
 
       indexes
@@ -127,7 +127,7 @@ module MuSearch
     #
     # TODO take used_groups into account when they are supported by mu-authorization
     def find_matching_index type_name, allowed_groups, used_groups = []
-      log.debug "[Index mgmt] Trying to find matching index in cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
+      log.debug("INDEX MGMT") { "Trying to find matching index in cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}" }
       group_key = serialize_authorization_groups allowed_groups
       index = @indexes[type_name] && @indexes[type_name][group_key]
       index
@@ -146,14 +146,14 @@ module MuSearch
       # Ensure index exists in triplestore
       index_uri = find_index_in_triplestore_by_name index_name
       unless index_uri
-        log.debug "[Index mgmt] Create index #{index_name} in triplestore for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
+        log.debug("INDEX MGMT") { "Create index #{index_name} in triplestore for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}" }
         index_uri = create_index_in_triplestore type_name, index_name, sorted_allowed_groups, sorted_used_groups
       end
 
       # Ensure index exists in the IndexManager
       index = find_matching_index type_name, allowed_groups, used_groups
       unless index
-        log.debug "[Index mgmt] Add index #{index_name} to cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
+        log.debug("INDEX MGMT") { "Add index #{index_name} to cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}" }
         index = MuSearch::SearchIndex.new(
           uri: index_uri,
           name: index_name,
@@ -167,7 +167,7 @@ module MuSearch
 
       # Ensure index exists in Elasticsearch
       unless @elasticsearch.index_exists index_name
-        log.debug "[Index mgmt] Creating index #{index_name} in Elasticsearch for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
+        log.debug("INDEX MGMT") { "Creating index #{index_name} in Elasticsearch for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}" }
         index.status = :invalid
         type_definition = @configuration[:type_definitions][type_name]
         if type_definition
@@ -217,7 +217,7 @@ SPARQL
       index_names = result.map { |r| r.name }
       index_names.each do |index_name|
         remove_index_by_name index_name
-        log.info "[Index mgmt] Remove persisted index #{index_name} in triplestore and Elasticsearch"
+        log.info("INDEX MGMT") { "Remove persisted index #{index_name} in triplestore and Elasticsearch" }
       end
     end
 
@@ -239,11 +239,11 @@ SPARQL
     # Removes the index from the triplestore and Elasticsearch
     # Does not yield an error if index doesn't exist
     def remove_index_by_name index_name
-      log.debug "[Index mgmt] Removing index #{index_name} from triplestore"
+      log.debug("INDEX MGMT") { "Removing index #{index_name} from triplestore" }
       remove_index_from_triplestore index_name
 
       if @elasticsearch.index_exists index_name
-        log.debug "[Index mgmt] Removing index #{index_name} from Elasticsearch"
+        log.debug("INDEX MGMT") { "Removing index #{index_name} from Elasticsearch" }
         @elasticsearch.delete_index index_name
       end
     end

@@ -8,6 +8,7 @@ require 'base64'
 require 'open3'
 require 'webrick'
 
+require_relative 'lib/logger.rb'
 require_relative 'lib/mu_search/sparql.rb'
 require_relative 'lib/mu_search/authorization_utils.rb'
 require_relative 'lib/mu_search/delta_handler.rb'
@@ -34,6 +35,9 @@ max_header_length = ENV["MAX_REQUEST_HEADER_LENGTH"].to_i > 0 ? ENV["MAX_REQUEST
 log.info "Set WEBrick MAX_HEADER_LENGTH to #{max_header_length}"
 WEBrick::HTTPRequest.const_set("MAX_HEADER_LENGTH", max_header_length)
 
+SinatraTemplate::Utils.log.formatter = proc do |severity, datetime, progname, msg|
+  "#{severity} [\##{$$}] #{progname} -- #{msg}\n"
+end
 
 before do
   request.path_info.chomp!('/')
@@ -291,7 +295,7 @@ end
 get "/:path/search" do |path|
   allowed_groups = get_allowed_groups
   used_groups = []
-  log.debug "[Authorization] Search request received allowed groups #{allowed_groups}"
+  log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
 
   elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200)
 
@@ -312,7 +316,7 @@ get "/:path/search" do |path|
   indexes = index_manager.fetch_indexes_for_type_and_groups type_name, allowed_groups, used_groups
 
   if indexes.length == 0
-    log.info "[Search] No indexes found to search in. Returning empty result"
+    log.info("SEARCH") { "No indexes found to search in. Returning empty result" }
     format_results(type_def, 0, page, size, []).to_json
   else
     # TODO << start move to ES query utils
@@ -350,11 +354,11 @@ get "/:path/search" do |path|
     index_string = index_names.join(',')
 
     while indexes.any? { |index| index.status == :updating }
-      log.info "[Search] Waiting for indexes to be up-to-date..."
+      log.info("SEARCH") { "Waiting for indexes to be up-to-date..." }
       sleep 0.5
     end
 
-    log.debug "[Search] All indexes are up to date"
+    log.debug("SEARCH") { "All indexes are up to date" }
     log.debug "[Elasticsearch] Running ES query: #{es_query.to_json}"
 
     response = elasticsearch.search(index: index_string, query: es_query)
@@ -369,11 +373,11 @@ get "/:path/search" do |path|
           count_result["count"]
         end
 
-      log.debug "[Search] Found #{count} results"
+      log.debug("SEARCH") { "Found #{count} results" }
       format_results(type_def, count, page, size, results).to_json
     else
-      log.warn "[Search] Execution of search query failed: #{response}"
-      log.debug response.body
+      log.warn("SEARCH") { "Execution of search query failed: #{response}" }
+      log.debug("SEARCH") { response.body }
       error(response.message)
     end
   end

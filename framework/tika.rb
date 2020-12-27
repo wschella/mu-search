@@ -24,10 +24,10 @@ class Tika
 
     if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
       if result.kind_of?(Net::HTTPUnprocessableEntity)
-        log.info "[Tika] Tika returned [#{result.code} #{result.msg}] to extract text for file #{file_path}. The file may be encrypted. Check the Tika logs for additional info."
+        log.info("TIKA") { "Tika returned [#{result.code} #{result.msg}] to extract text for file #{file_path}. The file may be encrypted. Check the Tika logs for additional info." }
         nil
       else
-        log.debug "[Tika] Response: #{result.inspect}"
+        log.debug("TIKA") { "Response: #{result.inspect}" }
         raise "Tika returned [#{result.code} #{result.msg}] to extract text for file #{file_path}. Check the Tika logs for additional info."
       end
     else
@@ -49,10 +49,10 @@ class Tika
 
     if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
       if result.kind_of?(Net::HTTPUnprocessableEntity)
-        log.info "[Tika] Tika returned [#{result.code} #{result.msg}] to extract metadata for file #{file_path}. The file may be encrypted. Check the Tika logs for additional info."
+        log.info("TIKA") { "Tika returned [#{result.code} #{result.msg}] to extract metadata for file #{file_path}. The file may be encrypted. Check the Tika logs for additional info." }
         nil
       else
-        log.debug "[Tika] Response: #{result.inspect}"
+        log.debug("TIKA") { "Response: #{result.inspect}" }
         raise "Tika returned [#{result.code} #{result.msg}] to extract metadata for file #{file_path}. Check the Tika logs for additional info."
       end
     else
@@ -75,7 +75,7 @@ class Tika
     result = run(uri, req)
 
     if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
-      log.warn "[Tika] Unable to determine mimetype of #{file_path}. Tika returned [#{result.code} #{result.msg}]."
+      log.warn("TIKA") { "Unable to determine mimetype of #{file_path}. Tika returned [#{result.code} #{result.msg}]." }
       nil
     else
       result
@@ -94,14 +94,14 @@ class Tika
   def run(uri, req, retries = 6)
     def run_rescue(uri, req, retries, result = nil)
       if retries == 0
-        log.error "[Tika] Failed to run request #{uri}. Max number of retries reached."
+        log.error("TIKA") { "Failed to run request #{uri}. Max number of retries reached." }
         if result.kind_of? Exception
           raise result
         else
           result
         end
       else
-        log.info "[Tika] Failed to run request #{uri}. Request will be retried (#{retries} left)."
+        log.info("TIKA") { "Failed to run request #{uri}. Request will be retried (#{retries} left)." }
         next_retries = retries - 1
         backoff = (6 - next_retries) ** 2
         sleep backoff
