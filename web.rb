@@ -309,7 +309,7 @@ get "/:path/search" do |path|
     size = 10
   end
 
-  indexes = update_indexes_for_type_and_groups type_name, allowed_groups, used_groups
+  indexes = index_manager.fetch_indexes_for_type_and_groups type_name, allowed_groups, used_groups
 
   if indexes.length == 0
     log.info "[Search] No indexes found to search in. Returning empty result"

@@ -3,7 +3,6 @@ module MuSearch
 
     include SinatraTemplate::Utils
 
-    attr_reader :master_mutex
     def initialize(logger:, elasticsearch:, tika:, search_configuration:)
       @logger = logger
       @elasticsearch = elasticsearch
@@ -53,7 +52,7 @@ module MuSearch
       end
     end
 
-    # Updates and returns an array of indexes for the given type and allowed/used groups
+    # Fetches an array of indexes for the given type and allowed/used groups
     # Ensures all indexes exists and are up-to-date when the function returns
     #   - type_name: type to find index for
     #   - allowed_groups: allowed groups to find index for (array of {group, variables}-objects)
@@ -62,17 +61,17 @@ module MuSearch
     # In case of additive indexes, returns one index per allowed group
     # Otherwise, returns an array of a single index
     # Returns an empty array if no index is found
-    def update_indexes_for_type_and_groups type_name, allowed_groups, used_groups
+    def fetch_indexes_for_type_and_groups type_name, allowed_groups, used_groups
       def update_index type_name, allowed_groups, used_groups
         index = find_matching_index type_name, allowed_groups, used_groups
         if index
           log.debug "[Index mgmt] Found matching index in cache"
         else
-          log.info "[Index mgmt] Didn't find matching index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups} in cache. Going to fetch index from triplestore or create it if it doesn't exist yet."
+          log.info "[Index mgmt] Didn't find matching index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups} in cache. Going to fetch index from triplestore or create it if it doesn't exist yet. Configure eager indexes to avoid building indexes at runtime."
           index = ensure_index type_name, allowed_groups, used_groups
         end
         if index.status == :invalid
-          index.mutex.sychronize do
+          index.mutex.synchronize do
             log.info "[Index mgmt] Updating index #{index.name}"
             index.status = :updating
             begin
@@ -80,27 +79,34 @@ module MuSearch
               index_documents type_name, index.name, allowed_groups
               @elasticsearch.refresh_index index.name
               index.status = :valid
-            rescue
-              # TODO log error
+              log.info "[Index mgmt] Index #{index.name} is up-to-date"
+            rescue => e
               index.status = :invalid
+              log.error "[Index mgmt] Failed to update index #{index.name}."
+              log.error e
             end
           end
         end
         index
       end
 
+      indexes = []
       @master_mutex.synchronize do
         if @configuration[:additive_indexes]
           indexes = allowed_groups.map do |allowed_group|
             update_index type_name, [allowed_group], used_groups
           end
           index_names = indexes.map { |index| index.name }
-          logger.debug "[Index mgmt] Fetched and updated #{indexes.length} additive indexes for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index_names.join(", ")}"
+          log.debug "[Index mgmt] Fetched and updated #{indexes.length} additive indexes for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index_names.join(", ")}"
         else
           index = update_index type_name, allowed_groups, used_groups
-          logger.debug "[Index mgmt] Fetched and updated index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index.name}"
+          log.debug "[Index mgmt] Fetched and updated index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index.name}"
           indexes = [index]
         end
+      end
+
+      if indexes.any? { |index| index.status == :invalid }
+        log.warn "[Index mgmt] Not all indexes are up-to-date. Search results may be incomplete."
       end
 
       indexes
@@ -121,7 +127,7 @@ module MuSearch
     #
     # TODO take used_groups into account when they are supported by mu-authorization
     def find_matching_index type_name, allowed_groups, used_groups = []
-      log.debug "[Index mgmt] Find matching index in cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
+      log.debug "[Index mgmt] Trying to find matching index in cache for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}"
       group_key = serialize_authorization_groups allowed_groups
       index = @indexes[type_name] && @indexes[type_name][group_key]
       index
