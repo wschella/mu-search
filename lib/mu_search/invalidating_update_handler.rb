@@ -8,19 +8,23 @@ module MuSearch
 
     ##
     # creates an invalidating update handler
-    def initialize(type_definitions:, **args)
-      @type_definitions = type_definitions
-      super(args)
+    def initialize(search_configuration:, **args)
+      @type_definitions = search_configuration[:type_definitions]
+      super(search_configuration: search_configuration, **args)
     end
 
-    def handler(subject, index_types, type)
-      index_types.each do |index_type|
-        indexes = Indexes.instance.get_indexes(index_type)
-        indexes.each do |key, index|
-          @logger.debug "#{subject} is part of #{index[:index]}, Invalidating #{index[:index]}"
-          Indexes.instance.mutex(index[:index]).synchronize do
-            Indexes.instance.set_status(index[:index], :invalid)
+    # Mark complete index as invalid on update
+    def handler(subject, type_names, update_type)
+      type_names.each do |type_name|
+        indexes = @index_manager.indexes[type_name]
+        @logger.info("UPDATE HANDLER") { "Update on subject <#{subject}> makes indexes for '#{type_name}' invalid." }
+        if indexes and indexes.length
+          indexes.each do |key, index|
+            @logger.debug("UPDATE HANDLER") { "Mark index #{index.name} as invalid." }
+            index.mutex.synchronize { index.status = :invalid }
           end
+        else
+          @logger.debug("UPDATE HANDLER") { "No indexes for '#{type_name} found." }
         end
       end
     end

@@ -1,8 +1,7 @@
 module MuSearch
   class DocumentBuilder
-    attr_reader :tika_client, :sparql_client
-    def initialize( tika_client:, sparql_client:, attachment_path_base:, logger: )
-      @tika_client = tika_client
+    def initialize( tika:, sparql_client:, attachment_path_base:, logger: )
+      @tika = tika
       @sparql_client = sparql_client
       @attachment_path_base = attachment_path_base
       @cache_path_base = "/cache/"
@@ -119,7 +118,7 @@ SPARQL
         if file_size < ENV["MAXIMUM_FILE_SIZE"].to_i
           content = extract_text_content(file_path)
         else
-          log.warn "[Indexing] File #{file_path} (#{filesize} bytes) exceeds the allowed size of #{ENV["MAXIMUM_FILE_SIZE"]} bytes. File content will not be indexed."
+          log.warn("INDEXING") { "File #{file_path} (#{filesize} bytes) exceeds the allowed size of #{ENV["MAXIMUM_FILE_SIZE"]} bytes. File content will not be indexed." }
           content = nil
         end
 
@@ -142,15 +141,15 @@ SPARQL
         cached_file_path = "#{@cache_path_base}#{file_hash}"
         if File.exists?(cached_file_path)
           text_content = File.open(cached_file_path, "r") do |file|
-            log.debug "[Tika] Using cached result #{cached_file_path} for file #{file_path}"
+            log.debug("TIKA") { "Using cached result #{cached_file_path} for file #{file_path}" }
             file.read
           end
         else
-          text_content = @tika_client.extract_text(file_path, blob)
+          text_content = @tika.extract_text(file_path, blob)
           if text_content.nil?
-            log.info "[Tika] Received empty result from Tika for file #{file_path}. File content will not be indexed."
+            log.info("TIKA") { "Received empty result from Tika for file #{file_path}. File content will not be indexed." }
           else
-            log.debug "[Tika] Extracting text from #{file_path} and storing result in #{cached_file_path}"
+            log.debug("TIKA") { "Extracting text from #{file_path} and storing result in #{cached_file_path}" }
             File.open(cached_file_path, "w") do |file|
               file.puts text_content.force_encoding("utf-8").unicode_normalize
             end
@@ -159,12 +158,12 @@ SPARQL
         end
         text_content
       rescue Errno::ENOENT, IOError => e
-        log.warn "[Tika] Error reading file at #{file_path} to extract content. File content will not be indexed."
-        log.warn e
+        log.warn("TIKA") { "Error reading file at #{file_path} to extract content. File content will not be indexed." }
+        log.warn("TIKA") { e }
         nil
       rescue StandardError => e
-        log.warn "[Tika] Failed to extract content of file #{file_path}. File content will not be indexed."
-        log.warn e
+        log.warn("TIKA") { "Failed to extract content of file #{file_path}. File content will not be indexed." }
+        log.warn("TIKA") { e }
         nil
       end
     end

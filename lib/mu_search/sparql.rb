@@ -1,11 +1,21 @@
 module MuSearch
   module SPARQL
     ##
-    # provides a client with sudo access
-    def self.sudo_client
-      SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], { headers: { 'mu-auth-sudo': 'true' } } )
+    # provides a client with the given access rights
+    def self.authorized_client allowed_groups
+      allowed_groups_json = allowed_groups.select { |group| group }.to_json
+      sparql_options = { headers: { 'mu-auth-allowed-groups': allowed_groups_json } }
+      ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], sparql_options)
     end
 
+    ##
+    # provides a client with sudo access
+    def self.sudo_client
+      sparql_options = { headers: { 'mu-auth-sudo': 'true' } }
+      SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], sparql_options)
+    end
+
+    # TODO remove?
     def self.direct_query(query_string, retries = 6)
       self.sudo_query(query_string, retries)
     end

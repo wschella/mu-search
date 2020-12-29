@@ -55,7 +55,7 @@ module MuSearch
           offset = ( i - 1 )*@batch_size
           @sparql_connection_pool.with do |sparql_client|
             document_builder = MuSearch::DocumentBuilder.new(
-              tika_client: @tika,
+              tika: @tika,
               sparql_client: sparql_client,
               attachment_path_base: @attachment_path_base,
               logger: @logger

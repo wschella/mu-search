@@ -46,6 +46,7 @@ module MuSearch
       if json_config["eager_indexing_groups"]
         config[:eager_indexing_groups]  = json_config["eager_indexing_groups"]
       end
+      # TODO rename?
       config[:index_config] = json_config["types"]
       config[:type_paths] = Hash[
         json_config["types"].collect do |type_def|
@@ -58,6 +59,7 @@ module MuSearch
         end
       ]
 
+      # TODO may be removed?
       config[:master_mutex] = Mutex.new
 
       config

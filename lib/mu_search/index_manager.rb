@@ -3,6 +3,7 @@ module MuSearch
 
     include SinatraTemplate::Utils
 
+    attr_reader :indexes
     def initialize(logger:, elasticsearch:, tika:, search_configuration:)
       @logger = logger
       @elasticsearch = elasticsearch
@@ -361,13 +362,12 @@ SPARQL
 
         group_key = serialize_authorization_groups allowed_groups
 
-        indexes[group_key] = MuSearch::SearchIndex.new({
-                                                         uri: uri,
-                                                         name: index_name,
-                                                         type_name: type_name,
-                                                         allowed_groups: allowed_groups,
-                                                         used_groups: used_groups
-                                                       })
+        indexes[group_key] = MuSearch::SearchIndex.new(
+          uri: uri,
+          name: index_name,
+          type_name: type_name,
+          allowed_groups: allowed_groups,
+          used_groups: used_groups)
       end
 
       indexes

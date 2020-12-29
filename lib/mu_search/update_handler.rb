@@ -21,83 +21,94 @@ module MuSearch
 
     ##
     # creates an update handler
-    def initialize(logger: Logger.new(STDOUT),
-                   wait_interval: DEFAULT_WAIT_INTERVAL_MINUTES,
-                   number_of_threads: DEFAULT_NUMBER_OF_THREADS,
-                   &block
-                  )
+    def initialize(logger:, index_manager:, search_configuration:, &block)
       @logger = logger
-      @min_wait_time = wait_interval * 60 / 86400.0
-      @number_of_threads = number_of_threads > 0 ? number_of_threads : DEFAULT_NUMBER_OF_THREADS
-      @queue = []
-      @index = Hash.new { |hash, key| hash[key] = Set.new() }
+      @index_manager = index_manager
       @mutex = Mutex.new
-      if block_given?
-        define_method(:handler, block)
-      end
+      define_method(:handler, block) if block_given?
+      @number_of_threads =
+        if search_configuration[:number_of_threads] > 0
+          search_configuration[:number_of_threads]
+        else
+          DEFAULT_NUMBER_OF_THREADS
+        end
+
+      wait_interval =
+        if search_configuration[:update_wait_interval_minutes].nil?
+          DEFAULT_WAIT_INTERVAL_MINUTES
+        else
+          search_configuration[:update_wait_interval_minutes]
+        end
+      @min_wait_time =  wait_interval * 60 / 86400.0
+
+      # FIFO queue of outstanding update actions, max. 1 per subject
+      @queue = []
+      # In memory cache of index types to update per subject
+      @subject_map = Hash.new { |hash, key| hash[key] = Set.new() }
+
       restore_queue_and_setup_persistence
       setup_runners
-      @logger.info "UPDATE HANDLER: configured with #{@number_of_threads} threads and wait time of #{wait_interval} minutes"
+
+      @logger.info("UPDATE HANDLER") { "Update handler configured with #{@number_of_threads} threads and wait time of #{wait_interval} minutes" }
     end
 
     ##
     # add an action to the queue
     # type should be either :update or :delete
-    def add(subject, index_name, type)
+    def add(subject, index_type, type)
       @mutex.synchronize do
-        if (!@index.has_key?(subject))
+        # Add subject to queue if an update for the same subject hasn't been scheduled before
+        # TODO make distinction between :update and :delete type
+        if !@subject_map.has_key? subject
+          @logger.debug("UPDATE HANDLER") { "Add update for subject <#{subject}> to queue" }
           @queue << { timestamp: DateTime.now, subject: subject, type: type}
+        else
+          @logger.debug("UPDATE HANDLER") { "Update for subject <#{subject}> already scheduled" }
         end
-        @index[subject].add(index_name)
+        @subject_map[subject].add(index_type)
       end
     end
 
     ##
     # add an update to be handled
     # wrapper for add
-    def add_update(subject, index_name)
-      add(subject, index_name, :update)
+    def add_update(subject, index_type)
+      add(subject, index_type, :update)
     end
 
     ##
     # add a delete to be handled
     # wrapper for add
-    def add_delete(subject, index_name)
-     add(subject, index_name, :delete)
-    end
-
-    def document_exists_for(client, document_id, rdf_type)
-      res = client.query("ASK { #{sparql_escape_uri(document_id)} a #{sparql_escape_uri(rdf_type)}}")
-      @logger.debug "document #{document_id} of type #{rdf_type} exists: #{res.inspect}"
-      res
+    def add_delete(subject, index_type)
+     add(subject, index_type, :delete)
     end
 
     private
+
+    # Setup a runner per thread to handle updates
     def setup_runners
       @runners = (0...@number_of_threads).map do |i|
         Thread.new(abort_on_exception: true) do
-          @logger.debug "UPDATE HANDLER: runner #{i} ready for duty"
+          @logger.debug("UPDATE HANDLER") { "Runner #{i} ready for duty" }
           while true do
-            change = subject = index_names = type = nil
+            change = subject = index_types = type = nil
             begin
               @mutex.synchronize do
                 if @queue.length > 0 && (DateTime.now - @queue[0][:timestamp]) > @min_wait_time
                   change = @queue.shift
                   subject = change[:subject]
                   type = change[:type]
-                  index_names = @index.delete(subject)
+                  index_types = @subject_map.delete(subject)
                 end
               end
-              if ! change.nil?
-                if @queue.length > 500
-                  @logger.info "UPDATE HANDLER: large number of updates (#{@queue.length}) to be handled"
-                end
-                @logger.debug "UPDATE HANDLER: handling update of #{subject}"
-                handler(subject, index_names, type)
+              if !change.nil?
+                @logger.info("UPDATE HANDLER") { "Large number of updates (#{@queue.length}) to be handled" } if @queue.length > 500
+                @logger.debug("UPDATE HANDLER") { "Handling update of #{subject}" }
+                handler(subject, index_types, type)
               end
             rescue StandardError => e
-              @logger.warn "UPDATE HANDLER: update of #{subject} failed"
-              @logger.error e
+              @logger.error("UPDATE HANDLER") { "Update of subject <#{subject}> failed" }
+              @logger.error("UPDATE HANDLER") { e }
             end
             sleep 5
           end
@@ -105,27 +116,28 @@ module MuSearch
       end
     end
 
+    # Initializes the update queue and ensures the queue is persisted on disk at regular intervals
     def restore_queue_and_setup_persistence
       @store = YAML::Store.new("/config/update-handler.store", true)
       @store.transaction do
         @queue = @store.fetch("queue", [])
-        @index = @index.merge(@store.fetch("index", {}))
-        @logger.info "UPDATE HANDLER: restored queue (length: #{@queue.length})"
+        @subject_map = @subject_map.merge(@store.fetch("index", {}))
+        @logger.info("UPDATE HANDLER") { "Restored update queue (length: #{@queue.length})" }
       end
 
-      @persister =  Thread.new(abort_on_exception: true) do
+      @persister = Thread.new(abort_on_exception: true) do
         while true
           sleep 300
           @mutex.synchronize do
-            @logger.info "UPDATE HANDLER: persisting queue (length: #{@queue.length}) to disk"
+            @logger.info("UPDATE HANDLER") { "Persisting update queue to disk (length: #{@queue.length})" }
             begin
               @store.transaction do
                 @store["queue"] = @queue
-                @store["index"] = @index
+                @store["index"] = @subject_map
               end
             rescue StandardError => e
-              @logger.warn "UPDATE HANDLER: failed to persist queue. #{e.message}"
-              @logger.error e
+              @logger.error("UPDATE HANDLER") { "Failed to persist update queue to disk" }
+              @logger.error("UPDATE HANDLER") { e }
             end
           end
         end

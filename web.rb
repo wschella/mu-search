@@ -62,30 +62,33 @@ end
 ##
 # Setup delta handling based on configuration
 ##
-def setup_delta_handling(elasticsearch, tika, config)
+def setup_delta_handling(index_manager, elasticsearch, tika, config)
   if config[:automatic_index_updates]
+    search_configuration = config.select do |key|
+      [:type_definitions, :number_of_threads, :update_wait_interval_minutes, :attachment_path_base].include? key
+    end
     handler = MuSearch::AutomaticUpdateHandler.new({
                                                      logger: SinatraTemplate::Utils.log,
-                                                     elastic_client: elasticsearch,
-                                                     tika_client: tika,
-                                                     attachment_path_base: config[:attachments_path_base],
-                                                     type_definitions: config[:type_definitions],
-                                                     wait_interval: config[:update_wait_interval_minutes],
-                                                     number_of_threads: config[:number_of_threads]
+                                                     index_manager: index_manager,
+                                                     elasticsearch: elasticsearch,
+                                                     tika: tika,
+                                                     search_configuration: search_configuration
                                                    })
   else
+    search_configuration = config.select do |key|
+      [:type_definitions, :number_of_threads, :update_wait_interval_minutes].include? key
+    end
     handler = MuSearch::InvalidatingUpdateHandler.new({
                                                         logger: SinatraTemplate::Utils.log,
-                                                        type_definitions: config[:type_definitions],
-                                                        wait_interval: config[:update_wait_interval_minutes],
-                                                        number_of_threads: config[:number_of_threads]
+                                                        index_manager: index_manager,
+                                                        search_configuration: search_configuration
                                                       })
   end
 
   delta_handler = MuSearch::DeltaHandler.new({
                                       update_handler: handler,
                                       logger: SinatraTemplate::Utils.log,
-                                      search_configuration: { "types" => config[:index_config] }
+                                      search_configuration: { type_definitions: config[:type_definitions] }
                                     })
   delta_handler
 end
@@ -115,10 +118,17 @@ configure do
 
   index_manager = setup_index_manager elasticsearch, tika, configuration
   set :index_manager, index_manager
-  delta_handler = setup_delta_handling elasticsearch, tika, configuration
+  delta_handler = setup_delta_handling index_manager, elasticsearch, tika, configuration
   set :delta_handler, delta_handler
 end
 
+
+# Processes an update from the delta system.
+# See MuSearch::DeltaHandler and MuSearch::UpdateHandler for more info
+post "/update" do
+  settings.delta_handler.handle_deltas(@json_body)
+  { message: "Thanks for all the updates." }.to_json
+end
 
 
 # Invalidates the indexes resulting them to be updated in a next
@@ -406,13 +416,6 @@ if settings.enable_raw_dsl_endpoint
 
     format_results(type, count, 0, 10, client.search(index: index_string, query: es_query)).to_json
   end
-end
-
-# Processes an update from the delta system. See MuSearch::DeltaHandler and MuSearch::UpdateHandler for more info
-post "/update" do
-  log.debug "Received delta update #{@json_body}"
-  settings.delta_handler.parse_deltas(@json_body)
-  { message: "Thanks for all the updates." }.to_json
 end
 
 # Enables the automatic_updates setting on a live system
