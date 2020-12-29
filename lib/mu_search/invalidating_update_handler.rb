@@ -19,7 +19,7 @@ module MuSearch
         indexes = @index_manager.indexes[type_name]
         @logger.info("UPDATE HANDLER") { "Update on subject <#{subject}> makes indexes for '#{type_name}' invalid." }
         if indexes and indexes.length
-          indexes.each do |key, index|
+          indexes.each do |_, index|
             @logger.debug("UPDATE HANDLER") { "Mark index #{index.name} as invalid." }
             index.mutex.synchronize { index.status = :invalid }
           end

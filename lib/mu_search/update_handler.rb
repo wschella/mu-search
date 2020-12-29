@@ -108,7 +108,7 @@ module MuSearch
               end
             rescue StandardError => e
               @logger.error("UPDATE HANDLER") { "Update of subject <#{subject}> failed" }
-              @logger.error("UPDATE HANDLER") { e }
+              @logger.error("UPDATE HANDLER") { e.full_message }
             end
             sleep 5
           end
@@ -137,7 +137,7 @@ module MuSearch
               end
             rescue StandardError => e
               @logger.error("UPDATE HANDLER") { "Failed to persist update queue to disk" }
-              @logger.error("UPDATE HANDLER") { e }
+              @logger.error("UPDATE HANDLER") { e.full_message }
             end
           end
         end

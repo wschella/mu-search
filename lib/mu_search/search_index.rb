@@ -1,7 +1,7 @@
 module MuSearch
   class SearchIndex
 
-    attr_reader :name, :type_name, :allowed_groups, :used_groups, :mutex
+    attr_reader :uri, :name, :type_name, :allowed_groups, :used_groups, :mutex
     attr_accessor :status
     def initialize(uri:, name:, type_name:, allowed_groups:, used_groups:)
       @uri = uri

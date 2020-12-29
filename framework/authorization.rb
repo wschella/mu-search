@@ -45,19 +45,6 @@ class Indexes
     @indexes.keys
   end
 
-  # Sets up a new index
-  #
-  #   - type: Type for which the index should be created
-  #   - allowed_groups: Groups for which this index will hold.  This
-  #     should be an array.  The array will contain a sole element in
-  #     the case of additive indexes.
-  #   - index_definition: Description of the index (see above)
-  def add_index type, allowed_groups, used_groups, index_definition
-    indexes[type] = {} unless @indexes[type]
-    @indexes[type][allowed_groups] = index_definition
-    @mutexes[index_definition[:index]] = Mutex.new
-  end
-
   # Sets the status of an index
   #
   # TODO: document allowed values for status
@@ -83,69 +70,6 @@ class Indexes
   def status index
     @status[index]
   end
-
-  # Invalidates all indexes
-  def invalidate_all
-    # TODO: Is the following code more readable or not?  Remove current
-    # code or commented code.
-    #
-    # @indexes.flat_map do |_, indexes|
-    #   indexes.map do |_, index_definition|
-    #     index = index_definition[:index]
-    #     @status[index] = :invalid
-    #     index
-    #   end
-    # end
-
-    indexes_invalidated = []
-
-    @indexes.each do |type, indexes|
-      indexes.each do |groups, index_definition|
-        index = index_definition[:index]
-        @status[index] = :invalid
-        indexes_invalidated.push index_definition[:index]
-      end
-    end
-    indexes_invalidated
-  end
-
-  # Invalidates all indexes authorized by allowed_groups
-  #
-  # TODO: research use of this method and document intended use.  It
-  # might work incorrectly with additive indexes.
-  def invalidate_all_authorized allowed_groups, used_groups
-    indexes_invalidated = []
-
-    @indexes.each do |type, indexes|
-      index_definition = indexes[allowed_groups]
-      if index_definition
-        index = index_definition[:index]
-        @status[index] = :invalid
-        indexes_invalidated.push index_definition[:index]
-      end
-    end
-    indexes_invalidated
-  end
-
-  # Invalidates all indexes for a given type
-  #
-  # TODO: research use of this method and document indeded use.
-  def invalidate_all_by_type type
-    indexes_invalidated = []
-    indexes = @indexes[type]
-
-    if indexes
-      @indexes.each do |type, indexes|
-        indexes.each do |groups, index_definition|
-          index = index_definition[:index]
-          @status[index] = :invalid
-          indexes_invalidated.push index_definition[:index]
-        end
-      end
-    end
-    indexes_invalidated
-  end
-
 
   # Retrieves the index for the supplied type and allowed_groups.  A
   # single index is returned, if you intend to search for the
@@ -243,47 +167,6 @@ def destroy_authorized_indexes client, allowed_groups, used_groups
     end
   end
 end
-
-
-# Stores a newly created index in the triplestore
-#
-# Captures information and stores it in the triplestore.
-#
-#   - type: Type of the objects stored in the index
-#   - index: Name of the index as used in ElasticSearch
-#   - Allowed Groups for this index
-#   - Used groups for this index (currently not reasoned on)
-def store_index type, index, allowed_groups, used_groups
-  uuid = generate_uuid()
-  uri = "http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}"
-
-  def group_statement predicate, groups
-    if groups.empty?
-      ""
-    else
-
-      group_set = groups.map { |g| sparql_escape_string g.to_json }.join(",")
-      " <#{predicate}> #{group_set}; "
-    end
-  end
-
-  allowed_group_statement = group_statement "http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup", allowed_groups
-  used_group_statement = group_statement "http://mu.semte.ch/vocabularies/authorization/hasUsedGroup", used_groups
-
-  query_result = direct_query  <<SPARQL
-  INSERT DATA {
-    GRAPH <http://mu.semte.ch/authorization> {
-        <#{uri}> a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex>;
-               <http://mu.semte.ch/vocabularies/core/uuid> "#{uuid}";
-               <http://mu.semte.ch/vocabularies/authorization/objectType> "#{type}";
-               #{used_group_statement}
-               #{allowed_group_statement}
-               <http://mu.semte.ch/vocabularies/authorization/indexName> "#{index}"
-    }
-  }
-SPARQL
-end
-
 
 def get_request_index_names type
   indexes = get_request_indexes type # TODO use find_matching_indexes

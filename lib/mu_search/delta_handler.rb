@@ -184,8 +184,6 @@ module MuSearch
       end
       sparql_query += "}"
 
-      @logger.debug("DELTA") { "Query to find root subjects:\n #{sparql_query}" }
-
       MuSearch::SPARQL::sudo_query(sparql_query).map { |result| result["s"].to_s }
     end
 

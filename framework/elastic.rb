@@ -312,7 +312,7 @@ class Elastic
 
   # Deletes all documents from an index in Elasticsearch
   #   - index: Index name to be removed
-  def clear_index client, index
+  def clear_index index
     if index_exists index
       delete_by_query(index, { query: { match_all: {} } }, true)
     end

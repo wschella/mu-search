@@ -122,54 +122,49 @@ configure do
   set :delta_handler, delta_handler
 end
 
+###
+# API ENDPOINTS
+###
 
 # Processes an update from the delta system.
 # See MuSearch::DeltaHandler and MuSearch::UpdateHandler for more info
 post "/update" do
-  settings.delta_handler.handle_deltas(@json_body)
+  settings.delta_handler.handle_deltas @json_body
   { message: "Thanks for all the updates." }.to_json
 end
 
 
-# Invalidates the indexes resulting them to be updated in a next
-# search query.
+# Invalidates the indexes for the given :path.
+# If an authorization header is provided, only the authorized
+# indexes are invalidated.
+# Otherwise, all indexes for the path are invalidated.
+#
+# Note:
+# - the search index is only marked as invalid in memory.
+#   The index is not removed from Elasticsearch nor the triplestore.
+#   Hence, on restart of mu-search, the index will be considered valid again.
+# - an invalidated index will be updated before executing a search query on it.
 post "/:path/invalidate" do |path|
-  content_type 'application/json'
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.type_paths[path]
   allowed_groups = get_allowed_groups
   used_groups = []
+  log.debug("AUTHORIZATION") { "Index invalidation request received allowed groups: #{allowed_groups || 'none'}" }
 
-  if path == '_all'
-    settings.master_mutex.synchronize do
-      indexes_invalidated =
-        if allowed_groups.empty?
-          Indexes.instance.invalidate_all
-        else
-          Indexes.instance.invalidate_all_authorized allowed_groups, used_groups
-        end
-      { indexes: indexes_invalidated, status: "invalid" }.to_json
-    end
-  else
-    settings.master_mutex.synchronize do
-      if allowed_groups.empty?
-        type = settings.type_paths[path]
-        indexes_invalidated =
-          Indexes.instance.invalidate_all_by_type type
-        { indexes: indexes_invalidated, status: "invalid" }.to_json
-      else
-        index_names = get_request_index_names type
+  index_type = path == "_all" ? nil : path
+  index_manager = settings.index_manager
+  indexes = index_manager.invalidate_indexes index_type, allowed_groups
 
-        index_names.each do |index|
-          Indexes.instance.mutex(index).synchronize do
-            Indexes.instance.set_status index, :invalid
-          end
-        end
-
-        { indexes: indexes, status: "invalid" }.to_json
-      end
-    end
+  data = indexes.map do |index|
+    {
+      type: "indexes",
+      id: index.name,
+      attributes: {
+        uri: index.uri,
+        'allowed-groups' => index.allowed_groups
+      }
+    }
   end
+
+  { data: data }.to_json
 end
 
 # Deletes the indexes for :path requiring them to be fully recreated
@@ -303,7 +298,7 @@ end
 #
 # TODO fleshen out functionality with respect to existing indexes
 get "/:path/search" do |path|
-  allowed_groups = get_allowed_groups
+  allowed_groups = get_allowed_groups_with_fallback
   used_groups = []
   log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
 

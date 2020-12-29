@@ -159,11 +159,11 @@ SPARQL
         text_content
       rescue Errno::ENOENT, IOError => e
         log.warn("TIKA") { "Error reading file at #{file_path} to extract content. File content will not be indexed." }
-        log.warn("TIKA") { e }
+        log.warn("TIKA") { e.full_message }
         nil
       rescue StandardError => e
         log.warn("TIKA") { "Failed to extract content of file #{file_path}. File content will not be indexed." }
-        log.warn("TIKA") { e }
+        log.warn("TIKA") { e.full_message }
         nil
       end
     end
