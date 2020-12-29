@@ -66,8 +66,8 @@ module MuSearch
 
     private
 
-    def document_exists_for?(client, document_id, rdf_type)
-      client.query("ASK { #{sparql_escape_uri(document_id)} a #{sparql_escape_uri(rdf_type)} . }")
+    def document_exists_for?(authorized_client, document_id, rdf_type)
+      authorized_client.query("ASK { #{sparql_escape_uri(document_id)} a #{sparql_escape_uri(rdf_type)} . }")
     end
   end
 end

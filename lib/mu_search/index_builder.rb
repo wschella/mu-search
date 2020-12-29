@@ -16,15 +16,10 @@ module MuSearch
       @max_batches = search_configuration[:max_batches]
       @attachment_path_base = search_configuration[:attachment_path_base]
 
-      if allowed_groups && allowed_groups.length > 0
-        allowed_groups_object = allowed_groups.select { |group| group }
-        sparql_options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object.to_json } }
-        @sparql_connection_pool = ConnectionPool.new(size: @number_of_threads, timeout: 3) { ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], sparql_options) }
-      else
-        # assumes we're building the index for a request from a logged in user
-        @sparql_connection_pool = ConnectionPool.new(size: @number_of_threads, timeout: 3) {  SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT']) }
-      end
       @allowed_groups = allowed_groups
+      @sparql_connection_pool = ConnectionPool.new(size: @number_of_threads, timeout: 3) do
+        MuSearch::SPARQL.authorized_client allowed_groups
+      end
 
       type_def = @configuration[:type_definitions][type_name]
       if type_def["composite_types"] and type_def["composite_types"].length

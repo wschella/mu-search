@@ -2,10 +2,15 @@ module MuSearch
   module SPARQL
     ##
     # provides a client with the given access rights
+    # or the regular client with access rights from the end user if allowed_groups is empty
     def self.authorized_client allowed_groups
-      allowed_groups_json = allowed_groups.select { |group| group }.to_json
-      sparql_options = { headers: { 'mu-auth-allowed-groups': allowed_groups_json } }
-      ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], sparql_options)
+      if allowed_groups && allowed_groups.length > 0
+        allowed_groups_s = allowed_groups.select { |group| group }.to_json
+        sparql_options = { headers: { 'mu-auth-allowed-groups': allowed_groups_s } }
+        ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], sparql_options)
+      else
+        SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'])
+      end
     end
 
     ##
