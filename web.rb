@@ -204,49 +204,35 @@ post "/:path/invalidate" do |path|
   { data: data }.to_json
 end
 
-# Deletes the indexes for :path requiring them to be fully recreated
-# the next time we make a search.
-delete "/:path/delete" do |path|
-  content_type 'application/json'
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
-  type = settings.type_paths[path]
+# Removes the indexes for the given :path.
+# If an authorization header is provided, only the authorized
+# indexes are removed.
+# Otherwise, all indexes for the path are removed.
+#
+# Use _all as path to remove all index types
+#
+# Note: a removed index will be recreated before executing a search query on it.
+delete "/:path" do |path|
   allowed_groups = get_allowed_groups
-  used_groups = []
+  log.debug("AUTHORIZATION") { "Index delete request received allowed groups: #{allowed_groups || 'none'}" }
 
-  if path == '_all'
-    settings.master_mutex.synchronize do
-      indexes_deleted =
-        if allowed_groups.empty?
-          destroy_existing_indexes client
-        else
-          destroy_authorized_indexes client, allowed_groups, used_groups
-        end
-      { indexes: indexes_deleted, status: "deleted" }.to_json
-    end
-  else
-    settings.master_mutex.synchronize do
-      if allowed_groups.empty?
-        type = settings.type_paths[path]
+  index_type = path == "_all" ? nil : path
+  index_manager = settings.index_manager
+  indexes = index_manager.remove_indexes index_type, allowed_groups
 
-        indexes_deleted = Indexes.instance.get_indexes(type).map do |groups, index|
-          destroy_index client, index[:index], groups
-          index[:index]
-        end
-
-        { indexes: indexes_deleted, status: "deleted" }.to_json
-      else
-        index_names = get_request_index_names type
-
-        index_names.each do |index|
-          Indexes.instance.mutex(index).synchronize do
-            destroy_index client, index, type, allowed_groups
-          end
-        end
-
-        { indexes: index_names, status: "deleted" }.to_json
-      end
-    end
+  data = indexes.map do |index|
+    {
+      type: "indexes",
+      id: index.name,
+      attributes: {
+        uri: index.uri,
+        status: index.status,
+        'allowed-groups' => index.allowed_groups
+      }
+    }
   end
+
+  { data: data }.to_json
 end
 
 # Performs a regular search.

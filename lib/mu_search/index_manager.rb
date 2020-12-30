@@ -7,8 +7,6 @@ module MuSearch
   ###
   class IndexManager
 
-    include SinatraTemplate::Utils
-
     attr_reader :indexes
     def initialize(logger:, elasticsearch:, tika:, search_configuration:)
       @logger = logger
@@ -64,15 +62,15 @@ module MuSearch
             end
           end
         end
-      end
 
-      indexes_to_update.each do |index|
-        index.status = :invalid if force_update
-        update_index index
-      end
+        indexes_to_update.each do |index|
+          index.status = :invalid if force_update
+          update_index index
+        end
 
-      if indexes_to_update.any? { |index| index.status == :invalid }
-        @logger.warn("INDEX MGMT") { "Not all indexes are up-to-date. Search results may be incomplete." }
+        if indexes_to_update.any? { |index| index.status == :invalid }
+          @logger.warn("INDEX MGMT") { "Not all indexes are up-to-date. Search results may be incomplete." }
+        end
       end
 
       indexes_to_update
@@ -109,26 +107,77 @@ module MuSearch
             end
           end
         end
-      end
 
-      @logger.info("INDEX MGMT") do
-        type_s = type_name.nil? ? "all types" : "type '#{type_name}'"
-        allowed_groups_s = allowed_groups.nil? ? "all groups" : "allowed_groups #{allowed_groups}"
-        index_names_s = indexes_to_invalidate.map { |index| index.name }.join(", ")
-        "Found #{indexes_to_invalidate.length} indexes to invalidate for #{type_s} and #{allowed_groups_s}: #{index_names_s}"
-      end
+        @logger.info("INDEX MGMT") do
+          type_s = type_name.nil? ? "all types" : "type '#{type_name}'"
+          allowed_groups_s = allowed_groups.nil? ? "all groups" : "allowed_groups #{allowed_groups}"
+          index_names_s = indexes_to_invalidate.map { |index| index.name }.join(", ")
+          "Found #{indexes_to_invalidate.length} indexes to invalidate for #{type_s} and #{allowed_groups_s}: #{index_names_s}"
+        end
 
-      indexes_to_invalidate.each do |index|
-        @logger.debug("INDEX MGMT") { "Mark index #{index.name} as invalid" }
-        index.mutex.synchronize { index.status = :invalid }
+        indexes_to_invalidate.each do |index|
+          @logger.debug("INDEX MGMT") { "Mark index #{index.name} as invalid" }
+          index.mutex.synchronize { index.status = :invalid }
+        end
       end
 
       indexes_to_invalidate
     end
 
 
-    private
+    # Remove the indexes for the given type and allowed groups
+    # If no type is passed, indexes for all types are removed
+    # If no allowed_groups are passed, all indexes are removed regardless of access rights
+    # - type_name: name of the index type to remove all indexes for
+    # - allowed_groups: allowed groups to remove indexes for (array of {group, variables}-objects)
+    #
+    # Returns the list of indexes that are removed
+    #
+    # TODO correctly handle composite indexes
+    def remove_indexes type_name, allowed_groups
+      indexes_to_remove = []
+      type_names = type_name.nil? ? @indexes.keys : [type_name]
 
+      @master_mutex.synchronize do
+        type_names.each do |type_name|
+          if allowed_groups
+            if @configuration[:additive_indexes]
+              allowed_groups.each do |allowed_group|
+                index = find_matching_index type_name, [allowed_group]
+                indexes_to_remove << index unless index.nil?
+              end
+            else
+              index = find_matching_index type_name, allowed_groups
+              indexes_to_remove << index unless index.nil?
+            end
+          elsif @indexes[type_name] # remove all indexes, regardless of access rights
+            @indexes[type_name].each do |_, index|
+              indexes_to_remove << index
+            end
+          end
+        end
+
+        @logger.info("INDEX MGMT") do
+          type_s = type_name.nil? ? "all types" : "type '#{type_name}'"
+          allowed_groups_s = allowed_groups.nil? ? "all groups" : "allowed_groups #{allowed_groups}"
+          index_names_s = indexes_to_remove.map { |index| index.name }.join(", ")
+          "Found #{indexes_to_remove.length} indexes to remove for #{type_s} and #{allowed_groups_s}: #{index_names_s}"
+        end
+
+        indexes_to_remove.each do |index|
+          @logger.debug("INDEX MGMT") { "Remove index #{index.name}" }
+          index.mutex.synchronize do
+            remove_index index
+            index.status = :deleted
+          end
+        end
+      end
+
+      indexes_to_remove
+    end
+
+
+    private
 
     # Initialize indexes based on the search configuration
     # Ensures all configured eager indexes exist
@@ -292,10 +341,53 @@ module MuSearch
       builder.build
     end
 
+    # Removes the index for the given type_name and allowed/used groups
+    # from the triplestore, Elasticsearch and
+    # the in-memory indexes cache of the IndexManager.
+    # Does not yield an error if index doesn't exist
+    def remove_index type_name, allowed_groups, used_groups = []
+      sorted_allowed_groups = sort_authorization_groups allowed_groups
+      sorted_used_groups = sort_authorization_groups used_groups
+      index_name = generate_index_name type_name, sorted_allowed_groups, sorted_used_groups
+
+      # Remove index from IndexManager
+      if @indexes.has_key? type_name
+        @indexes[type_name].delete_if { |_, value| value.name == index.name }
+
+        # Remove index from triplestore and Elasticsearch
+        remove_index_by_name index_name
+      end
+    end
+
+    # Removes the given index from the triplestore, Elasticsearch and
+    # the in-memory indexes cache of the IndexManager.
+    # Does not yield an error if index doesn't exist
+    def remove_index index
+      # Remove index from IndexManager
+      if @indexes.has_key? index.type_name
+        @indexes[index.type_name].delete_if { |_, value| value.name == index.name }
+
+        # Remove index from triplestore and Elasticsearch
+        remove_index_by_name index.name
+      end
+    end
+
+    # Removes the index from the triplestore and Elasticsearch
+    # Does not yield an error if index doesn't exist
+    def remove_index_by_name index_name
+      @logger.debug("INDEX MGMT") { "Removing index #{index_name} from triplestore" }
+      remove_index_from_triplestore index_name
+
+      if @elasticsearch.index_exists index_name
+        @logger.debug("INDEX MGMT") { "Removing index #{index_name} from Elasticsearch" }
+        @elasticsearch.delete_index index_name
+      end
+    end
+
     # Removes all persisted indexes from the triplestore as well as from Elasticsearch
     #
     # NOTE this method does not check the current search configuration.
-    #      It only removes indexes found in the triplestore and destroys those.
+    #      It only removes indexes found in the triplestore and removes those.
     def remove_persisted_indexes
       result = MuSearch::SPARQL::sudo_query <<SPARQL
 SELECT ?name WHERE {
@@ -309,33 +401,6 @@ SPARQL
       index_names.each do |index_name|
         remove_index_by_name index_name
         @logger.info("INDEX MGMT") { "Remove persisted index #{index_name} in triplestore and Elasticsearch" }
-      end
-    end
-
-    # Removes the index from the triplestore, Elasticsearch and
-    # the in-memory indexes cache of the IndexManager.
-    # Does not yield an error if index doesn't exist
-    def remove_index type_name, allowed_groups, used_groups = []
-      sorted_allowed_groups = sort_authorization_groups allowed_groups
-      sorted_used_groups = sort_authorization_groups used_groups
-      index_name = generate_index_name type_name, sorted_allowed_groups, sorted_used_groups
-
-      # Remove index from IndexManager
-      @indexes[type_name] = {}
-
-      # Remove index from triplestore and Elasticsearch
-      remove_index_by_name index_name
-    end
-
-    # Removes the index from the triplestore and Elasticsearch
-    # Does not yield an error if index doesn't exist
-    def remove_index_by_name index_name
-      @logger.debug("INDEX MGMT") { "Removing index #{index_name} from triplestore" }
-      remove_index_from_triplestore index_name
-
-      if @elasticsearch.index_exists index_name
-        @logger.debug("INDEX MGMT") { "Removing index #{index_name} from Elasticsearch" }
-        @elasticsearch.delete_index index_name
       end
     end
 
