@@ -366,15 +366,3 @@ end
 get "/health" do
   { status: "up" }.to_json
 end
-
-get "/:path/health" do |path|
-  if path == '_all'
-    { status: "up" }.to_json
-  else
-    type = settings.type_paths[path]
-    index_names = get_or_create_indexes client, type
-    Hash[
-      index_names.map { |index| [index, Indexes.instance.status(index)] }
-    ].to_json
-  end
-end
