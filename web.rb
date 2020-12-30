@@ -134,10 +134,47 @@ post "/update" do
 end
 
 
+# Updates the indexes for the given :path.
+# If an authorization header is provided, only the authorized
+# indexes are updated.
+# Otherwise, all indexes for the path are updated.
+#
+# Use _all as path to update all index types
+#
+# Note:
+# - the search index is only marked as invalid in memory.
+#   The index is not removed from Elasticsearch nor the triplestore.
+#   Hence, on restart of mu-search, the index will be considered valid again.
+# - an invalidated index will be updated before executing a search query on it.
+post "/:path/index" do |path|
+  allowed_groups = get_allowed_groups
+  log.debug("AUTHORIZATION") { "Index update request received allowed groups: #{allowed_groups || 'none'}" }
+
+  index_type = path == "_all" ? nil : path
+  index_manager = settings.index_manager
+  indexes = index_manager.fetch_indexes index_type, allowed_groups, force_update: true
+
+  data = indexes.map do |index|
+    {
+      type: "indexes",
+      id: index.name,
+      attributes: {
+        uri: index.uri,
+        status: index.status,
+        'allowed-groups' => index.allowed_groups
+      }
+    }
+  end
+
+  { data: data }.to_json
+end
+
 # Invalidates the indexes for the given :path.
 # If an authorization header is provided, only the authorized
 # indexes are invalidated.
 # Otherwise, all indexes for the path are invalidated.
+#
+# Use _all as path to invalidate all index types
 #
 # Note:
 # - the search index is only marked as invalid in memory.
@@ -146,7 +183,6 @@ end
 # - an invalidated index will be updated before executing a search query on it.
 post "/:path/invalidate" do |path|
   allowed_groups = get_allowed_groups
-  used_groups = []
   log.debug("AUTHORIZATION") { "Index invalidation request received allowed groups: #{allowed_groups || 'none'}" }
 
   index_type = path == "_all" ? nil : path
@@ -159,6 +195,7 @@ post "/:path/invalidate" do |path|
       id: index.name,
       attributes: {
         uri: index.uri,
+        status: index.status,
         'allowed-groups' => index.allowed_groups
       }
     }
@@ -212,80 +249,6 @@ delete "/:path/delete" do |path|
   end
 end
 
-
-# TODO document the POST mothed on :path/index
-post "/:path/index" do |path|
-  content_type 'application/json'
-  client = Elastic.new host: 'elasticsearch', port: 9200
-  allowed_groups = get_allowed_groups
-  used_groups = []
-
-  # This method shouldn't be necessary...
-  # something wrong with how I'm using synchronize
-  # and return values.
-  def sync client, type
-    settings.master_mutex.synchronize do
-      index_names = get_request_index_names type
-
-      unless !index_names.empty?
-        indexes = create_request_indexes client, type
-        index_names = indexes.map { |index| index[:index] }
-      end
-
-      index_names.each do |index|
-        Indexes.instance.set_status index, :updating
-      end
-
-      return index_names
-    end
-  end
-
-  def index_index client, index, type, allowed_groups = nil
-    Indexes.instance.mutex(index).synchronize do
-      clear_index client, index
-      report = index_documents client, type, index, allowed_groups
-      Indexes.instance.set_status index, :valid
-      report
-    end
-  end
-
-  report =
-    if !allowed_groups.empty?
-      if path == '_all'
-        Indexes.instance.types.map do |type|
-          index_names = sync client, type
-          index_names.each do |index|
-            index_index client, index, type
-          end
-        end
-      else
-        type = settings.type_paths[path]
-        index_names = sync client, type
-        index_names.each do |index|
-          index_index client, index, type
-        end
-      end
-    else
-      if path == '_all'
-        report = Indexes.instance.indexes.map do |type, indexes|
-          indexes.map do |groups, index|
-            index_index client, index[:index], type, groups
-          end
-        end
-        report.reduce([], :concat)
-      else
-        type = settings.type_paths[path]
-        if Indexes.instance.get_indexes(type)
-          Indexes.instance.get_indexes(type).map do |groups, index|
-            index_index client, index[:index], type, groups
-          end
-        end
-      end
-    end
-  report.to_json
-end
-
-
 # Performs a regular search.
 #
 # Creates new indexes, updates older ones and keeps constructed ones
@@ -299,7 +262,6 @@ end
 # TODO fleshen out functionality with respect to existing indexes
 get "/:path/search" do |path|
   allowed_groups = get_allowed_groups_with_fallback
-  used_groups = []
   log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
 
   elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200)
@@ -318,7 +280,7 @@ get "/:path/search" do |path|
     size = 10
   end
 
-  indexes = index_manager.fetch_indexes_for_type_and_groups type_name, allowed_groups, used_groups
+  indexes = index_manager.fetch_indexes type_name, allowed_groups
 
   if indexes.length == 0
     log.info("SEARCH") { "No indexes found to search in. Returning empty result" }
@@ -411,29 +373,6 @@ if settings.enable_raw_dsl_endpoint
 
     format_results(type, count, 0, 10, client.search(index: index_string, query: es_query)).to_json
   end
-end
-
-# Enables the automatic_updates setting on a live system
-post "/settings/automatic_updates" do
-  settings.automatic_index_updates = true
-end
-
-
-# Disables the automatic_updates setting on a live system
-delete "/settings/automatic_updates" do
-  settings.automatic_index_updates = false
-end
-
-
-# Enables the persistent indexes setting on a live system
-post "/settings/persist_indexes" do
-  settings.persist_indexes = true
-end
-
-
-# Disables the persistent indexes setting on a live system
-delete "/settings/persist_indexes" do
-  settings.persist_indexes = false
 end
 
 # Health report

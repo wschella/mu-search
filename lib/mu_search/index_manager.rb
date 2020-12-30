@@ -1,4 +1,10 @@
 module MuSearch
+  ###
+  # The IndexManager keeps track of indexes and their state in:
+  # - an in-memory cache @indexes, grouped per type
+  # - Elasticsearch, using index.name as identifier
+  # - triplestore
+  ###
   class IndexManager
 
     include SinatraTemplate::Utils
@@ -14,6 +20,115 @@ module MuSearch
 
       initialize_indexes
     end
+
+    # Fetches an array of indexes for the given type and allowed/used groups
+    # Ensures all indexes exists and are up-to-date when the function returns
+    # If no type is passed, indexes for all types are invalidated
+    # If no allowed_groups are passed, all indexes are invalidated regardless of access rights
+    #   - type_name: type to find index for
+    #   - allowed_groups: allowed groups to find index for (array of {group, variables}-objects)
+    #   - force_update: whether the index needs to be updated only when it's marked as invalid or not
+    #
+    # In case of additive indexes, returns one index per allowed group
+    # Otherwise, returns an array of a single index
+    # Returns an empty array if no index is found
+    def fetch_indexes type_name, allowed_groups, force_update: false
+      indexes_to_update = []
+      type_names = type_name.nil? ? @indexes.keys : [type_name]
+
+      @master_mutex.synchronize do
+        type_names.each do |type_name|
+          if allowed_groups
+            if @configuration[:additive_indexes]
+              additive_indexes = []
+              allowed_groups.each do |allowed_group|
+                index = get_matching_index type_name, [allowed_group]
+                additive_indexes << index unless index.nil?
+              end
+              indexes_to_update += additive_indexes
+              @logger.debug("INDEX MGMT") do
+                index_names_s = additive_indexes.map { |index| index.name }.join(", ")
+                "Fetched #{additive_indexes.length} additive indexes for type '#{type_name}' and allowed_groups #{allowed_groups}: #{index_names_s}"
+              end
+            else
+              index = get_matching_index type_name, allowed_groups
+              unless index.nil?
+                indexes_to_update << index
+                @logger.debug("INDEX MGMT") { "Fetched index for type '#{type_name}' and allowed_groups #{allowed_groups}: #{index.name}" }
+              end
+            end
+          elsif @indexes[type_name] # fetch all indexes, regardless of access rights
+            @indexes[type_name].each do |_, index|
+              @logger.debug("INDEX MGMT") { "Fetched index for type '#{type_name}' and allowed_groups #{index.allowed_groups}: #{index.name}" }
+              indexes_to_update << index
+            end
+          end
+        end
+      end
+
+      indexes_to_update.each do |index|
+        index.status = :invalid if force_update
+        update_index index
+      end
+
+      if indexes_to_update.any? { |index| index.status == :invalid }
+        @logger.warn("INDEX MGMT") { "Not all indexes are up-to-date. Search results may be incomplete." }
+      end
+
+      indexes_to_update
+    end
+
+    # Invalidate the indexes for the given type and allowed groups
+    # If no type is passed, indexes for all types are invalidated
+    # If no allowed_groups are passed, all indexes are invalidated regardless of access rights
+    # - type_name: name of the index type to invalidate all indexes for
+    # - allowed_groups: allowed groups to invalidate indexes for (array of {group, variables}-objects)
+    #
+    # Returns the list of indexes that are invalidated
+    #
+    # TODO correctly handle composite indexes
+    def invalidate_indexes type_name, allowed_groups
+      indexes_to_invalidate = []
+      type_names = type_name.nil? ? @indexes.keys : [type_name]
+
+      @master_mutex.synchronize do
+        type_names.each do |type_name|
+          if allowed_groups
+            if @configuration[:additive_indexes]
+              allowed_groups.each do |allowed_group|
+                index = find_matching_index type_name, [allowed_group]
+                indexes_to_invalidate << index unless index.nil?
+              end
+            else
+              index = find_matching_index type_name, allowed_groups
+              indexes_to_invalidate << index unless index.nil?
+            end
+          elsif @indexes[type_name] # invalidate all indexes, regardless of access rights
+            @indexes[type_name].each do |_, index|
+              indexes_to_invalidate << index
+            end
+          end
+        end
+      end
+
+      @logger.info("INDEX MGMT") do
+        type_s = type_name.nil? ? "all types" : "type '#{type_name}'"
+        allowed_groups_s = allowed_groups.nil? ? "all groups" : "allowed_groups #{allowed_groups}"
+        index_names_s = indexes_to_invalidate.map { |index| index.name }.join(", ")
+        "Found #{indexes_to_invalidate.length} indexes to invalidate for #{type_s} and #{allowed_groups_s}: #{index_names_s}"
+      end
+
+      indexes_to_invalidate.each do |index|
+        @logger.debug("INDEX MGMT") { "Mark index #{index.name} as invalid" }
+        index.mutex.synchronize { index.status = :invalid }
+      end
+
+      indexes_to_invalidate
+    end
+
+
+    private
+
 
     # Initialize indexes based on the search configuration
     # Ensures all configured eager indexes exist
@@ -44,7 +159,7 @@ module MuSearch
             @logger.info("INDEX MGMT") { "(#{count}/#{total}) Eager index #{index.name} created for type '#{index.type_name}' and allowed_groups #{allowed_groups}. Current status: #{index.status}." }
             if index.status == :invalid
               @logger.info("INDEX MGMT") { "Eager index #{index.name} not up-to-date. Start reindexing documents." }
-              index_documents type_name, index.name, allowed_groups
+              index_documents index
               index.status = :valid
             end
           end
@@ -53,113 +168,20 @@ module MuSearch
       end
     end
 
-    # Fetches an array of indexes for the given type and allowed/used groups
-    # Ensures all indexes exists and are up-to-date when the function returns
+    # Get a single matching index for the given type and allowed groups.
+    # Create a new one if none is found in the cache.
     #   - type_name: type to find index for
     #   - allowed_groups: allowed groups to find index for (array of {group, variables}-objects)
-    #   - used_groups: used groups to find index for (array of {group, variables}-objects)
-    #
-    # In case of additive indexes, returns one index per allowed group
-    # Otherwise, returns an array of a single index
-    # Returns an empty array if no index is found
-    def fetch_indexes_for_type_and_groups type_name, allowed_groups, used_groups
-      def update_index type_name, allowed_groups, used_groups
-        index = find_matching_index type_name, allowed_groups, used_groups
-        if index
-          @logger.debug("INDEX MGMT") { "Found matching index in cache" }
-        else
-          @logger.info("INDEX MGMT") { "Didn't find matching index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups} in cache. Going to fetch index from triplestore or create it if it doesn't exist yet. Configure eager indexes to avoid building indexes at runtime." }
-          index = ensure_index type_name, allowed_groups, used_groups
-        end
-        if index.status == :invalid
-          index.mutex.synchronize do
-            @logger.info("INDEX MGMT") { "Updating invalid index #{index.name}" }
-            index.status = :updating
-            begin
-              @elasticsearch.clear_index index.name
-              index_documents type_name, index.name, allowed_groups
-              @elasticsearch.refresh_index index.name
-              index.status = :valid
-              @logger.info("INDEX MGMT") { "Index #{index.name} is up-to-date" }
-            rescue StandardError => e
-              index.status = :invalid
-              @logger.error("INDEX MGMT") { "Failed to update index #{index.name}." }
-              @logger.error("INDEX MGMT") { e.full_message }
-            end
-          end
-        end
-        index
+    def get_matching_index type_name, allowed_groups
+      index = find_matching_index type_name, allowed_groups
+      if index
+        @logger.debug("INDEX MGMT") { "Found matching index in cache for type '#{type_name}' and allowed_groups #{allowed_groups}" }
+      else
+        @logger.info("INDEX MGMT") { "Didn't find matching index for type '#{type_name}' and allowed_groups #{allowed_groups} in cache. Going to fetch index from triplestore or create it if it doesn't exist yet. Configure eager indexes to avoid building indexes at runtime." }
+        index = ensure_index type_name, allowed_groups
       end
-
-      indexes = []
-      @master_mutex.synchronize do
-        if @configuration[:additive_indexes]
-          indexes = allowed_groups.map do |allowed_group|
-            update_index type_name, [allowed_group], used_groups
-          end
-          index_names = indexes.map { |index| index.name }
-          @logger.debug("INDEX MGMT") { "Fetched and updated #{indexes.length} additive indexes for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index_names.join(", ")}" }
-        else
-          index = update_index type_name, allowed_groups, used_groups
-          @logger.debug("INDEX MGMT") { "Fetched and updated index for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}: #{index.name}" }
-          indexes = [index]
-        end
-      end
-
-      if indexes.any? { |index| index.status == :invalid }
-        @logger.warn("INDEX MGMT") { "Not all indexes are up-to-date. Search results may be incomplete." }
-      end
-
-      indexes
+      index
     end
-
-    # Invalidate the indexes for the given type and allowed groups
-    # If no type is passed, indexes for all types are invalidated
-    # If no allowed_groups are passed, all indexes are invalidated regardless of access rights
-    # - index_type: name of the index type to invalidate all indexes for
-    # - allowed_groups: allowed groups to invalidate indexes for (array of {group, variables}-objects)
-    #
-    # Returns the list of indexes that are invalidated
-    #
-    # TODO correctly handle composite indexes
-    def invalidate_indexes type_name, allowed_groups
-      indexes_to_invalidate = []
-      type_names = type_name.nil? ? @indexes.keys : [type_name]
-      type_names.each do |type_name|
-        if allowed_groups
-          if @configuration[:additive_indexes]
-            allowed_groups.each do |allowed_group|
-              index = find_matching_index type_name, [allowed_group]
-              indexes_to_invalidate << index unless index.nil?
-            end
-          else
-            index = find_matching_index type_name, allowed_groups
-            indexes_to_invalidate << index unless index.nil?
-          end
-        elsif @indexes[type_name]
-          @indexes[type_name].each do |_, index|
-            indexes_to_invalidate << index
-          end
-        end
-      end
-
-      @logger.info("INDEX MGMT") do
-        type_s = type_name.nil? ? "all types" : "type '#{type_name}'"
-        allowed_groups_s = allowed_groups.nil? ? "all groups" : "allowed_groups #{allowed_groups}"
-        index_names_s = indexes_to_invalidate.map { |index| index.name }.join(", ")
-        "Found #{indexes_to_invalidate.length} indexes to invalidate for #{type_s} and #{allowed_groups_s}: #{index_names_s}"
-      end
-
-      indexes_to_invalidate.each do |index|
-        @logger.debug("INDEX MGMT") { "Mark index #{index.name} as invalid" }
-        index.mutex.synchronize { index.status = :invalid }
-      end
-
-      indexes_to_invalidate
-    end
-
-
-    private
 
     # Find a single matching index for the given type and allowed/used groups
     #   - type_name: type to find index for
@@ -223,22 +245,49 @@ module MuSearch
       index
     end
 
-    # Indexes documents for the given type in the given Elasticsearch index
+    # Updates an existing index if it's current state is invalid
+    # I.e. clear all documents in the Elasticsearch index
+    # and index the documents again.
+    # The Elasticsearch index is never completely removed.
+    #   - index: SearchIndex to update
+    # Returns the index.
+    def update_index index
+      if index.status == :invalid
+        index.mutex.synchronize do
+          @logger.info("INDEX MGMT") { "Updating index #{index.name}" }
+          index.status = :updating
+          begin
+            @elasticsearch.clear_index index.name
+            index_documents index
+            @elasticsearch.refresh_index index.name
+            index.status = :valid
+            @logger.info("INDEX MGMT") { "Index #{index.name} is up-to-date" }
+          rescue StandardError => e
+            index.status = :invalid
+            @logger.error("INDEX MGMT") { "Failed to update index #{index.name}." }
+            @logger.error("INDEX MGMT") { e.full_message }
+          end
+        end
+      end
+      index
+    end
+
+    # Indexes documents in the given SearchIndex.
+    # I.e. index documents for a specific type in the given Elasticsearch index
     # taking the authorization groups into account. Documents are indexed in batches.
-    #   - type_name: Type of content which needs to be indexed
-    #   - index: Index to push the indexed documents in
-    #   - allowed_groups: Groups used for querying the database
-    def index_documents type_name, index, allowed_groups = nil
+    #   - index: SearchIndex to index documents in
+    def index_documents index
       search_configuration = @configuration.select do |key|
-        [:number_of_threads, :batch_size, :max_batches, :attachment_path_base, :type_definitions].include? key
+        [:number_of_threads, :batch_size, :max_batches,
+         :attachment_path_base, :type_definitions].include? key
       end
       builder = MuSearch::IndexBuilder.new(
         logger: log,
         elasticsearch: @elasticsearch,
         tika: @tika,
-        type_name: type_name,
-        index_id: index,
-        allowed_groups: allowed_groups,
+        type_name: index.type_name,
+        index_id: index.name,
+        allowed_groups: index.allowed_groups,
         search_configuration: search_configuration)
       builder.build
     end
