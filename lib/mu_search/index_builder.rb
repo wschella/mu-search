@@ -69,7 +69,7 @@ module MuSearch
               document = document_builder.fetch_document_to_index(
                 uri: document_uri,
                 properties: type_def["properties"])
-              @elasticsearch.put_document(@search_index.name, document_uri, document)
+              @elasticsearch.insert_document @search_index.name, document_uri, document
             rescue StandardError => e
               failed_documents << document_uri
               @logger.warn("INDEXING") { "Failed to index document #{document_uri} in batch #{i}" }

@@ -279,7 +279,7 @@ module MuSearch
       end
 
       # Ensure index exists in Elasticsearch
-      unless @elasticsearch.index_exists index_name
+      unless @elasticsearch.index_exists? index_name
         @logger.debug("INDEX MGMT") { "Creating index #{index_name} in Elasticsearch for type '#{type_name}', allowed_groups #{allowed_groups} and used_groups #{used_groups}" }
         index.status = :invalid
         type_definition = @configuration[:type_definitions][type_name]
@@ -376,7 +376,7 @@ module MuSearch
       @logger.debug("INDEX MGMT") { "Removing index #{index_name} from triplestore" }
       remove_index_from_triplestore index_name
 
-      if @elasticsearch.index_exists index_name
+      if @elasticsearch.index_exists? index_name
         @logger.debug("INDEX MGMT") { "Removing index #{index_name} from Elasticsearch" }
         @elasticsearch.delete_index index_name
       end

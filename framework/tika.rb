@@ -93,7 +93,7 @@ class Tika
   def run(uri, req, retries = 6)
     def run_rescue(uri, req, retries, result = nil)
       if retries == 0
-        @logger.error("TIKA") { "Failed to run request #{uri}. Max number of retries reached." }
+        @logger.warn("TIKA") { "Failed to run request #{uri}. Max number of retries reached." }
         if result.kind_of? Exception
           raise result
         else
@@ -123,11 +123,7 @@ class Tika
       if res.body and content_type and content_type.downcase.include?("charset=utf-8")
         res.body.force_encoding("utf-8")
       end
-      if req.method == "HEAD"
-        res
-      else
-        res.read_body
-      end
+      if req.method == "HEAD" then res else res.body end
     when Net::HTTPTooManyRequests
       run_rescue(uri, req, retries, res)
     else

@@ -102,7 +102,7 @@ configure do
   tika = Tika.new(host: 'tika', port: 9998, logger: SinatraTemplate::Utils.log)
   elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200, logger: SinatraTemplate::Utils.log)
 
-  while !elasticsearch.up
+  while !elasticsearch.up?
     log.info "...waiting for elasticsearch..."
     sleep 1
   end
@@ -310,7 +310,7 @@ get "/:path/search" do |path|
     log.debug("SEARCH") { "All indexes are up to date" }
     log.debug "[Elasticsearch] Running ES query: #{es_query.to_json}"
 
-    response = elasticsearch.search(index: index_string, query: es_query)
+    response = elasticsearch.search(indexes: index_names, query: es_query)
     if response.kind_of?(String) # assume success
       results = JSON.parse(response)
 
