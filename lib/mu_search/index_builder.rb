@@ -4,24 +4,23 @@ require 'concurrent'
 module MuSearch
   class IndexBuilder
 
-    def initialize(logger:, elasticsearch:, tika:, type_name:, index_id:, allowed_groups:, search_configuration: )
+    def initialize(logger:, elasticsearch:, tika:, search_index:, search_configuration: )
       @logger = logger
       @elasticsearch = elasticsearch
       @tika = tika
-      @type_name = type_name
-      @index_id = index_id
+      @search_index = search_index
+
       @configuration = search_configuration
       @number_of_threads = search_configuration[:number_of_threads]
       @batch_size = search_configuration[:batch_size]
       @max_batches = search_configuration[:max_batches]
       @attachment_path_base = search_configuration[:attachment_path_base]
 
-      @allowed_groups = allowed_groups
       @sparql_connection_pool = ConnectionPool.new(size: @number_of_threads, timeout: 3) do
-        MuSearch::SPARQL.authorized_client allowed_groups
+        MuSearch::SPARQL.authorized_client @search_index.allowed_groups
       end
 
-      type_def = @configuration[:type_definitions][type_name]
+      type_def = @configuration[:type_definitions][search_index.type_name]
       if type_def["composite_types"] and type_def["composite_types"].length
         @index_definitions = expand_composite_type_definition type_def
       else
@@ -31,11 +30,10 @@ module MuSearch
 
     def build
       @index_definitions.each do |type_def|
-        log.info "Building index of type #{type_def["type"]}"
+        @logger.info("INDEXING") { "Building index of type #{type_def["type"]}" }
         rdf_type = type_def["rdf_type"]
         number_of_documents = count_documents(rdf_type)
-        log.info "Found #{number_of_documents} documents to index of type #{rdf_type} with allowed groups #{@allowed_groups}"
-
+        @logger.info("INDEXING") { "Found #{number_of_documents} documents to index of type #{rdf_type} with allowed groups #{@search_index.allowed_groups}" }
         batches =
           if @max_batches and @max_batches != 0
             [@max_batches, number_of_documents/@batch_size].min
@@ -43,11 +41,13 @@ module MuSearch
             number_of_documents/@batch_size
           end
         batches = batches + 1
-        log.info "Number of batches: #{batches}"
+        @logger.info("INDEXING") { "Number of batches: #{batches}" }
+
         Parallel.each( 1..batches, in_threads: @number_of_threads ) do |i|
           batch_start_time = Time.now
-          log.info "Indexing batch #{i} of #{batches}"
-          offset = ( i - 1 )*@batch_size
+          @logger.info("INDEXING") { "Indexing batch #{i}/#{batches}" }
+          failed_documents = []
+
           @sparql_connection_pool.with do |sparql_client|
             document_builder = MuSearch::DocumentBuilder.new(
               tika: @tika,
@@ -55,34 +55,30 @@ module MuSearch
               attachment_path_base: @attachment_path_base,
               logger: @logger
             )
-            q = " SELECT DISTINCT ?doc WHERE { ?doc a <#{rdf_type}>.  } LIMIT #{@batch_size} OFFSET #{offset} "
-            log.debug "selecting documents for batch #{i}"
-            query_result = sparql_client.query(q)
-            log.debug "Discovered identifiers for this batch: #{query_result}"
-            query_result.each do |result|
-              document_id = result[:doc].to_s
-              log.debug "Fetching document for #{document_id}"
+            document_uris = get_documents_for_batch rdf_type, i, sparql_client
+            document_uris.each do |document_uri|
+              @logger.debug("INDEXING") { "Indexing document #{document_uri} in batch #{i}" }
               document = document_builder.fetch_document_to_index(
-                                                 uri: document_id,
-                                                 properties: type_def["properties"])
-              log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{@allowed_groups}"
-              @elasticsearch.put_document(@index_id, document_id, document)
+                uri: document_uri,
+                properties: type_def["properties"])
+              @elasticsearch.put_document(@search_index.name, document_uri, document)
             rescue StandardError => e
-              log.warn e
-              log.warn "Failed to ingest document #{document_id}"
+              failed_documents << document_uri
+              @logger.warn("INDEXING") { "Failed to index document #{document_uri} in batch #{i}" }
+              @logger.warn { e.full_message }
             end
           end
-          log.info "Processed batch #{i} in #{(Time.now - batch_start_time).round} seconds"
+          @logger.info("INDEXING") { "Processed batch #{i}/#{batches} in #{(Time.now - batch_start_time).round} seconds." }
+          if failed_documents.length > 0
+            @logger.info("INDEXING") { "#{failed_documents.length} failed to index." }
+            @logger.debug("INDEXING") { "Failed documents: #{failed_documents}" }
+          end
         end
       end
     end
 
 
     private
-
-    def log
-      @logger
-    end
 
     # Expands the type definition of a composite type.
     # Returns an array of type definitions, one per simple type that constitutes the composite type
@@ -116,5 +112,12 @@ module MuSearch
       end
     end
 
+    def get_documents_for_batch(rdf_type, batch_i, sparql_client)
+      offset = (batch_i - 1) * @batch_size
+      result = sparql_client.query("SELECT DISTINCT ?doc WHERE { ?doc a <#{rdf_type}>.  } LIMIT #{@batch_size} OFFSET #{offset}")
+      document_uris = result.map { |r| r[:doc].to_s }
+      @logger.debug("INDEXING") { "Selected documents for batch #{batch_i}: #{document_uris}" }
+      document_uris
+    end
   end
 end

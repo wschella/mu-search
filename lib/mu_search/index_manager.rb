@@ -331,12 +331,10 @@ module MuSearch
          :attachment_path_base, :type_definitions].include? key
       end
       builder = MuSearch::IndexBuilder.new(
-        logger: log,
+        logger: @logger,
         elasticsearch: @elasticsearch,
         tika: @tika,
-        type_name: index.type_name,
-        index_id: index.name,
-        allowed_groups: index.allowed_groups,
+        search_index: index,
         search_configuration: search_configuration)
       builder.build
     end
