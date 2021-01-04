@@ -27,9 +27,9 @@ module MuSearch
     # Assumes delta format v0.0.1
     # TODO add support for other delta formats
     def handle_deltas(deltas)
-      log.debug("DELTA") { "Received delta update #{deltas}" }
+      @logger.debug("DELTA") { "Received delta update #{deltas}" }
       if deltas.is_a?(Array)
-        log.debug("DELTA") { "Delta contains #{deltas.length} changesets" }
+        @logger.debug("DELTA") { "Delta contains #{deltas.length} changesets" }
         deltas.each do |changeset|
           changeset["inserts"].uniq.each do |triple|
             @logger.debug("DELTA") { "Handling inserted triple #{triple.inspect}" }
