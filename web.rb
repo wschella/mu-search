@@ -21,7 +21,6 @@ require_relative 'lib/mu_search/search_index.rb'
 require_relative 'lib/mu_search/index_manager.rb'
 require_relative 'framework/elastic.rb'
 require_relative 'framework/tika.rb'
-require_relative 'framework/sparql.rb'
 require_relative 'framework/search.rb'
 
 ##
