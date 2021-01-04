@@ -43,19 +43,20 @@ before do
   content_type 'application/vnd.api+json'
 end
 
-
+##
+# Setup index manager based on configuration
+##
 def setup_index_manager elasticsearch, tika, config
   search_configuration = config.select do |key|
     [:type_definitions, :default_index_settings, :additive_indexes,
      :persist_indexes, :eager_indexing_groups, :number_of_threads,
      :batch_size, :max_batches, :attachment_path_base].include? key
   end
-  MuSearch::IndexManager.new({
-                               logger: SinatraTemplate::Utils.log,
-                               elasticsearch: elasticsearch,
-                               tika: tika,
-                               search_configuration: search_configuration
-                             })
+  MuSearch::IndexManager.new(
+    logger: SinatraTemplate::Utils.log,
+    elasticsearch: elasticsearch,
+    tika: tika,
+    search_configuration: search_configuration)
 end
 
 ##
@@ -66,29 +67,26 @@ def setup_delta_handling(index_manager, elasticsearch, tika, config)
     search_configuration = config.select do |key|
       [:type_definitions, :number_of_threads, :update_wait_interval_minutes, :attachment_path_base].include? key
     end
-    handler = MuSearch::AutomaticUpdateHandler.new({
-                                                     logger: SinatraTemplate::Utils.log,
-                                                     index_manager: index_manager,
-                                                     elasticsearch: elasticsearch,
-                                                     tika: tika,
-                                                     search_configuration: search_configuration
-                                                   })
+    handler = MuSearch::AutomaticUpdateHandler.new(
+      logger: SinatraTemplate::Utils.log,
+      index_manager: index_manager,
+      elasticsearch: elasticsearch,
+      tika: tika,
+      search_configuration: search_configuration)
   else
     search_configuration = config.select do |key|
       [:type_definitions, :number_of_threads, :update_wait_interval_minutes].include? key
     end
-    handler = MuSearch::InvalidatingUpdateHandler.new({
-                                                        logger: SinatraTemplate::Utils.log,
-                                                        index_manager: index_manager,
-                                                        search_configuration: search_configuration
-                                                      })
+    handler = MuSearch::InvalidatingUpdateHandler.new(
+      logger: SinatraTemplate::Utils.log,
+      index_manager: index_manager,
+      search_configuration: search_configuration)
   end
 
-  delta_handler = MuSearch::DeltaHandler.new({
-                                      update_handler: handler,
-                                      logger: SinatraTemplate::Utils.log,
-                                      search_configuration: { type_definitions: config[:type_definitions] }
-                                    })
+  delta_handler = MuSearch::DeltaHandler.new(
+    update_handler: handler,
+    logger: SinatraTemplate::Utils.log,
+    search_configuration: { type_definitions: config[:type_definitions] } )
   delta_handler
 end
 
@@ -102,15 +100,15 @@ configure do
   configuration = MuSearch::ConfigParser.parse('/config/config.json')
   set configuration
 
-  tika = Tika.new(host: 'tika', port: 9998)
-  elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200)
+  tika = Tika.new(host: 'tika', port: 9998, logger: SinatraTemplate::Utils.log)
+  elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200, logger: SinatraTemplate::Utils.log)
 
   while !elasticsearch.up
     log.info "...waiting for elasticsearch..."
     sleep 1
   end
 
-  while !sparql_up do
+  while !MuSearch::SPARQL.up? do
     log.info "...waiting for SPARQL endpoint..."
     sleep 1
   end

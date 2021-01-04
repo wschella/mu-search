@@ -1,6 +1,16 @@
 module MuSearch
   module SPARQL
     ##
+    # Verifies whether or not the SPARQL endpoint is up.
+    def self.up?
+      begin
+        sudo_query "ASK { ?s ?p ?o }", 1
+      rescue StandardError => e
+        false
+      end
+    end
+
+    ##
     # provides a client with the given access rights
     # or the regular client with access rights from the end user if allowed_groups is empty
     def self.authorized_client allowed_groups
@@ -18,11 +28,6 @@ module MuSearch
     def self.sudo_client
       sparql_options = { headers: { 'mu-auth-sudo': 'true' } }
       SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], sparql_options)
-    end
-
-    # TODO remove?
-    def self.direct_query(query_string, retries = 6)
-      self.sudo_query(query_string, retries)
     end
 
     ##
