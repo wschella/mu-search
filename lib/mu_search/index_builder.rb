@@ -28,7 +28,15 @@ module MuSearch
       end
     end
 
+    # Index the documents for the configured type definition in batches.
+    #
+    # The properties are queried from the triplestore using the SPARQL connection pool
+    # which is configured with the appropriate mu-auth-allowed-groups.
+    #
+    # If a document fails to index, a warning will be logged, but the indexing continues.
+    # The other documents in the batch will still be indexed.
     def build
+      # Note: @index_definitions will only contain multiple elements in case of a composite type.
       @index_definitions.each do |type_def|
         @logger.info("INDEXING") { "Building index of type #{type_def["type"]}" }
         rdf_type = type_def["rdf_type"]

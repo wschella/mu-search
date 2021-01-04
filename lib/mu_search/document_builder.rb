@@ -18,9 +18,7 @@ module MuSearch
     #   - properties: Array of properties as configured in the search config
     def fetch_document_to_index( uri: nil, properties: nil )
       # we include uuid because it may be used for folding
-      unless properties.has_key?("uuid")
-        properties["uuid"] = ["http://mu.semte.ch/vocabularies/core/uuid"]
-      end
+      properties["uuid"] = ["http://mu.semte.ch/vocabularies/core/uuid"] unless properties.has_key?("uuid")
 
       key_value_tuples = properties.collect do |key, prop_config|
         query = make_property_query(uri, key, prop_config)
@@ -112,13 +110,12 @@ SPARQL
     # This list may be extended with additional metadata in the future.
     def build_file_field( file_uris )
       file_uris.collect do |file_uri|
-        # TODO handle file path not found error with try/catch
         file_path = File.join(@attachment_path_base, file_uri.to_s.sub("share://", ""))
         file_size = File.size(file_path)
         if file_size < ENV["MAXIMUM_FILE_SIZE"].to_i
           content = extract_text_content(file_path)
         else
-          log.warn("INDEXING") { "File #{file_path} (#{filesize} bytes) exceeds the allowed size of #{ENV["MAXIMUM_FILE_SIZE"]} bytes. File content will not be indexed." }
+          @logger.warn("INDEXING") { "File #{file_path} (#{filesize} bytes) exceeds the allowed size of #{ENV["MAXIMUM_FILE_SIZE"]} bytes. File content will not be indexed." }
           content = nil
         end
 
@@ -139,31 +136,30 @@ SPARQL
         file.close
         file_hash = Digest::SHA256.hexdigest blob
         cached_file_path = "#{@cache_path_base}#{file_hash}"
-        if File.exists?(cached_file_path)
-          text_content = File.open(cached_file_path, "r") do |file|
-            log.debug("TIKA") { "Using cached result #{cached_file_path} for file #{file_path}" }
+        if File.exists? cached_file_path
+          text_content = File.open(cached_file_path, mode: "rb", encoding: 'utf-8') do |file|
+            @logger.debug("TIKA") { "Using cached result #{cached_file_path} for file #{file_path}" }
             file.read
           end
         else
-          text_content = @tika.extract_text(file_path, blob)
+          text_content = @tika.extract_text file_path, blob
           if text_content.nil?
-            log.info("TIKA") { "Received empty result from Tika for file #{file_path}. File content will not be indexed." }
+            @logger.info("TIKA") { "Received empty result from Tika for file #{file_path}. File content will not be indexed." }
           else
-            log.debug("TIKA") { "Extracting text from #{file_path} and storing result in #{cached_file_path}" }
+            @logger.debug("TIKA") { "Extracting text from #{file_path} and storing result in #{cached_file_path}" }
             File.open(cached_file_path, "w") do |file|
               file.puts text_content.force_encoding("utf-8").unicode_normalize
             end
-            # TODO write empty file if text_content.nil? to make cache hit on next run?
           end
         end
         text_content
       rescue Errno::ENOENT, IOError => e
-        log.warn("TIKA") { "Error reading file at #{file_path} to extract content. File content will not be indexed." }
-        log.warn("TIKA") { e.full_message }
+        @logger.warn("TIKA") { "Error reading file at #{file_path} to extract content. File content will not be indexed." }
+        @logger.warn("TIKA") { e.full_message }
         nil
       rescue StandardError => e
-        log.warn("TIKA") { "Failed to extract content of file #{file_path}. File content will not be indexed." }
-        log.warn("TIKA") { e.full_message }
+        @logger.warn("TIKA") { "Failed to extract content of file #{file_path}. File content will not be indexed." }
+        @logger.warn("TIKA") { e.full_message }
         nil
       end
     end
