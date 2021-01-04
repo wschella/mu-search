@@ -3,11 +3,12 @@
 class Logger
   def add(severity, message = nil, progname = nil)
     severity ||= UNKNOWN
-    if @logdev.nil? or severity < level
-      return true
-    end
     if progname.nil?
       progname = @progname
+    end
+    # Monkey patch: take log level per scope into account
+    if @logdev.nil? or !in_scope(progname, severity)
+      return true
     end
     if message.nil?
       if block_given?
@@ -17,30 +18,37 @@ class Logger
         progname = @progname
       end
     end
-    # Monkey patch: taking scope into account
-    unless in_scope progname
-      return true
-    end
     @logdev.write(
       format_message(format_severity(severity), Time.now, progname, message))
     true
   end
 
-  def in_scope progname
+  def in_scope progname, severity
     if progname
-      @scopes = {} if @scopes.nil?
-      if @scopes[progname].nil?
-        scope = progname.to_s.upcase().gsub(/\s+/, "_")
-        env_var = "LOG_SCOPE_#{scope}"
-        @scopes[progname] = true? ENV[env_var]
-      end
-      @scopes[progname]
+      severity >= scope_log_level(progname)
     else
-      true
+      severity >= level
     end
   end
 
-  def true? obj
-    !obj.nil? && (obj.to_s.downcase == "true" || obj.to_s == "1")
+  def scope_log_level progname
+    @scope_levels = {} if @scope_levels.nil?
+    if @scope_levels[progname].nil? # put value in scope_levels cache
+      scope = progname.to_s.upcase().gsub(/\s+/, "_")
+      env_var = "LOG_SCOPE_#{scope}"
+      @scope_levels[progname] = string_to_log_level ENV[env_var]
+    end
+    @scope_levels[progname]
+  end
+
+  def string_to_log_level level_s
+    level_const = level # fallback to default general log level
+    if level_s
+      level_s = level_s.upcase
+      if ['UNKNOWN', 'FATAL', 'ERROR', 'WARN', 'INFO', 'DEBUG'].include? level_s
+        level_const = Kernel.const_get("Logger::#{level_s}")
+      end
+    end
+    level_const
   end
 end
