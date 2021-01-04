@@ -149,7 +149,7 @@ class Elastic
       @logger.debug("ELASTICSEARCH") { "Document #{id} not found in index #{index}" }
       nil
     elsif resp.is_a? Net::HTTPSuccess
-      resp.body
+      JSON.parse resp.body
     else
       @logger.error("ELASTICSEARCH") { "Failed to get document #{id} from index #{index}.\nGET #{uri}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
       raise "Failed to get document #{id} from index #{index}"
@@ -172,7 +172,7 @@ class Elastic
 
     if resp.is_a? Net::HTTPSuccess
       @logger.debug("ELASTICSEARCH") { "Inserted document #{id} in index #{index}" }
-      resp.body
+      JSON.parse resp.body
     else
       @logger.error("ELASTICSEARCH") { "Failed to insert document #{id} in index #{index}.\nPUT #{uri}\nRequest: #{req_body}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
       raise "Failed to insert document #{id} in index #{index}"
@@ -197,7 +197,7 @@ class Elastic
       nil
     elsif resp.is_a? Net::HTTPSuccess
       @logger.debug("ELASTICSEARCH") { "Updated document #{id} in index #{index}" }
-      resp.body
+      JSON.parse resp.body
     else
       @logger.error("ELASTICSEARCH") { "Failed to update document #{id} in index #{index}.\nPOST #{uri}\nRequest: #{req_body}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
       raise "Failed to update document #{id} in index #{index}"
@@ -257,7 +257,7 @@ class Elastic
     resp = run(uri, req)
 
     if resp.is_a? Net::HTTPSuccess
-      resp.body
+      JSON.parse resp.body
     else
       @logger.error("SEARCH") { "Searching documents in index(es) #{indexes_s} failed.\nPOST #{uri}\nRequest: #{req_body}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
       if resp.is_a? Net::HTTPClientError # 4xx status code
@@ -282,7 +282,8 @@ class Elastic
     resp = run(uri, req)
 
     if resp.is_a? Net::HTTPSuccess
-      resp.body["count"]
+      data = JSON.parse resp.body
+      data["count"]
     else
       @logger.error("SEARCH") { "Counting search results in index(es) #{indexes_s} failed.\nPOST #{uri}\nRequest: #{req_body}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
       if resp.is_a? Net::HTTPClientError # 4xx status code

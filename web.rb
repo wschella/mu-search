@@ -20,8 +20,9 @@ require_relative 'lib/mu_search/index_builder.rb'
 require_relative 'lib/mu_search/search_index.rb'
 require_relative 'lib/mu_search/index_manager.rb'
 require_relative 'framework/elastic.rb'
+require_relative 'framework/elastic_query_builder.rb'
 require_relative 'framework/tika.rb'
-require_relative 'framework/search.rb'
+require_relative 'framework/jsonapi.rb'
 
 ##
 # WEBrick setup
@@ -101,6 +102,7 @@ configure do
 
   tika = Tika.new(host: 'tika', port: 9998, logger: SinatraTemplate::Utils.log)
   elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200, logger: SinatraTemplate::Utils.log)
+  set :elasticsearch, elasticsearch
 
   while !elasticsearch.up?
     log.info "...waiting for elasticsearch..."
@@ -122,6 +124,7 @@ end
 # API ENDPOINTS
 ###
 
+
 # Processes an update from the delta system.
 # See MuSearch::DeltaHandler and MuSearch::UpdateHandler for more info
 post "/update" do
@@ -129,10 +132,125 @@ post "/update" do
   { message: "Thanks for all the updates." }.to_json
 end
 
+# Performs a search in Elasticsearch
+#
+# Before the search query is performed, it makes search the required
+# search indexes are created and up-to-date.
+#
+# The search is only performed on indexes the user has access to
+# based on the provided allowed groups header.
+# If none is provided, the allowed groups are determined by executing
+# a query on the triplestore.
+#
+# See README for more information about the filter syntax.
+get "/:path/search" do |path|
+  allowed_groups = get_allowed_groups_with_fallback
+  log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
+
+  elasticsearch = settings.elasticsearch
+  index_manager = settings.index_manager
+  type_def = settings.type_paths[path]
+
+  begin
+    raise ArgumentError, "No search configuration found for path #{path}" if type_def.nil?
+
+    indexes = index_manager
+                .fetch_indexes(type_def["type"], allowed_groups)
+                .map { |index| index.name }
+
+    search_configuration = settings.select do |key|
+      [:common_terms_cutoff_frequency].include? key
+    end
+    query_builder = ElasticQueryBuilder.new(
+      logger: SinatraTemplate::Utils.log,
+      type_definition: type_def,
+      filter: params["filter"]
+      page: params["page"]
+      sort: params["sort"]
+      collapse_uuids: params["collapse_uuids"]
+      search_configuration: search_configuration)
+
+    if indexes.length == 0
+      log.info("SEARCH") { "No indexes found to search in. Returning empty result" }
+      format_search_results(type_def, 0, query_builder.page_number, query_builder.page_size, []).to_json
+    else
+      search_query = query_builder.build_search_query
+
+      while indexes.any? { |index| index.status == :updating }
+        log.info("SEARCH") { "Waiting for indexes to be up-to-date..." }
+        sleep 0.5
+      end
+      log.debug("SEARCH") { "All indexes are up to date" }
+
+      search_results = elasticsearch.search_documents indexes: indexes, query: search_query
+      count =
+        if query_builder.collapse_uuids
+          search_results["aggregations"]["type_count"]["value"]
+        else
+          count_query = query_builder.build_count_query
+          elasticsearch.count_documents indexes: indexes, query: count_query
+        end
+      log.debug("SEARCH") { "Found #{count} results" }
+      format_search_results(type_def, count, page, size, search_results).to_json
+    end
+  rescue ArgumentError => e
+    error(e.message, 400)
+  rescue StandardError => e
+    error(e.inspect, 500)
+  end
+end
+
+
+# Execute a search query by passing a raw Elasticsearch Query DSL as request body
+#
+# The search is only performed on indexes the user has access to
+# based on the provided allowed groups header.
+# If none is provided, the allowed groups are determined by executing
+# a query on the triplestore.
+#
+# This endpoint must be used with caution and explicitly enabled in the search config!
+if settings.enable_raw_dsl_endpoint
+  post "/:path/search" do |path|
+    allowed_groups = get_allowed_groups_with_fallback
+    log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
+
+    elasticsearch = settings.elasticsearch
+    index_manager = settings.index_manager
+    type_def = settings.type_paths[path]
+
+    @json_body["size"] ||= 10
+    @json_body["from"] ||= 0
+    page_size = @json_body["size"]
+    page_number = @json_body["from"] / page_size
+
+    begin
+      raise ArgumentError, "No search configuration found for path #{path}" if type_def.nil?
+
+      indexes = index_manager
+                  .fetch_indexes(type_def["type"], allowed_groups)
+                  .map { |index| index.name }
+
+      if indexes.length == 0
+        log.info("SEARCH") { "No indexes found to search in. Returning empty result" }
+        format_search_results(type_def, 0, page_number, page_size, []).to_json
+      else
+        search_query = @json_body
+        search_results = elasticsearch.search_documents indexes: indexes, query: search_query
+        count_query = search_query.select { |key, _| key != "from" and key != "size" and key != "sort" }
+        count = elasticsearch.count_documents indexes: indexes, query: count_query
+        log.debug("SEARCH") { "Found #{count} results" }
+        format_search_results(type_def, count, page_number, page_size, search_results).to_json
+      end
+    rescue ArgumentError => e
+      error(e.message, 400)
+    rescue StandardError => e
+      error(e.inspect, 500)
+    end
+  end
+end
 
 # Updates the indexes for the given :path.
-# If an authorization header is provided, only the authorized
-# indexes are updated.
+# If an authorization header is provided, only the authorized indexes are updated.
 # Otherwise, all indexes for the path are updated.
 #
 # Use _all as path to update all index types
@@ -229,132 +347,6 @@ delete "/:path" do |path|
   end
 
   { data: data }.to_json
-end
-
-# Performs a regular search.
-#
-# Creates new indexes, updates older ones and keeps constructed ones
-# as necessary.  This is the standard entrypoint for your mu-search
-# queries.
-#
-# Check Readme.md for more information.
-#
-# TODO move this method up as it's the most common entrypoint
-#
-# TODO fleshen out functionality with respect to existing indexes
-get "/:path/search" do |path|
-  allowed_groups = get_allowed_groups_with_fallback
-  log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
-
-  elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200)
-
-  index_manager = settings.index_manager
-  type_def = settings.type_paths[path]
-  type_name = type_def and type_def["type"]
-
-  collapse_uuids = (params["collapse_uuids"] == "t")
-
-  if params["page"]
-    page = (params["page"]["number"] && params["page"]["number"].to_i) || 0
-    size = (params["page"]["size"] && params["page"]["size"].to_i) || 10
-  else
-    page = 0
-    size = 10
-  end
-
-  indexes = index_manager.fetch_indexes type_name, allowed_groups
-
-  if indexes.length == 0
-    log.info("SEARCH") { "No indexes found to search in. Returning empty result" }
-    format_results(type_def, 0, page, size, []).to_json
-  else
-    # TODO << start move to ES query utils
-    es_query = construct_es_query type_def
-
-    log.debug "[Search] ElasticSearch query: #{es_query}"
-    log.debug "[Search] ElasticSearch query as json: #{es_query.to_json}"
-
-    count_query = es_query.clone
-
-    sort_statement = es_query_sort_statement
-
-    if sort_statement
-      es_query['sort'] = sort_statement
-    end
-
-    es_query["from"] = page * size
-    es_query["size"] = size
-
-    if collapse_uuids
-      es_query["collapse"] = { field: "uuid" }
-      es_query["aggs"] = { "type_count" => { "cardinality" => { "field" => "uuid" } } }
-    end
-
-    # Exclude all attachment fields for now
-    attachments = settings.type_definitions[type_def]["properties"].select {|key, val|
-      val.is_a?(Hash) && val["attachment_pipeline"]
-    }
-    es_query["_source"] = {
-      excludes: attachments.keys
-    }
-    # TODO end move to ES query utils >>
-
-    index_names = indexes.map { |index| index.name }
-    index_string = index_names.join(',')
-
-    while indexes.any? { |index| index.status == :updating }
-      log.info("SEARCH") { "Waiting for indexes to be up-to-date..." }
-      sleep 0.5
-    end
-
-    log.debug("SEARCH") { "All indexes are up to date" }
-    log.debug "[Elasticsearch] Running ES query: #{es_query.to_json}"
-
-    response = elasticsearch.search(indexes: index_names, query: es_query)
-    if response.kind_of?(String) # assume success
-      results = JSON.parse(response)
-
-      count =
-        if collapse_uuids
-          results["aggregations"]["type_count"]["value"]
-        else
-          count_result = JSON.parse(elasticsearch.count index: index_string, query: count_query)
-          count_result["count"]
-        end
-
-      log.debug("SEARCH") { "Found #{count} results" }
-      format_results(type_def, count, page, size, results).to_json
-    else
-      log.warn("SEARCH") { "Execution of search query failed: #{response}" }
-      log.debug("SEARCH") { response.body }
-      error(response.message)
-    end
-  end
-end
-
-
-# Raw ES Query DSL
-# Need to think through several things, such as pagination
-if settings.enable_raw_dsl_endpoint
-  post "/:path/search" do |path|
-    client = Elastic.new(host: 'elasticsearch', port: 9200)
-    type = settings.type_paths[path]
-    index_names = get_or_create_indexes client, type
-
-    return [].to_json if index_names.length == 0
-
-    index_string = index_names.join(',')
-
-    es_query = @json_body
-
-    count_query = es_query.clone
-    count_query.delete("from")
-    count_query.delete("size")
-    count_result = JSON.parse(client.count index: index_string, query: es_query)
-    count = count_result["count"]
-
-    format_results(type, count, 0, 10, client.search(index: index_string, query: es_query)).to_json
-  end
 end
 
 # Health report
