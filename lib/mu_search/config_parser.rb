@@ -14,8 +14,7 @@ module MuSearch
         eager_indexing_groups: [],
         update_wait_interval_minutes: 1,
         number_of_threads: 1,
-        enable_raw_dsl_endpoint: false,
-        excluded_fields: ["data","attachment"]
+        enable_raw_dsl_endpoint: false
       }
 
       json_config = JSON.parse(File.read(path))
@@ -33,8 +32,7 @@ module MuSearch
         { name: "attachments_path_base", parser: :parse_string },
         { name: "common_terms_cutoff_frequency", parser: :parse_float },
         { name: "update_wait_interval_minutes", parser: :parse_integer },
-        { name: "number_of_threads", parser: :parse_integer },
-        { name: "excluded_fields", parser: :parse_string_array }
+        { name: "number_of_threads", parser: :parse_integer }
       ].each do |setting|
         name = setting[:name]
         value = self.send(setting[:parser], ENV[name.upcase], json_config[name])
@@ -46,8 +44,7 @@ module MuSearch
       if json_config["eager_indexing_groups"]
         config[:eager_indexing_groups]  = json_config["eager_indexing_groups"]
       end
-      # TODO rename?
-      config[:index_config] = json_config["types"]
+
       config[:type_paths] = Hash[
         json_config["types"].collect do |type_def|
           [type_def["on_path"], type_def["type"]]
@@ -59,8 +56,10 @@ module MuSearch
         end
       ]
 
-      # TODO may be removed?
-      config[:master_mutex] = Mutex.new
+      # TODO add validation on the configuration
+      # - does each type definition contain the required fields?
+      # - are the paths and type names unique?
+      # - ...
 
       config
     end
