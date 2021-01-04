@@ -102,7 +102,11 @@ module MuSearch
                 end
               end
               if !change.nil?
-                @logger.info("UPDATE HANDLER") { "Large number of updates (#{@queue.length}) to be handled" } if @queue.length > 500
+                large_queue = 500
+                if @queue.length > large_queue and large_queue % @number_of_threads == 0
+                  # log only once per nb_of_threads
+                  @logger.warn("UPDATE HANDLER") { "Large number of updates (#{@queue.length}) in queue" }
+                end
                 @logger.debug("UPDATE HANDLER") { "Handling update of #{subject}" }
                 handler(subject, index_types, type)
               end

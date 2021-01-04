@@ -27,7 +27,7 @@ module MuSearch
     # Assumes delta format v0.0.1
     # TODO add support for other delta formats
     def handle_deltas(deltas)
-      @logger.debug("DELTA") { "Received delta update #{deltas}" }
+      @logger.info("DELTA") { "Received delta update #{deltas}" }
       if deltas.is_a?(Array)
         @logger.debug("DELTA") { "Delta contains #{deltas.length} changesets" }
         deltas.each do |changeset|
@@ -40,7 +40,7 @@ module MuSearch
               subjects = find_root_subjects_for_triple(triple, config)
               if subjects.length
                 type_name = config[:type_name]
-                @logger.debug("DELTA") { "Found #{subjects.length} subjects for '#{type_name}' that needs to be updated." }
+                @logger.info("DELTA") { "Found #{subjects.length} subjects for '#{type_name}' that needs to be updated." }
                 subjects.each { |subject| @update_handler.add_update(subject, type_name) }
               end
             end
@@ -55,13 +55,13 @@ module MuSearch
               if triple["predicate"]["value"] == RDF.type.to_s
                 type_name = config[:type_name]
                 subject = triple["subject"]["value"]
-                @logger.debug("DELTA") { "#{subject} will be removed from indexes for '#{type_name}'." }
+                @logger.info("DELTA") { "#{subject} will be removed from indexes for '#{type_name}'." }
                 @update_handler.add_delete(subject, type_name)
               else
                 subjects = find_root_subjects_for_triple(triple, config, false)
                 if subjects.length
                   type_name = config[:type_name]
-                  @logger.debug("DELTA") { "Found #{subjects.length} subjects for '#{type_name}' that need to be updated." }
+                  @logger.info("DELTA") { "Found #{subjects.length} subjects for '#{type_name}' that need to be updated." }
                   subjects.each { |subject| @update_handler.add_update(subject, type_name) }
                 end
               end
