@@ -360,51 +360,6 @@ In the example below the documents index contains a property `topics` that maps 
 }
 ```
 
-##### Nested objects
-A search document can contain nested objects up to an arbitrary depth. For example for a person you can nest the address object as a property of the person search document.
-
-A nested object is defined by the following properties:
-- **via** : mapping of the RDF predicate that relates the resource with the nested object. May also be an inverse URI.
-- **rdf_type** : URI of the rdf:Class of the nested object
-- **properties** : mapping of RDF predicates to properties for the nested object
-
-Objects can be nested to arbitrary depth. The properties object is defined the same way as the properties of the root document, but the properties of a nested object **cannot** contain file attachments.
-
-[Elasticsearch mappings](#elasticsearch-mappings) for nested objects must be specified in the `mappings` object at the root type using a path expression as key.
-
-In the example below the document's creator is nested in the `author` property of the search document. The nested person object contains properties `fullname` and the current project's title as `project`.
-
-```javascript
-{
-    "types" : [
-        {
-            "type" : "document",
-            "on_path" : "documents",
-            "rdf_type" : "http://xmlns.com/foaf/0.1/Document",
-            "properties" : {
-                "title" : "http://purl.org/dc/elements/1.1/title",
-                "description" : "http://purl.org/dc/elements/1.1/description",
-                "author" : {
-                    "via" : "http://purl.org/dc/elements/1.1/creator",
-                    "rdf_type" : "http://xmlns.com/foaf/0.1/Person",
-                    "properties" : {
-                        "fullname" : "http://xmlns.com/foaf/0.1/name",
-                        "project": [
-                            "http://xmlns.com/foaf/0.1/currentProject",
-                            "http://purl.org/dc/elements/1.1/title"
-                        ]
-                    }
-                }
-            },
-            "mappings": {
-                "title" : { "type" : "text" },
-                "author.fullname": { "type" : "text" }
-            }
-        }
-    ]
-}
-```
-
 ##### File content property
 To make the content of a file searchable, it needs to be indexed as a property in a search index. Basic indexing of PDF, Word etc. files is provided using [Elasticsearch's Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html) and a local [Apache Tika](https://tika.apache.org/) instance. The plugin is already installed in the [mu-semtech/search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) image while the Tika server is running inside the mu-search container. A default ingest pipeline named `attachment` is created on startup of the mu-search service. Note that this is under development and liable to change.
 
@@ -469,7 +424,52 @@ Attachments processed by Tika are cached in the directory `/cache` (by SHA256 of
 
 See also "How to specify a file's content as property".
 
-##### Multiple types
+##### [Experimental] Nested objects
+A search document can contain nested objects up to an arbitrary depth. For example for a person you can nest the address object as a property of the person search document.
+
+A nested object is defined by the following properties:
+- **via** : mapping of the RDF predicate that relates the resource with the nested object. May also be an inverse URI.
+- **rdf_type** : URI of the rdf:Class of the nested object
+- **properties** : mapping of RDF predicates to properties for the nested object
+
+Objects can be nested to arbitrary depth. The properties object is defined the same way as the properties of the root document, but the properties of a nested object **cannot** contain file attachments.
+
+[Elasticsearch mappings](#elasticsearch-mappings) for nested objects must be specified in the `mappings` object at the root type using a path expression as key.
+
+In the example below the document's creator is nested in the `author` property of the search document. The nested person object contains properties `fullname` and the current project's title as `project`.
+
+```javascript
+{
+    "types" : [
+        {
+            "type" : "document",
+            "on_path" : "documents",
+            "rdf_type" : "http://xmlns.com/foaf/0.1/Document",
+            "properties" : {
+                "title" : "http://purl.org/dc/elements/1.1/title",
+                "description" : "http://purl.org/dc/elements/1.1/description",
+                "author" : {
+                    "via" : "http://purl.org/dc/elements/1.1/creator",
+                    "rdf_type" : "http://xmlns.com/foaf/0.1/Person",
+                    "properties" : {
+                        "fullname" : "http://xmlns.com/foaf/0.1/name",
+                        "project": [
+                            "http://xmlns.com/foaf/0.1/currentProject",
+                            "http://purl.org/dc/elements/1.1/title"
+                        ]
+                    }
+                }
+            },
+            "mappings": {
+                "title" : { "type" : "text" },
+                "author.fullname": { "type" : "text" }
+            }
+        }
+    ]
+}
+```
+
+##### [Experimental] Composite types
 A search index can contain documents of different types. E.g. documents (`foaf:Document`) as well as creative works (`schema:CreativeWork`). Currently, each simple type the composite index is constituted of must be defined seperately in the index configuration as well.
 
 A definition of a composite type index consists of the following properties:
