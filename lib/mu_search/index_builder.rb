@@ -78,7 +78,7 @@ module MuSearch
           end
           @logger.info("INDEXING") { "Processed batch #{i}/#{batches} in #{(Time.now - batch_start_time).round} seconds." }
           if failed_documents.length > 0
-            @logger.info("INDEXING") { "#{failed_documents.length} failed to index." }
+            @logger.warn("INDEXING") { "#{failed_documents.length} documents failed to index in batch #{i}." }
             @logger.debug("INDEXING") { "Failed documents: #{failed_documents}" }
           end
         end

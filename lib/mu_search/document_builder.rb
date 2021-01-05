@@ -115,7 +115,7 @@ SPARQL
         if file_size < ENV["MAXIMUM_FILE_SIZE"].to_i
           content = extract_text_content(file_path)
         else
-          @logger.warn("INDEXING") { "File #{file_path} (#{filesize} bytes) exceeds the allowed size of #{ENV["MAXIMUM_FILE_SIZE"]} bytes. File content will not be indexed." }
+          @logger.warn("INDEXING") { "File #{file_path} (#{file_size} bytes) exceeds the allowed size of #{ENV["MAXIMUM_FILE_SIZE"]} bytes. File content will not be indexed." }
           content = nil
         end
 
