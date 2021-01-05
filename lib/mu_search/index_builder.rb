@@ -16,6 +16,7 @@ module MuSearch
         # assumes we're building the index for a request from a logged in user
         @sparql_connection_pool = ConnectionPool.new(size: number_of_threads, timeout: 3) {  SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT']) }
       end
+      @tika_client = Tika.new(host: 'tika', port: 9998)
       @index_definitions = index_definitions
       @index_id = index_id
       log.info "Index builder initialized"
@@ -42,6 +43,7 @@ module MuSearch
           offset = ( i - 1 )*@batch_size
           @sparql_connection_pool.with do |sparql_client|
             document_builder = MuSearch::DocumentBuilder.new(
+              tika_client: @tika_client,
               sparql_client: sparql_client,
               attachment_path_base: @attachment_path_base,
               logger: @logger
@@ -53,15 +55,11 @@ module MuSearch
             query_result.each do |result|
               document_id = result[:doc].to_s
               log.debug "Fetching document for #{document_id}"
-              document, attachment_pipeline = document_builder.fetch_document_to_index(
+              document = document_builder.fetch_document_to_index(
                                                  uri: document_id,
                                                  properties: type_def["properties"])
               log.debug "Uploading document #{document_id} - batch #{i} - allowed groups #{@allowed_groups}"
-              if attachment_pipeline
-                @elastic_client.upload_attachment(@index_id, document_id, attachment_pipeline, document)
-              else
-                @elastic_client.put_document(@index_id, document_id, document)
-              end
+              @elastic_client.put_document(@index_id, document_id, document)
             rescue StandardError => e
               log.warn e
               log.warn "Failed to ingest document #{document_id}"

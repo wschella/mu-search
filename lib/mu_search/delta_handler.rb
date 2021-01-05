@@ -2,8 +2,8 @@ require 'set'
 
 module MuSearch
   ##
-  # the delta handler is a service for that parses deltas and triggers
-  # the necessary updates the (index) update handler.
+  # the delta handler is a service that parses deltas and triggers
+  # the necessary updates via the (index) update handler.
   # Assumes that it is safe to remove objects for which the type was removed
   # updates documents for deltas that match the configured property paths
   # NOTE: in theory the handler has a pretty good idea what has changed

@@ -5,6 +5,7 @@ require 'request_store'
 require 'listen'
 require 'singleton'
 require 'base64'
+require 'open3'
 require 'webrick'
 
 require_relative 'lib/mu_search/sparql.rb'
@@ -15,6 +16,7 @@ require_relative 'lib/mu_search/config_parser.rb'
 require_relative 'lib/mu_search/document_builder.rb'
 require_relative 'lib/mu_search/index_builder.rb'
 require_relative 'framework/elastic.rb'
+require_relative 'framework/tika.rb'
 require_relative 'framework/sparql.rb'
 require_relative 'framework/authorization.rb'
 require_relative 'framework/indexing.rb'
@@ -37,25 +39,46 @@ before do
 end
 
 
-# Applies basic configuration from environment variables and from
-# configuration file (environment variables win).
-#
-# Called from the configure block.
-def configure_settings
-  set :protection, :except => [:json_csrf]
-  set :dev, (ENV['RACK_ENV'] == 'development')
-  configuration = MuSearch::ConfigParser.parse('/config/config.json')
-  set configuration
-  configuration
+def setup_indexes elasticsearch, tika
+  if settings.persist_indexes
+    log.info "Loading persisted indexes"
+    load_persisted_indexes settings.index_config
+  else
+    log.info "Removing indexes as they're configured not to be persisted. Update the 'persist_indexes' flag in the configuration to enable index persistence."
+    destroy_persisted_indexes elasticsearch
+  end
+
+  settings.master_mutex.synchronize do
+    settings.eager_indexing_groups.each do |groups|
+      settings.type_definitions.keys.each do |type|
+        index = get_matching_index_name type, groups, []
+        index_name = index ? index[:index] : nil
+        if !(settings.persist_indexes) and index and elasticsearch.index_exists(index_name)
+          log.info "deleting index for type #{type} - #{index_name}."
+          elasticsearch.delete_index index_name
+        end
+        unless index and elasticsearch.index_exists(index_name)
+          index_name = create_index(elasticsearch, type, groups, [])
+          log.debug "Indexing documents for #{type} into #{index_name.inspect}"
+          index_documents elasticsearch, tika, type, index_name, groups
+          Indexes.instance.set_status index_name, :valid
+        else
+          log.info "Using persisted index: #{index_name}"
+        end
+      end
+    end
+  end
 end
 
 ##
-# set up parser based on config
-def setup_parser(client, config)
+# Setup delta handling based on configuration
+##
+def setup_delta_handling(elasticsearch, tika, config)
   if config[:automatic_index_updates]
     handler = MuSearch::AutomaticUpdateHandler.new({
                                                      logger: SinatraTemplate::Utils.log,
-                                                     elastic_client: client,
+                                                     elastic_client: elasticsearch,
+                                                     tika_client: tika,
                                                      attachment_path_base: config[:attachments_path_base],
                                                      type_definitions: config[:type_definitions],
                                                      wait_interval: config[:update_wait_interval_minutes],
@@ -69,60 +92,29 @@ def setup_parser(client, config)
                                                         number_of_threads: config[:number_of_threads]
                                                       })
   end
-  delta_parser = MuSearch::DeltaHandler.new({
+
+  delta_handler = MuSearch::DeltaHandler.new({
                                       update_handler: handler,
                                       logger: SinatraTemplate::Utils.log,
                                       search_configuration: { "types" => config[:index_config] }
                                     })
-  set :delta_parser, delta_parser
+  delta_handler
 end
 
-
-def setup_indexes(client)
-    # hardcoded pipeline names (for now)
-  client.create_attachment_pipeline "attachment", "data"
-  client.create_attachment_array_pipeline "attachment_array", "data"
-
-  if settings.persist_indexes
-    log.info "Loading persisted indexes"
-    load_persisted_indexes settings.index_config
-  else
-    destroy_persisted_indexes client
-  end
-
-  settings.master_mutex.synchronize do
-    settings.eager_indexing_groups.each do |groups|
-      settings.type_definitions.keys.each do |type|
-        index = get_matching_index_name type, groups, []
-        index_name = index ? index[:index] : nil
-        if !(settings.persist_indexes) and index and client.index_exists(index_name)
-          log.info "deleting index for type #{type} - #{index_name}."
-          client.delete_index index_name
-        end
-        unless index and client.index_exists(index_name)
-          index_name = create_index(client, type, groups, [])
-          log.debug "Indexing documents for #{type} into #{index_name.inspect}"
-          index_documents client, type, index_name, groups
-          Indexes.instance.set_status index_name, :valid
-        else
-          log.info "Using persisted index: #{index_name}"
-        end
-      end
-    end
-  end
-end
-
-
-# Configures the system and makes sure everything is up.  Heavily
-# relies on configure_settings.
-#
-# TODO: get attachment pipeline names from configuration
+##
+# Configures the system and makes sure everything is up.
+##
 configure do
-  configuration = configure_settings
+  set :protection, :except => [:json_csrf]
+  set :dev, (ENV['RACK_ENV'] == 'development')
 
-  client = Elastic.new(host: 'elasticsearch', port: 9200)
+  configuration = MuSearch::ConfigParser.parse('/config/config.json')
+  set configuration
 
-  while !client.up
+  tika = Tika.new(host: 'tika', port: 9998)
+  elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200)
+
+  while !elasticsearch.up
     log.info "...waiting for elasticsearch..."
     sleep 1
   end
@@ -132,15 +124,17 @@ configure do
     sleep 1
   end
 
-  setup_indexes(client)
-  setup_parser(client, configuration)
+  setup_indexes elasticsearch, tika
+  delta_handler = setup_delta_handling elasticsearch, tika, configuration
+  set :delta_handler, delta_handler
 
   if settings.dev
     listener = Listen.to('/config/') do |modified, added, removed|
       if modified.include? '/config/config.json'
         log.info 'Reloading configuration'
-        destroy_existing_indexes client
-        configure_settings
+        destroy_existing_indexes elasticsearch
+        configuration = MuSearch::ConfigParser.parse('/config/config.json')
+        set configuration
         log.info '== Configuration reloaded'
       end
     end
@@ -148,7 +142,6 @@ configure do
     listener.start
   end
 end
-
 
 # Provides the type which matches the given path based on the supplied
 # configuration.
@@ -332,12 +325,14 @@ get "/:path/search" do |path|
   log.debug "SEARCH Got allowed groups #{groups}"
 
   client = Elastic.new(host: 'elasticsearch', port: 9200)
+  tika = Tika.new(host: 'tika', port: 9998)
+
   type = get_type_from_path path
   collapse_uuids = (params["collapse_uuids"] == "t")
 
   log.debug "SEARCH Found type #{type}"
 
-  index_names = get_or_create_indexes client, type
+  index_names = get_or_create_indexes client, tika, type
 
   log.debug "SEARCH Found indexes #{index_names}"
 
@@ -382,11 +377,12 @@ get "/:path/search" do |path|
     es_query["aggs"] = { "type_count" => { "cardinality" => { "field" => "uuid" } } }
   end
 
-  # hard-coded example
-  # question: how to specify which fields are included/excluded?
-  # or should we simply exclude all attachment fields?
+  # Exclude all attachment fields for now
+  attachments = settings.type_definitions[type]["properties"].select {|key, val|
+    val.is_a?(Hash) && val["attachment_pipeline"]
+  }
   es_query["_source"] = {
-    excludes: ["data","attachment"]
+    excludes: attachments.keys
   }
 
   # while Indexes.instance.status index == :updating
@@ -446,7 +442,7 @@ end
 # Processes an update from the delta system. See MuSearch::DeltaHandler and MuSearch::UpdateHandler for more info
 post "/update" do
   log.debug "Received delta update #{@json_body}"
-  settings.delta_parser.parse_deltas(@json_body)
+  settings.delta_handler.parse_deltas(@json_body)
   { message: "Thanks for all the updates." }.to_json
 end
 

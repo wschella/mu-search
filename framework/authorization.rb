@@ -405,7 +405,7 @@ end
 
 def get_request_index_names type
   indexes = get_request_indexes type
-  indexes ? indexes.map { |index| index[:index] } : []    
+  indexes ? indexes.map { |index| index[:index] } : []
 end
 
 
@@ -472,10 +472,12 @@ def get_allowed_groups
   allowed_groups_s = request.env["HTTP_MU_AUTH_ALLOWED_GROUPS"]
   if allowed_groups_s.nil? || allowed_groups_s.length == 0
     # TODO: this isn't very clean and relies on ruby-template internals
-    response = query("ASK {?s ?p ?o}")
+    # - Send simple query to mu-auth
+    query("ASK {?s ?p ?o}")
+    # - Parse allowed groups from mu-ruby-template internals
     allowed_groups = JSON.parse(RequestStore.store[:mu_auth_allowed_groups])
   else
-    allowed_groups =  JSON.parse(allowed_groups_s)
+    allowed_groups = JSON.parse(allowed_groups_s)
   end
   return sort_groups(allowed_groups)
 end
@@ -595,7 +597,7 @@ end
 #
 # WARNING: a quick bug fix has introduced some naming ambiguity
 # between indexes and indexs_name(s)
-def get_or_create_indexes client, type
+def get_or_create_indexes client, tika_client, type
   # I doubt this takes care of additive indexes <-- this was from
   # experimentation, this code itself seems correct...
 
@@ -657,7 +659,7 @@ def get_or_create_indexes client, type
         Indexes.instance.mutex(index_name).synchronize do
           begin
             clear_index client, index_name
-            index_documents client, type, index_name, index[:allowed_groups]
+            index_documents client, tika_client, type, index_name, index[:allowed_groups]
             client.refresh_index index_name
             Indexes.instance.set_status index_name, :valid
           rescue

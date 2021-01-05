@@ -43,11 +43,8 @@ end
 # Documents are indexed in batches, thereby lowering the load on
 # ElasticSearch.
 #
-def index_documents client, type, index, allowed_groups = nil
+def index_documents client, tika_client, type, index, allowed_groups = nil
   log.debug "Allowed groups in index #{allowed_groups}"
-
-  count_list = [] # for reporting
-
   type_def = settings.type_definitions[type]
 
   if is_multiple_type?(type_def)

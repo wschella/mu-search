@@ -1,10 +1,14 @@
 # mu-search
 
+The Elasticsearch Docker image requires a lot of memory. This can be set locally:
+
 A component to integrate [authorization-aware](https://github.com/mu-semtech/mu-authorization) full-text search into a [mu.semte.ch stack](https://github.com/mu-semtech/mu-project) using [Elasticsearch](https://www.elastic.co/).
+
+## WARNING: You are looking at a work-in-progress branch with a potentially unstable API.
 
 ## Tutorials
 ### Add mu-search to a stack
-The mu-search service is based on Elasticsearch. Since the Elasticsearch docker image requires a lot of memory, increase the maximum on your system by executing the following command:
+The mu-search service uses Elasticsearch as a backend. Since the Elasticsearch docker image requires a lot of memory, increase the maximum on your system by executing the following command:
 
 ```bash
 sysctl -w vm.max_map_count=262144
@@ -24,6 +28,9 @@ services:
     image: semtech/mu-search-elastic-backend:1.0.0
     volumes:
       - ./data/elasticsearch/:/usr/share/elasticsearch/data
+    environment:
+      - discovery.type=single-node
+
 ```
 
 The indices will be persisted in `./data/elasticsearch`. The `search` service needs to be linked to an instance of the [mu-authorization](https://github.com/mu-semtech/mu-authorization) service.
@@ -166,7 +173,20 @@ This guide explains how to make the content of files attached to a project resou
 
 This guide assumes you have already integrated mu-search in your application and configured an index for resources of type `schema:Project`.
 
-First, mount the folder containing the files to be indexed in `/data` by adding a mounted volume on the mu-search service.
+For indexing files mu-search requires a Tika server to extract the content. Add the `tika` service next to the `search` and `elasticsearch` services in `docker-compose.yml`:
+```yml
+services:
+  search:
+    ...
+  elasticsearch:
+    ...
+  tika:
+    image: apache/tika:1.25-full
+```
+
+Next, add the following mounted volumes to the mu-search service in `docker-compose.yml`:
+- `/data`: folder containing the files to be indexed
+- `/cache`: folder to persist Tika's search cache
 
 ```yml
 services:
@@ -175,9 +195,10 @@ services:
     volumes:
       - ./config/search:/config
       - ./data/files:/data
+      - ./data/search/cache:/cache
 ```
 
-Next, add a property `files` in the `project` type index configuration. The property `files` will hold the contents of the files.
+Next, add a property `files` in the `project` type index configuration. The property `files` will hold the content and metadata of the files.
 
 ```javascript
 {
@@ -208,12 +229,12 @@ Recreate the mu-search service using
 docker-compose up -d
 ```
 
-After reindex has completed, each indexed project will now contain a property `files` holding the content of the files linked to the project via `dct:hasPart/^nie:dataSource`.
+After reindex has completed, each indexed project will now contain a property `files` holding the content and metadata of the files linked to the project via `dct:hasPart/^nie:dataSource`.
 
-Searching is done on the defined field name, `files` in this case, as on any other field:
+Searching the file's content is done using the nested property `content` on the defined field name, `files` in this case:
 
 ```
-GET /documents/search?filter\[files\]=open-source"
+GET /documents/search?filter[files.content]=open-source"
 ```
 
 ### How to inspect the content of a search index
@@ -387,9 +408,7 @@ In the example below the document's creator is nested in the `author` property o
 ```
 
 ##### File content property
-To make the content of a file searchable, it needs to be indexed as a property in a search index. Basic indexing of PDF, Word etc. files is provided using [Elasticsearch's Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html). Note that this is under development and liable to change.
-
-The plugin is already installed in the [mu-semtech/search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) image. A default ingest pipeline named `attachment` is created on startup.
+To make the content of a file searchable, it needs to be indexed as a property in a search index. Basic indexing of PDF, Word etc. files is provided using [Elasticsearch's Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html) and a local [Apache Tika](https://tika.apache.org/) instance. The plugin is already installed in the [mu-semtech/search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) image while the Tika server is running inside the mu-search container. A default ingest pipeline named `attachment` is created on startup of the mu-search service. Note that this is under development and liable to change.
 
 Defining a property to index the content of a file requires the following keys:
 - **via** : mapping of the RDF predicate (path) that relates the resource with the file(s) to index. The file URI the predicate path leads to must have a URI starting with `share://` indicating the location of the file. E.g. `<share://path/to/your/file.pdf>`.
@@ -418,6 +437,37 @@ The example below adds a property `files` in the `project` type index configurat
     ]
 }
 ```
+
+For each file retrieved through the `via`-definition, the Tika-processing results in an object containing the extracted text (as `content`), as well as other extracted metadata (in the future). Such object may look like this:
+
+```javascript
+{
+  content: "Extracted text here"
+}
+```
+
+These objects are structured in the same way as the `attachment` objects resulting from the [Elasticsearch's Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html). Keep in mind that this implies you need to specify the path to a specific property of the attachment object when defining an Elasticsearch mapping. E.g. mapping the file's content for the `files` field from the example above may look as follows:
+
+```javascript
+{
+  "types": [
+    {
+      "type": "project",
+      "on_path": "projects",
+      ...
+      "mappings" : {
+        "name" : { "type" : "text" },
+        "files.content" : { "type" : "text" }
+      }
+    },
+    // other type definitions
+  ]
+}
+```
+
+Currently, only indexing of local files is supported. The files' logical path as well as other metadata is expected to be in the format specified by the [file-service](https://github.com/mu-semtech/file-service#data-model). Files must be present in the Docker volume `/data` inside the container.
+
+Attachments processed by Tika are cached in the directory `/cache` (by SHA256 of the file contents). This must be defined as a shared volume for the cache to be persistent.
 
 See also "How to specify a file's content as property".
 
@@ -567,9 +617,9 @@ The content of the `mappings` object is not elaborated here but can be found in 
 ### Index options
 In the base scenario, indexes are created on an as-needed basis, whenever a new search profile (authorization rights and data type) is received. The first search query for a new search profile may therefore take more time to complete, because the index still needs to be built. Indexes can be manually re-indexed by triggering the `POST /:type/index` endpoint (see [below](#api)).
 
-All created indexes are stored in the triplestore in the `<http://mu.semte.ch/authorization>` graph.
-
 #### Index metadata in the triple store
+When an index is created, it is registered in the triplestore in the `<http://mu.semte.ch/authorization>` graph.
+
 [To be completed... describe used model in the triplestore]
 
 #### Persistent indexes
@@ -657,6 +707,9 @@ Partial index updates are enabled by setting the `automatic_index_updates` flag 
 }
 ```
 
+### Searching
+
+
 ### API
 This section describes the REST API provided by mu-search.
 
@@ -684,6 +737,17 @@ To search for `document`s on multiple fields, combined with 'OR':
 
 ```
 GET /documents/search?filter[name,description]=fish
+```
+
+##### Searching in a file property
+To search for a field indexing a file, a specific property of the resulting attachment object must be specified as filter key using the `.`-notation.
+
+Currently the following properties are available on an attachment object:
+- `content` : text content of the file
+
+For example, for a property `attachment` indexing a file, searching the content of the file is done using the following filter query:
+```
+GET /documents/search?filter\[attachment.content\]=Adobe"
 ```
 
 ##### Supported search methods

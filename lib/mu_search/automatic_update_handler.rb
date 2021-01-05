@@ -12,10 +12,11 @@ module MuSearch
 
     ##
     # creates an automatic update handler
-    def initialize(elastic_client:, type_definitions:, attachment_path_base:, **args)
+    def initialize(elastic_client:, tika_client:, type_definitions:, attachment_path_base:, **args)
       @client = elastic_client
       @type_definitions = type_definitions
       @attachment_path_base = attachment_path_base
+      @tika_client = tika_client
       super(**args)
     end
 
@@ -40,31 +41,23 @@ module MuSearch
         indexes.each do |key, index|
           allowed_groups = index[:allowed_groups]
           sparql_client = build_sparql_client(allowed_groups)
-          document_builder = DocumentBuilder.new(sparql_client: sparql_client, attachment_path_base: @attachment_path_base, logger: @logger)
+          document_builder = DocumentBuilder.new(
+            tika_client: @tika_client,
+            sparql_client: sparql_client,
+            attachment_path_base: @attachment_path_base,
+            logger: @logger
+          )
           @logger.debug "Got allowed groups for updated_document_all_types #{allowed_groups}"
           rdf_type = @type_definitions.dig(index_type, "rdf_type")
           @logger.debug "Got RDF type for updated_document_all_types #{rdf_type}"
           if document_exists_for(sparql_client, document_id, rdf_type)
             @logger.debug "Our current index knows that #{document_id} is of type #{rdf_type} based on allowed groups #{allowed_groups}"
             properties = @type_definitions.dig(index_type, "properties")
-            document, attachment_pipeline = document_builder.fetch_document_to_index(
-                        uri: document_id,
-                        properties: properties)
+            document = document_builder.fetch_document_to_index(uri: document_id, properties: properties)
             document_for_reporting = document.clone
             document_for_reporting["data"] = document_for_reporting["data"] ? document_for_reporting["data"].length : "none"
             @logger.debug "Fetched document to index is #{document_for_reporting}"
-            if attachment_pipeline
-              @logger.debug "Document to update has attachment pipeline"
-              begin
-                @client.upload_attachment index[:index], document_id, attachment_pipeline, document
-                @logger.debug "Managed to upload attachment for #{document_id}"
-              rescue
-                @logger.warn "Could not upload attachment #{document_id}"
-                @client.upsert_document index[:index], document_id, document
-              end
-            else
-              @client.upsert_document index[:index], document_id, document
-            end
+            @client.upsert_document index[:index], document_id, document
           else
             @logger.info "AUTOMATIC UPDATE: Not Authorized."
           end
@@ -83,6 +76,7 @@ module MuSearch
         indexes = Indexes.instance.get_indexes(index_type)
         indexes.each do |key, index|
           allowed_groups = index[:allowed_groups]
+          sparql_client = build_sparql_client(allowed_groups)
           type = @type_definitions.dig(index_type, "rdf_type")
           if document_exists_for(sparql_client, document_id, type)
             @logger.debug "Not deleting document #{document_id} from #{index[:index]}, it still exists"

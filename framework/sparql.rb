@@ -1,5 +1,4 @@
 
-
 # Executes a query directly on the database.  In this setting, it
 # means we pass the mu-auth-sudo header.
 #
@@ -8,7 +7,6 @@
 def direct_query query_string, retries = 6
   MuSearch::SPARQL.direct_query(query_string, retries)
 end
-
 
 # Verifies whether or not the SPARQL endpoint is up.  Tries to execute
 # an ASK query for any triple and outputs positively if the endpoint
@@ -21,3 +19,5 @@ def sparql_up
     false
   end
 end
+
+
