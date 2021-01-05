@@ -318,6 +318,7 @@ class Elastic
           @logger.warn("ELASTICSEARCH") { "Failed to run request #{uri}. Max number of retries reached." }
           raise result
         else
+          @logger.info("ELASTICSEARCH") { "Failed to run request #{uri}. Max number of retries reached." }
           result
         end
       else
@@ -353,7 +354,7 @@ class Elastic
     else
       @logger.info("ELASTICSEARCH") { "Failed to run request #{uri}" }
       @logger.debug("ELASTICSEARCH") { "Request body (trimmed): #{req.body.to_s[0...1024]}" }
-      @logger.debug("ELASTICSEARCH") { "Response: #{result.inspect}" }
+      @logger.debug("ELASTICSEARCH") { "Response: #{res.inspect}" }
       res
     end
   end

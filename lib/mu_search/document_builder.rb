@@ -145,6 +145,8 @@ SPARQL
           text_content = @tika.extract_text file_path, blob
           if text_content.nil?
             @logger.info("TIKA") { "Received empty result from Tika for file #{file_path}. File content will not be indexed." }
+            # write emtpy file to make cache hit on next run
+            File.open(cached_file_path, "w") {}
           else
             @logger.debug("TIKA") { "Extracting text from #{file_path} and storing result in #{cached_file_path}" }
             File.open(cached_file_path, "w") do |file|

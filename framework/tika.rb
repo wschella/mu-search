@@ -19,18 +19,16 @@ class Tika
     req["Accept"] = "text/plain"
     req["Content-Type"] = mime_type unless mime_type.nil?
     req.body = blob
-    result = run(uri, req)
+    resp = run(uri, req)
 
-    if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
-      if result.kind_of?(Net::HTTPUnprocessableEntity)
-        @logger.info("TIKA") { "Tika returned [#{result.code} #{result.msg}] to extract text for file #{file_path}. The file may be encrypted. Check the Tika logs for additional info." }
-        nil
-      else
-        @logger.debug("TIKA") { "Response: #{result.inspect}" }
-        raise "Tika returned [#{result.code} #{result.msg}] to extract text for file #{file_path}. Check the Tika logs for additional info."
-      end
+    if resp.is_a? Net::HTTPSuccess
+      resp.body
+    elsif resp.is_a? Net::HTTPUnprocessableEntity
+      @logger.warn("TIKA") { "Tika returned [#{resp.code} #{resp.msg}] to extract text for file #{file_path}. The file may be encrypted. Check the Tika logs for additional info." }
+      nil
     else
-      result
+      @logger.error("TIKA") { "Failed to extract text for file #{file_path}.\nPUT #{uri}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      raise "Tika returned [#{resp.code} #{resp.msg}] to extract text for file #{file_path}. Check the Tika logs for additional info."
     end
   end
 
@@ -44,18 +42,16 @@ class Tika
     req = Net::HTTP::Put.new(uri)
     req["Accept"] = "application/json"
     req.body = blob
-    result = run(uri, req)
+    resp = run(uri, req)
 
-    if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
-      if result.kind_of?(Net::HTTPUnprocessableEntity)
-        @logger.info("TIKA") { "Tika returned [#{result.code} #{result.msg}] to extract metadata for file #{file_path}. The file may be encrypted. Check the Tika logs for additional info." }
-        nil
-      else
-        @logger.debug("TIKA") { "Response: #{result.inspect}" }
-        raise "Tika returned [#{result.code} #{result.msg}] to extract metadata for file #{file_path}. Check the Tika logs for additional info."
-      end
+    if resp.is_a? Net::HTTPSuccess
+      resp.body
+    elsif resp.is_a? Net::HTTPUnprocessableEntity
+      @logger.warn("TIKA") { "Tika returned [#{resp.code} #{resp.msg}] to extract metadata for file #{file_path}. The file may be encrypted. Check the Tika logs for additional info." }
+      nil
     else
-      result
+      @logger.error("TIKA") { "Failed to extract metadata for file #{file_path}.\nPUT #{uri}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      raise "Tika returned [#{resp.code} #{resp.msg}] to extract text for file #{file_path}. Check the Tika logs for additional info."
     end
   end
 
@@ -71,13 +67,13 @@ class Tika
     req = Net::HTTP::Put.new(uri)
     req["Content-Disposition"] = "attachment; filename=#{File.basename(file_path)}"
     req.body = blob
-    result = run(uri, req)
+    resp = run(uri, req)
 
-    if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
-      @logger.warn("TIKA") { "Unable to determine mimetype of #{file_path}. Tika returned [#{result.code} #{result.msg}]." }
-      nil
+    if resp.is_a? Net::HTTPSuccess
+      resp.body
     else
-      result
+      @logger.warn("TIKA") { "Unable to determine mimetype of #{file_path}. Tika returned [#{resp.code} #{resp.msg}]." }
+      nil
     end
   end
 
@@ -87,16 +83,19 @@ class Tika
   #   - req: The request object
   #   - retries: Max number of retries
   #
-  # Responds with the body on success, or the failure value otherwise.
-  # The method only logs limited info on purpose. Additional logging about the error
-  # that occurred is the responsibility of the consumer.
+  # Returns the HTTP response.
+  #
+  # Note: the method only logs limited info on purpose.
+  # Additional logging about the error that occurred
+  # is the responsibility of the consumer.
   def run(uri, req, retries = 6)
     def run_rescue(uri, req, retries, result = nil)
       if retries == 0
-        @logger.warn("TIKA") { "Failed to run request #{uri}. Max number of retries reached." }
-        if result.kind_of? Exception
+        if result.is_a? Exception
+          @logger.warn("TIKA") { "Failed to run request #{uri}. Max number of retries reached." }
           raise result
         else
+          @logger.info("TIKA") { "Failed to run request #{uri}. Max number of retries reached." }
           result
         end
       else
@@ -117,16 +116,18 @@ class Tika
     end
 
     case res
-    when Net::HTTPSuccess, Net::HTTPRedirection
+    when Net::HTTPSuccess, Net::HTTPRedirection # response code 2xx or 3xx
       # Ruby doesn't use the encoding specified in HTTP headers (https://bugs.ruby-lang.org/issues/2567#note-3)
       content_type = res["CONTENT-TYPE"]
       if res.body and content_type and content_type.downcase.include?("charset=utf-8")
         res.body.force_encoding("utf-8")
       end
-      if req.method == "HEAD" then res else res.body end
+      res
     when Net::HTTPTooManyRequests
       run_rescue(uri, req, retries, res)
     else
+      @logger.info("TIKA") { "Failed to run request #{uri}" }
+      @logger.debug("TIKA") { "Response: #{res.code} #{res.msg}\n#{res.body}" }
       res
     end
   end
