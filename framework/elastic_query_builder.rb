@@ -39,8 +39,6 @@ class ElasticQueryBuilder
     @es_query
   end
 
-  private
-
   # Constructs an Elasticsearch query
   # based on the filter parameters and type definition
   def build_filter
@@ -59,6 +57,68 @@ class ElasticQueryBuilder
     end
     self
   end
+
+  # Converts a param like "sort[:mode:field]=order"
+  # to an array of objects like { <field>: { "order": <order>, "mode": <mode> }
+  #
+  # Order must be one of "asc", "desc"
+  # Mode must be one of "min", "max", "sum", "avg", "median"
+  #
+  # TODO are multiple sort fields supported?
+  def build_sort
+    if @sort
+      sort = @sort.map do |key, order|
+        mode, fields = split_filter key
+        ensure_single_field_for "sort", fields do |field|
+          if mode.nil?
+            { field => order }
+          else
+            { field => { order: order, mode: mode } }
+          end
+        end
+      end
+      es_query["sort"] = sort
+    end
+    self
+  end
+
+  def build_pagination
+    @es_query["from"] = @page_number * @page_size
+    @es_query["size"] = @page_size
+    self
+  end
+
+  def build_collapse
+    if @collapse_uuids
+      @es_query["collapse"] = { field: "uuid" }
+      @es_query["aggs"] = {
+        "type_count" => {
+          "cardinality" => {
+            "field" => "uuid"
+          }
+        }
+      }
+    end
+    self
+  end
+
+  # Excludes fields containing file contents
+  # from the _source field in the search results
+  #
+  # TODO correctly handle nested objects
+  # TODO correctly handle composite types
+  def build_source_fields
+    file_fields = @type_def["properties"].select do |key, val|
+      val.is_a?(Hash) && val["attachment_pipeline"]
+    end
+    @es_query["_source"] = {
+      excludes: file_fields.keys
+    }
+    self
+  end
+
+
+  private
 
   # Mapping of filter params to the Elasticseach Query DSL
   # See https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
@@ -194,65 +254,6 @@ class ElasticQueryBuilder
     end
   end
 
-  # Converts a param like "sort[:mode:field]=order"
-  # to an array of objects like { <field>: { "order": <order>, "mode": <mode> }
-  #
-  # Order must be one of "asc", "desc"
-  # Mode must be one of "min", "max", "sum", "avg", "median"
-  #
-  # TODO are multiple sort fields supported?
-  def build_sort
-    if @sort
-      sort = @sort.map do |key, order|
-        mode, fields = split_filter key
-        ensure_single_field_for "sort", fields do |field|
-          if mode.nil?
-            { field => order }
-          else
-            { field => { order: order, mode: mode } }
-          end
-        end
-      end
-      es_query["sort"] = sort
-    end
-    self
-  end
-
-  def build_pagination
-    @es_query["from"] = @page_number * @page_size
-    @es_query["size"] = @page_size
-    self
-  end
-
-  def build_collapse
-    if @collapse_uuids
-      @es_query["collapse"] = { field: "uuid" }
-      @es_query["aggs"] = {
-        "type_count" => {
-          "cardinality" => {
-            "field" => "uuid"
-          }
-        }
-      }
-    end
-    self
-  end
-
-  # Excludes fields containing file contents
-  # from the _source field in the search results
-  #
-  # TODO correctly handle nested objects
-  # TODO correctly handle composite types
-  def build_source_fields
-    file_fields = @type_def["properties"].select do |key, val|
-      val.is_a?(Hash) && val["attachment_pipeline"]
-    end
-    @es_query["_source"] = {
-      excludes: file_fields.keys
-    }
-    self
-  end
-
   # Utility to split the optional modifier from a filter key.
   # Modifiers prefix a filter key and are surrounded with ':'
   #   - key: the filter key to split
@@ -273,7 +274,7 @@ class ElasticQueryBuilder
 
     fields = fields_s.split(",")
 
-    modifier, fields
+    [modifier, fields]
   end
 
   # Ensure fields contains only a single element and yields it.

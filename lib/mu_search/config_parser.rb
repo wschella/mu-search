@@ -45,11 +45,6 @@ module MuSearch
         config[:eager_indexing_groups]  = json_config["eager_indexing_groups"]
       end
 
-      config[:type_paths] = Hash[
-        json_config["types"].collect do |type_def|
-          [type_def["on_path"], type_def["type"]]
-        end
-      ]
       config[:type_definitions] = Hash[
         json_config["types"].collect do |type_def|
           [type_def["type"], type_def]

@@ -3,11 +3,14 @@
 class Logger
   def add(severity, message = nil, progname = nil)
     severity ||= UNKNOWN
+    if @logdev.nil?
+      return true
+    end
     if progname.nil?
       progname = @progname
     end
     # Monkey patch: take log level per scope into account
-    if @logdev.nil? or !in_scope(progname, severity)
+    unless in_scope? progname, severity
       return true
     end
     if message.nil?
@@ -23,7 +26,7 @@ class Logger
     true
   end
 
-  def in_scope progname, severity
+  def in_scope? progname, severity
     if progname
       severity >= scope_log_level(progname)
     else

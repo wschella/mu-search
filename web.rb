@@ -28,10 +28,10 @@ require_relative 'framework/jsonapi.rb'
 # WEBrick setup
 ##
 max_uri_length = ENV["MAX_REQUEST_URI_LENGTH"].to_i > 0 ? ENV["MAX_REQUEST_URI_LENGTH"].to_i : 10240
-log.info "Set WEBrick MAX_URI_LENGTH to #{max_uri_length}"
+log.info("SETUP") { "Set WEBrick MAX_URI_LENGTH to #{max_uri_length}" }
 WEBrick::HTTPRequest.const_set("MAX_URI_LENGTH", max_uri_length)
 max_header_length = ENV["MAX_REQUEST_HEADER_LENGTH"].to_i > 0 ? ENV["MAX_REQUEST_HEADER_LENGTH"].to_i : 1024000
-log.info "Set WEBrick MAX_HEADER_LENGTH to #{max_header_length}"
+log.info("SETUP") { "Set WEBrick MAX_HEADER_LENGTH to #{max_header_length}" }
 WEBrick::HTTPRequest.const_set("MAX_HEADER_LENGTH", max_header_length)
 
 SinatraTemplate::Utils.log.formatter = proc do |severity, datetime, progname, msg|
@@ -105,12 +105,12 @@ configure do
   set :elasticsearch, elasticsearch
 
   while !elasticsearch.up?
-    log.info "...waiting for elasticsearch..."
+    log.info("SETUP") { "...waiting for elasticsearch..." }
     sleep 1
   end
 
   while !MuSearch::SPARQL.up? do
-    log.info "...waiting for SPARQL endpoint..."
+    log.info("SETUP") { "...waiting for SPARQL endpoint..." }
     sleep 1
   end
 
@@ -149,25 +149,23 @@ get "/:path/search" do |path|
 
   elasticsearch = settings.elasticsearch
   index_manager = settings.index_manager
-  type_def = settings.type_paths[path]
+  type_def = settings.type_definitions.values.find { |type_def| type_def["on_path"] == path }
 
   begin
     raise ArgumentError, "No search configuration found for path #{path}" if type_def.nil?
 
-    indexes = index_manager
-                .fetch_indexes(type_def["type"], allowed_groups)
-                .map { |index| index.name }
+    indexes = index_manager.fetch_indexes(type_def["type"], allowed_groups)
 
-    search_configuration = settings.select do |key|
-      [:common_terms_cutoff_frequency].include? key
-    end
+    search_configuration = {
+      common_terms_cutoff_frequency: settings.common_terms_cutoff_frequency
+    }
     query_builder = ElasticQueryBuilder.new(
       logger: SinatraTemplate::Utils.log,
       type_definition: type_def,
-      filter: params["filter"]
-      page: params["page"]
-      sort: params["sort"]
-      collapse_uuids: params["collapse_uuids"]
+      filter: params["filter"],
+      page: params["page"],
+      sort: params["sort"],
+      collapse_uuids: params["collapse_uuids"],
       search_configuration: search_configuration)
 
     if indexes.length == 0
@@ -182,20 +180,22 @@ get "/:path/search" do |path|
       end
       log.debug("SEARCH") { "All indexes are up to date" }
 
-      search_results = elasticsearch.search_documents indexes: indexes, query: search_query
+      index_names = indexes.map { |index| index.name }
+      search_results = elasticsearch.search_documents indexes: index_names, query: search_query
       count =
         if query_builder.collapse_uuids
           search_results["aggregations"]["type_count"]["value"]
         else
           count_query = query_builder.build_count_query
-          elasticsearch.count_documents indexes: indexes, query: count_query
+          elasticsearch.count_documents indexes: index_names, query: count_query
         end
       log.debug("SEARCH") { "Found #{count} results" }
-      format_search_results(type_def, count, page, size, search_results).to_json
+      format_search_results(type_def, count, query_builder.page_number, query_builder.page_size, search_results).to_json
     end
   rescue ArgumentError => e
     error(e.message, 400)
   rescue StandardError => e
+    log.error("SEARCH") { e.full_message }
     error(e.inspect, 500)
   end
 end
@@ -216,7 +216,7 @@ if settings.enable_raw_dsl_endpoint
 
     elasticsearch = settings.elasticsearch
     index_manager = settings.index_manager
-    type_def = settings.type_paths[path]
+    type_def = settings.type_definitions.values.find { |type_def| type_def["on_path"] == path }
 
     @json_body["size"] ||= 10
     @json_body["from"] ||= 0
@@ -226,24 +226,24 @@ if settings.enable_raw_dsl_endpoint
     begin
       raise ArgumentError, "No search configuration found for path #{path}" if type_def.nil?
 
-      indexes = index_manager
-                  .fetch_indexes(type_def["type"], allowed_groups)
-                  .map { |index| index.name }
+      indexes = index_manager.fetch_indexes(type_def["type"], allowed_groups)
 
       if indexes.length == 0
         log.info("SEARCH") { "No indexes found to search in. Returning empty result" }
         format_search_results(type_def, 0, page_number, page_size, []).to_json
       else
         search_query = @json_body
-        search_results = elasticsearch.search_documents indexes: indexes, query: search_query
+        index_names = indexes.map { |index| index.name }
+        search_results = elasticsearch.search_documents indexes: index_names, query: search_query
         count_query = search_query.select { |key, _| key != "from" and key != "size" and key != "sort" }
-        count = elasticsearch.count_documents indexes: indexes, query: count_query
+        count = elasticsearch.count_documents indexes: index_names, query: count_query
         log.debug("SEARCH") { "Found #{count} results" }
         format_search_results(type_def, count, page_number, page_size, search_results).to_json
       end
     rescue ArgumentError => e
       error(e.message, 400)
     rescue StandardError => e
+      log.error("SEARCH") { e.full_message }
       error(e.inspect, 500)
     end
   end

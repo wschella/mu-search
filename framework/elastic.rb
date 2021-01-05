@@ -8,7 +8,7 @@ class Elastic
     @host = host
     @port = port
     @port_s = port.to_s
-    @logger
+    @logger = logger
   end
 
   # Checks whether or not ElasticSearch is up
@@ -17,10 +17,14 @@ class Elastic
   def up?
     uri = URI("http://#{@host}:#{@port_s}/_cluster/health")
     req = Net::HTTP::Get.new(uri)
-
     begin
-      result = JSON.parse run(uri, req)
-      result["status"] == "yellow" or result["status"] == "green"
+      resp = run(uri, req)
+      if resp.is_a? Net::HTTPSuccess
+        health = JSON.parse resp.body
+        health["status"] == "yellow" or health["status"] == "green"
+      else
+        false
+      end
     rescue
       false
     end
@@ -37,10 +41,10 @@ class Elastic
 
     begin
       resp = run(uri, req)
-      if resp.is_a? Net::HTTPSuccess ? true : false
-    rescue StandardError => error
+      resp.is_a?(Net::HTTPSuccess) ? true : false
+    rescue StandardError => e
       @logger.warn("ELASTICSEARCH") { "Failed to detect whether index #{index} exists. Assuming it doesn't." }
-      @logger.warn("ELASTICSEARCH") { error.full_message }
+      @logger.warn("ELASTICSEARCH") { e.full_message }
       false
     end
   end
