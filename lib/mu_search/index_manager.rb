@@ -528,8 +528,11 @@ SPARQL
 
     # Generate a unique name for an index based on the given type and allowed/used groups
     def generate_index_name type_name, sorted_allowed_groups, sorted_used_groups
-      # TODO does .to_json always return same serialization, independent of the order of the keys (group vs variables first)?
-      Digest::MD5.hexdigest (type_name + "-" + sorted_allowed_groups.map { |g| g.to_json }.join("-"))
+      groups = sorted_allowed_groups.map do |group|
+        # order keys of each group object alphabetically to ensure unique json serialization
+        Hash[ group.sort_by { |key, _| key } ].to_json
+      end
+      Digest::MD5.hexdigest (type_name + "-" + groups.join("-"))
     end
 
   end
