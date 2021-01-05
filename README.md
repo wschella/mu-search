@@ -4,8 +4,6 @@ The Elasticsearch Docker image requires a lot of memory. This can be set locally
 
 A component to integrate [authorization-aware](https://github.com/mu-semtech/mu-authorization) full-text search into a [mu.semte.ch stack](https://github.com/mu-semtech/mu-project) using [Elasticsearch](https://www.elastic.co/).
 
-## WARNING: You are looking at a work-in-progress branch with a potentially unstable API.
-
 ## Tutorials
 ### Add mu-search to a stack
 The mu-search service uses Elasticsearch as a backend. Since the Elasticsearch docker image requires a lot of memory, increase the maximum on your system by executing the following command:
