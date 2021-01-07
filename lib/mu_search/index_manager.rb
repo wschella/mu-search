@@ -285,7 +285,11 @@ module MuSearch
         type_definition = @configuration[:type_definitions][type_name]
         if type_definition
           mappings = type_definition["mappings"] || {}
-          settings = type_definition["settings"] || @configuration[:default_index_settings] || {} # TODO merge custom and default settings
+          mappings["properties"] = {} if mappings["properties"].nil?
+          # uuid must be configured as keyword to be able to collapse results
+          mappings["properties"]["uuid"] = { type: "keyword" }
+          # TODO deep merge custom and default settings
+          settings = type_definition["settings"] || @configuration[:default_index_settings] || {}
           @elasticsearch.create_index index_name, mappings, settings
         else
           raise "No type definition found in search config for type '#{type_name}'. Unable to create Elasticsearch index."
