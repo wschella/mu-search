@@ -77,7 +77,7 @@ class ElasticQueryBuilder
           end
         end
       end
-      es_query["sort"] = sort
+      @es_query["sort"] = sort
     end
     self
   end
