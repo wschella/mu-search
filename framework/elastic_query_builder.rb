@@ -64,7 +64,8 @@ class ElasticQueryBuilder
   # Order must be one of "asc", "desc"
   # Mode must be one of "min", "max", "sum", "avg", "median"
   #
-  # TODO are multiple sort fields supported?
+  # Multiple sort fields are supported by providing multiple sort params
+  # E.g. sort[title]=asc&sort[modified]=desc
   def build_sort
     if @sort
       sort = @sort.map do |key, order|

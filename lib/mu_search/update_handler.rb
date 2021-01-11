@@ -58,7 +58,6 @@ module MuSearch
     def add(subject, index_type, type)
       @mutex.synchronize do
         # Add subject to queue if an update for the same subject hasn't been scheduled before
-        # TODO make distinction between :update and :delete type
         if !@subject_map.has_key? subject
           @logger.debug("UPDATE HANDLER") { "Add update for subject <#{subject}> to queue" }
           @queue << { timestamp: DateTime.now, subject: subject, type: type}

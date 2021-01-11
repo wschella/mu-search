@@ -56,7 +56,7 @@ module MuSearch
             begin
               @elasticsearch.delete_document index.name, document_id
             rescue
-              # TODO check error and log warning if needed
+              # TODO check type of error and log warning if needed
               @logger.debug("UPDATE HANDLER") { "Failed to delete document #{document_id} from index #{index.name}" }
             end
           end
