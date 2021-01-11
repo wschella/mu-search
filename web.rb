@@ -144,8 +144,13 @@ end
 #
 # See README for more information about the filter syntax.
 get "/:path/search" do |path|
-  allowed_groups = get_allowed_groups_with_fallback
-  log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
+  begin
+    allowed_groups = get_allowed_groups_with_fallback
+    log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
+  rescue StandardError => e
+    log.error("AUTHORIZATION") { e.full_message }
+    error("Unable to determine authorization groups", 401)
+  end
 
   elasticsearch = settings.elasticsearch
   index_manager = settings.index_manager
@@ -211,8 +216,13 @@ end
 # This endpoint must be used with caution and explicitly enabled in the search config!
 if settings.enable_raw_dsl_endpoint
   post "/:path/search" do |path|
-    allowed_groups = get_allowed_groups_with_fallback
-    log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
+    begin
+      allowed_groups = get_allowed_groups_with_fallback
+      log.debug("AUTHORIZATION") { "Search request received allowed groups #{allowed_groups}" }
+    rescue StandardError => e
+      log.error("AUTHORIZATION") { e.full_message }
+      error("Unable to determine authorization groups", 401)
+    end
 
     elasticsearch = settings.elasticsearch
     index_manager = settings.index_manager
@@ -261,8 +271,13 @@ end
 #   Hence, on restart of mu-search, the index will be considered valid again.
 # - an invalidated index will be updated before executing a search query on it.
 post "/:path/index" do |path|
-  allowed_groups = get_allowed_groups
-  log.debug("AUTHORIZATION") { "Index update request received allowed groups: #{allowed_groups || 'none'}" }
+  begin
+    allowed_groups = get_allowed_groups
+    log.debug("AUTHORIZATION") { "Index update request received allowed groups #{allowed_groups || 'none'}" }
+  rescue StandardError => e
+    log.error("AUTHORIZATION") { e.full_message }
+    error("Unable to determine authorization groups", 401)
+  end
 
   index_type = path == "_all" ? nil : path
   index_manager = settings.index_manager
@@ -296,8 +311,13 @@ end
 #   Hence, on restart of mu-search, the index will be considered valid again.
 # - an invalidated index will be updated before executing a search query on it.
 post "/:path/invalidate" do |path|
-  allowed_groups = get_allowed_groups
-  log.debug("AUTHORIZATION") { "Index invalidation request received allowed groups: #{allowed_groups || 'none'}" }
+  begin
+    allowed_groups = get_allowed_groups
+    log.debug("AUTHORIZATION") { "Index invalidation request received allowed groups #{allowed_groups || 'none'}" }
+  rescue StandardError => e
+    log.error("AUTHORIZATION") { e.full_message }
+    error("Unable to determine authorization groups", 401)
+  end
 
   index_type = path == "_all" ? nil : path
   index_manager = settings.index_manager
@@ -327,8 +347,13 @@ end
 #
 # Note: a removed index will be recreated before executing a search query on it.
 delete "/:path" do |path|
-  allowed_groups = get_allowed_groups
-  log.debug("AUTHORIZATION") { "Index delete request received allowed groups: #{allowed_groups || 'none'}" }
+  begin
+    allowed_groups = get_allowed_groups
+    log.debug("AUTHORIZATION") { "Index delete request received allowed groups #{allowed_groups || 'none'}" }
+  rescue StandardError => e
+    log.error("AUTHORIZATION") { e.full_message }
+    error("Unable to determine authorization groups", 401)
+  end
 
   index_type = path == "_all" ? nil : path
   index_manager = settings.index_manager
