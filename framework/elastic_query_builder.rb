@@ -251,7 +251,7 @@ class ElasticQueryBuilder
         term
       end
     else
-      @logger.warn("SEARCH") { "Unsupported filter flag #{flag}. It will be ignored." }
+      raise ArgumentError, "Unsupported filter flag :#{flag}:"
     end
   end
 
