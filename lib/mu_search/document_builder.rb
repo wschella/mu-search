@@ -74,7 +74,7 @@ SPARQL
         when RDF::Literal::Decimal
           value.to_f
         when RDF::Literal::Boolean
-          value.to_s.downcase == "true"
+          value.true?
         when RDF::Literal::Time
           value.to_s
         when RDF::Literal::Date
