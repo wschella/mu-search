@@ -179,7 +179,7 @@ class ElasticQueryBuilder
           }
         }
       end
-    when "lte,gte", "lte,gt", "lt,gt", "lt,gte"
+    when "gte,lte", "gt,lte", "gt,lt", "gte,lt"
       ensure_single_field_for flag, fields do |field|
         flags = flag.split(",")
         values = value.split(",")
