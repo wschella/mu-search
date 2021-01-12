@@ -44,10 +44,6 @@ module MuSearch
 
     private
 
-    def log
-      @logger
-    end
-
     # Selects the value(s) for the given property of a resource
     # from the triplestore
     #   - uri: URI of the resource as a string
