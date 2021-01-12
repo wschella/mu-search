@@ -175,7 +175,7 @@ get "/:path/search" do |path|
 
     if indexes.length == 0
       log.info("SEARCH") { "No indexes found to search in. Returning empty result" }
-      format_search_results(type_def, 0, query_builder.page_number, query_builder.page_size, []).to_json
+      format_search_results(type_def["type"], 0, query_builder.page_number, query_builder.page_size, []).to_json
     else
       search_query = query_builder.build_search_query
 
@@ -195,7 +195,7 @@ get "/:path/search" do |path|
           elasticsearch.count_documents indexes: index_names, query: count_query
         end
       log.debug("SEARCH") { "Found #{count} results" }
-      format_search_results(type_def, count, query_builder.page_number, query_builder.page_size, search_results).to_json
+      format_search_results(type_def["type"], count, query_builder.page_number, query_builder.page_size, search_results).to_json
     end
   rescue ArgumentError => e
     error(e.message, 400)
@@ -240,7 +240,7 @@ if settings.enable_raw_dsl_endpoint
 
       if indexes.length == 0
         log.info("SEARCH") { "No indexes found to search in. Returning empty result" }
-        format_search_results(type_def, 0, page_number, page_size, []).to_json
+        format_search_results(type_def["type"], 0, page_number, page_size, []).to_json
       else
         search_query = @json_body
         index_names = indexes.map { |index| index.name }
@@ -248,7 +248,7 @@ if settings.enable_raw_dsl_endpoint
         count_query = search_query.select { |key, _| key != "from" and key != "size" and key != "sort" }
         count = elasticsearch.count_documents indexes: index_names, query: count_query
         log.debug("SEARCH") { "Found #{count} results" }
-        format_search_results(type_def, count, page_number, page_size, search_results).to_json
+        format_search_results(type_def["type"], count, page_number, page_size, search_results).to_json
       end
     rescue ArgumentError => e
       error(e.message, 400)
