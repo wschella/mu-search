@@ -21,10 +21,7 @@ module MuSearch
       properties["uuid"] = ["http://mu.semte.ch/vocabularies/core/uuid"] unless properties.has_key?("uuid")
 
       key_value_tuples = properties.collect do |key, prop_config|
-        query = make_property_query(uri, key, prop_config)
-        results = @sparql_client.query(query)
-        prop_values = results.collect { |result| result[key] }
-
+        prop_values = get_property_values(uri, key, prop_config)
         index_value = []
         if prop_config.is_a? Hash
           if prop_config["attachment_pipeline"] # file field
@@ -51,19 +48,22 @@ module MuSearch
       @logger
     end
 
-    # Constructs a SPARQL query which selects the given property of a resource
-    # and returns it bound to the given property key
+    # Selects the value(s) for the given property of a resource
+    # from the triplestore
     #   - uri: URI of the resource as a string
     #   - property_key: name of the variable to bind the result to
     #   - property_predicate: predicate (path) of the property to fetch
-    def make_property_query( uri, property_key, property_predicate )
+    def get_property_values( uri, property_key, property_predicate )
       predicate = property_predicate.is_a?(Hash) ? property_predicate["via"] : property_predicate
       predicate_s = MuSearch::SPARQL.make_predicate_string predicate
-      <<SPARQL
-    SELECT DISTINCT ?#{property_key} WHERE {
-      #{sparql_escape_uri(uri)} #{predicate_s} ?#{property_key}
+      prop_key_s = property_key.gsub(/[^a-zA-Z1-9]/, "")
+      query = <<SPARQL
+    SELECT DISTINCT ?#{prop_key_s} WHERE {
+      #{sparql_escape_uri(uri)} #{predicate_s} ?#{prop_key_s}
     }
 SPARQL
+      results = @sparql_client.query(query)
+      results.collect { |result| result[prop_key_s] }
     end
 
     # Get the array of values to index for a given SPARQL result set of simple values.
