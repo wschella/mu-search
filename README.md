@@ -122,7 +122,50 @@ docker-compose restart search
 Search indexes will be persisted in `./data/elasticsearch` folder and not be deleted on restart of the search service.
 
 ### How to prepare a search index on startup
-[To be completed... demonstrate usage of `eager_indexing_groups`]
+The search API provided by mu-search is authorization-aware. I.e. search results will only contain resources the user is allowed to access. To this end mu-search organises its search indexes per access right. Based on the user's allowed groups set on the incoming search requests, mu-search determines which indexes to search in.
+
+Indexes that don't exist yet will be created before the search operation is performed. Depending on the number of documents to index this may be a time-consuming operation.
+
+Mu-search allows to configure authorization groups for which the indexes need to be created on startup already. This will save time at the moment the first search query for that profile arrives.
+
+Configuration is done via the `eager_indexing_groups` in the search configuration file `./config/search/config.json`. The eager indexing groups are tightly related to the `GroupSpec`objects configured in [mu-authorization](https://github.com/mu-semtech/mu-authorization#groupspec).
+
+The `eager_indexing_groups` is an array of group specifications. Each group specification is defined by an array of objects in which each object consists of:
+- **name**: name of the group specification (`GroupSpec`) in mu-authorization
+- **variables**: array of string values used to construct the graph URI for the group. These variables should match the possible result values of the `vars` in case of an `AccessByQuery` access rule in the `GroupSpec`. In case of an `AlwaysAccessible` access rule, this should be an empty array.
+
+Each eager indexing group must always contain `{ "name": "clean", "variables": [] }`.
+
+In case additive search indexes are used, each eager indexing group will typically contain only 1 object. The indexes will be combined to match the user's allowed groups.
+
+#### Example: public data for unauthenticated users
+If the application only provides public data for unauthenticated users in the graph `http://mu.semte.ch/graphs/public`, the following eager indexing groups must be configured:
+
+```javascript
+[
+  [{"name": "clean", "variables": []}, {"name": "public", "variables" : []}]
+]
+```
+
+#### Example: data per organization unit
+If, next to the public data, data is organized per organization unit in graphs like `http://mu.semte.ch/graphs/<unit-name>`, the following eager indexing groups must be configured:
+
+```javascript
+[
+  [{"name": "clean", "variables": []}, {"name": "public", "variables" : []}],
+  [{"name": "clean", "variables": []}, {"name": "public", "variables" : []}, {"name": "organization-unit", "variables" : ["finance"]}],
+  [{"name": "clean", "variables": []}, {"name": "public", "variables" : []}, {"name": "organization-unit", "variables" : ["legal"]}]
+]
+```
+
+In case non-additive indexes are used, an eager indexing group must be provided for each possible combination (permutation) of groups. For example, if some users have access to the data of the finance department as well as the legal department, the example above must be extended with the following eager indexing group:
+
+```javascript
+[
+  ...,
+  [{"name": "clean", "variables": []}, {"name": "public", "variables" : []}, {"name": "organization-unit", "variables" : ["finance"]}, {"name": "organization-unit", "variables" : ["legal"]}]
+]
+```
 
 ### How to integrate mu-seach with delta's to update search indexes
 This how-to guide explains how to integrate mu-search with the delta-notification in order to automatically update search index entries when data in the triplestore is modified.
