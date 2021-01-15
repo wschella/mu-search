@@ -928,11 +928,43 @@ All options prefixed with (*) can also be configured using an UPPERCASED variant
 
 In development mode (setting the environment variable `RACK_ENV` to `development`), the application will listen for changes in `config.json`. Any change will trigger a complete reload of the full application, including deleting existing indexes, and building any default indexes specified in eager indexing. This behaviour overrules the `persist_indexes` flag.
 
+### Logging
+Log messages are logged in a specific scope. A different log level can be configured per scope via environment variables like `LOG_SCOPE_{scopeName}>`.
+
+E.g.
+```yml
+search:
+  environment:
+     LOG_SCOPE_TIKA: "warn"
+     LOG_SCOPE_DELTA: "debug"
+```
+
+The following scopes are known:
+* **SETUP**: system setup and initialization (default: `info`)
+* **INDEX_MGMT**: creation, updates and deletion of indexes (default: `info`)
+* **INDEXING**: indexing of documents (default: `info`)
+* **SEARCH**: execution of search queries (default: `warn`)
+* **TIKA**: extraction and indexing of file content using Tika (default: `warn`)
+* **ELASTICSEARCH**: all communication with Elasticsearch (default: `error`)
+* **AUTHORIZATION**: incoming access rights on requests (default: `warn`)
+* **DELTA**: handling of incoming delta's (default: `warn`)
+* **UPDATE_HANDLER**: processing of the updates triggered by delta's (default: `info`)
+
+The same log levels as the [mu-ruby-template](https://github.com/mu-semtech/mu-ruby-template) are available:
+* `debug`
+* `info`
+* `warn`
+* `error`
+* `fatal`
+
 ### Environment variables
 This section gives an overview of all options that are configurable via environment variables. The options that can be configured in the `config.json` file as well are not repeated here. This list contains options that can only be configured via environment variables.
 
 - **MAX_REQUEST_URI_LENGTH** : maximum length of an incoming request URL. Defaults to 10240.
 - **MAX_REQUEST_HEADER_LENGTH** : maximum length of the headers of an incoming request. Defaults to 1024000.
+- **MAXIMUM_FILE_SIZE** : maximum size in bytes of files to extract and index content from. Defaults to 209715200.
+- **ELASTIC_READ_TIMEOUT** : timeout in seconds of requests to Elasticsearch. Defaults to 180.
+
 ## Discussions
 ### Why a custom Elasticsearch docker image?
 The [mu-semtech/search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) is a custom Docker image based on the official Elasticsearch image. Providing a custom image allows better control on the version of Elasticsearch, currently v7.2.0, used in combination with the mu-search service.
