@@ -85,7 +85,7 @@ Search queries can now be sent to the `/search` endpoint. Make sure the user has
 
 ## How-to guides
 ### How to persist indexes on restart
-By default search indexes are deleted on (re)start of the mu-search service. This guide describes how to make sure search indexes are persisted on restart.
+By default search indexes are deleted on (re)start of the mu-search service. This guide describes how to make sure search indexes are persisted on restart. Obviously, this configuration is recommended on production environments.
 
 First, make sure the search indexes are written to a mounted volume my specifying a bind mount to `/usr/share/elasticsearch/data` on the Elasticsearch container.
 
@@ -136,7 +136,7 @@ The `eager_indexing_groups` is an array of group specifications. Each group spec
 
 Each eager indexing group must always contain `{ "name": "clean", "variables": [] }`.
 
-In case additive search indexes are used, each eager indexing group will typically contain only 1 object. The indexes will be combined to match the user's allowed groups.
+In case additive search indexes are used, each eager indexing group will be a singleton list. The indexes will be combined to match the user's allowed groups.
 
 #### Example: public data for unauthenticated users
 If the application only provides public data for unauthenticated users in the graph `http://mu.semte.ch/graphs/public`, the following eager indexing groups must be configured:
@@ -574,7 +574,7 @@ The example below contains 2 simple indexes for documents and creative works, an
 ```
 
 #### Elasticsearch settings
-Elasticsearch provides a lot of [index configuration settings](https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html) for analysis, logging, etc. Mu-search allows to provide this configuration for the whole domain and/or to be overridden on a per-type basis.
+Elasticsearch provides a lot of [index configuration settings](https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html) for analysis, logging, etc. Mu-search allows to provide this configuration for the whole domain and/or to be overridden (currently not merged!) on a per-type basis.
 
 To specify Elasticsearch settings for all indexes, use `default_settings` next to the `types` specification:
 
@@ -695,7 +695,7 @@ Configure indexes to be pre-built when the application starts. For each user sea
 }
 ```
 
-Note that if you want to prepare indexes for all user profiles in your application, you will have to provide an entry in the `eager_indexing_groups` list for **each** mutation of authorization groups and variables. For example, if you have an authorization group defining a user can only access the data of his company (hence, the company name is a variable of the authorization group), you will need to define an eager index group for each of the possible companies in your application. Another option, if the data allows to, is using [additive indexes](#additive-indexes).
+Note that if you want to prepare indexes for all user profiles in your application, you will have to provide an entry in the `eager_indexing_groups` list for **each** mutation of authorization groups and variables. For example, if you have an authorization group defining a user can only access the data of his company (hence, the company name is a variable of the authorization group), you will need to define an eager index group for each of the possible companies in your application.
 
 #### Additive indexes
 Additive indexes are indexes per authorization group where indexes are combined to respond to a search query based on the user's authorization groups. If a user is grantend access to mulitple groups, indexes will be combined to calculate the response. The additive indexes mode can only be enabled if the content of the indexes per authorization grouph are mutually exclusive. Otherwise, the search response will contain duplicate results.
@@ -712,11 +712,12 @@ Additive indexes can be enabled via the `additive_indexes` flag at the root of t
 }
 ```
 
-To prebuilt indexes on startup the `eager_indexing_groups` option can still be used, but each eager group entry must be singleton list:
+To prebuilt indexes on startup the `eager_indexing_groups` option can still be used, but each eager group entry must be singleton list. The group `[ {"name": "clean", "variables": []} ]` must be included.
 
 ```javascript
   "additive_indexes": true,
   "eager_indexing_groups" : [
+    [ {"name": "clean", "variables": []} ],
     [ {"name" : "organization-read", "variables" : ["company-x"]} ],
     [ {"name" : "organization-read", "variables" : ["company-y"]} ]
   ],
@@ -834,10 +835,10 @@ GET /documents/search?filter[:common,0.002,2:description]=a+cat+named+Barney
 ```
 
 ##### Sorting
-Sorting is specified using the `sort` query parameter, providing the field to sort on and the sort direction (`asc` or `desc`):
+Sorting is specified using the `sort` query parameter, providing the field to sort on and the sort direction (`asc` or `desc`). Multiple sort query parameters may be provided.
 
 ```
-GET /documents/search?filter[name]=fish&sort[priority]=asc
+GET /documents/search?filter[name]=fish&sort[priority]=asc&sort[budget]=desc
 ```
 
 Flags can be used to specify [Elasticsearch sort modes](https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html#_sort_mode_option) to sort on multi-valued fields. The following sort mode flags are supported: `:min:`, `:max:`, `:sum:`, `:avg:`, `:median:`.
