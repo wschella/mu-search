@@ -868,7 +868,7 @@ GET /documents/search?filter[name]=fish&collapse_uuids=t
 
 However, note that `count` property in the response still designates total non-unique results.
 
-#### POST `/:type/search`
+#### [Experimental] POST `/:type/search`
 Accepts a raw [Elasticsearch Query DSL](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html) as request body to search the given `:type` index.
 
 This endpoint is mainly intended for testing purposes and sending more complex queries than can be expressed with the `GET /:type/search` endpoint.
@@ -883,11 +883,31 @@ For security reasons, the endpoint is disabled by default. It can be enabled by 
 }
 ```
 
-#### [Experimental] POST `/:type/index`
-Reindex index(es) of type `:type`. If the request is sent with authorization headers, only the authorized indexes are re-indexed. Otherwise, all pertaining indexes are reindexed
+#### POST `/:type/index`
+Updates the index(es) for the given `:type`. If the request is sent with authorization headers, only the authorized indexes are updated. Otherwise, all indexes for the type are updated.
 
-#### [Experimental] DELETE `/:type/delete`
-Delete index(es) of type `:type`. If the request is sent with authorization headers, only the authorized indexes are deleted. Otherwise, all pertaining indexes are deleted.
+Type `_all` will update all indexes.
+
+#### POST `/:type/invalidate`
+Invalidates the index(es) for the given `:type`. If the request is sent with authorization headers, only the authorized indexes are invalidated. Otherwise, all indexes for the type are invalidated.
+
+Type `_all` will invalidate all indexes.
+
+An invalidated index will be updated before executing a new search query on it.
+
+Note that the search index is only marked as invalid in memory. I.e the index is not removed from Elasticsearch nor the triplestore. Hence, on restart of mu-search, the index will be considered valid again.
+
+#### DELETE `/:type/delete`
+Deletes the index(es) for the given `:type` in Elasticsearch and the triplestore. If the request is sent with authorization headers, only the authorized indexes are deleted. Otherwise, all indexes for the type are deleted.
+
+Type `_all` will delete all indexes.
+
+A deleted index will be recreated before executing a new search query on it.
+
+#### POST `/update`
+Processes an update of the delta-notifier. See [delta integration](#delta-integration).
+
+Currenty only delta format v.0.0.1 is supported.
 
 ### Configuration options
 This section gives an overview of all configurable options in the search configuration file `config.json`. Most options are explained in more depth in other sections.
