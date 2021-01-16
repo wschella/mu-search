@@ -749,6 +749,21 @@ Partial index updates are enabled by setting the `automatic_index_updates` flag 
 }
 ```
 
+#### Update batching and queueing
+When a delta notification is handled, the update to be performed is pushed on the update queue. By default the queue is processed every minute. This timeout can be configured via `update_wait_interval_minutes` in the root of the search configuration:
+
+```javascript
+{
+  "automatic_index_updates": true,
+  "update_wait_interval_minutes": 8,
+  "types": [
+     // definition of the indexed types
+  ]
+}
+```
+
+Increasing the interval has the advantage that updates on the same document will be applied only once, but has the downside that search results will not be up-to-date for a longer time. The optimal value depends on the application (number of updates, indexed properties, user expectations, etc.)
+
 ### Searching
 
 
@@ -978,7 +993,5 @@ Currently, a separate Elasticsearch index is created for each combination of doc
 
 [To be completed...]
 
-### Blocking and queuing
-[To be completed: Notes on index building and re-building, the blocking model, request priority, which requests might be forced to wait and when...]
 
 
