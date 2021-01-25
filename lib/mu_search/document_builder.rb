@@ -107,14 +107,18 @@ SPARQL
     def build_file_field( file_uris )
       file_uris.collect do |file_uri|
         file_path = File.join(@attachment_path_base, file_uri.to_s.sub("share://", ""))
-        file_size = File.size(file_path)
-        if file_size < ENV["MAXIMUM_FILE_SIZE"].to_i
-          content = extract_text_content(file_path)
+        if File.exists? file_path
+          file_size = File.size(file_path)
+          if file_size < ENV["MAXIMUM_FILE_SIZE"].to_i
+            content = extract_text_content(file_path)
+          else
+            @logger.warn("INDEXING") { "File #{file_path} (#{file_size} bytes) exceeds the allowed size of #{ENV["MAXIMUM_FILE_SIZE"]} bytes. File content will not be indexed." }
+            content = nil
+          end
         else
-          @logger.warn("INDEXING") { "File #{file_path} (#{file_size} bytes) exceeds the allowed size of #{ENV["MAXIMUM_FILE_SIZE"]} bytes. File content will not be indexed." }
+          @logger.warn("INDEXING") { "File #{file_path} not found. File content will not be indexed." }
           content = nil
         end
-
         { content: content }
       end
     end
