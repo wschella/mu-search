@@ -1,4 +1,9 @@
 # Changelog
+## v0.8.0-beta.2
+**Fixes**
+- Error handling in case a file is not found for indexing
+- Allow all permutations of lt(e),gt(e) in search query params
+
 ## v0.8.0-beta.1
 **Features**
 - Extracting file content using external Tika service
