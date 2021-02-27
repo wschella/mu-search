@@ -3,35 +3,326 @@
 # * does not follow the standard API
 # * see: https://github.com/mu-semtech/mu-ruby-template/issues/16
 class Elastic
-  include SinatraTemplate::Utils
-
   # Sets up the ElasticSearch instance
-  def initialize(host: 'localhost', port: 9200)
+  def initialize(host: "localhost", port: 9200, logger:)
     @host = host
     @port = port
     @port_s = port.to_s
+    @logger = logger
   end
 
-  # Sends a raw request to ElasticSearch
+  # Checks whether or not ElasticSearch is up
   #
+  # Executes a health check and accepts either "green" or "yellow".
+  def up?
+    uri = URI("http://#{@host}:#{@port_s}/_cluster/health")
+    req = Net::HTTP::Get.new(uri)
+    begin
+      resp = run(uri, req)
+      if resp.is_a? Net::HTTPSuccess
+        health = JSON.parse resp.body
+        health["status"] == "yellow" or health["status"] == "green"
+      else
+        false
+      end
+    rescue
+      false
+    end
+  end
+
+  # Checks whether or not the supplied index exists.
+  #   - index: string name of the index
+  #
+  # Executes a HEAD request. If that succeeds we can assume the index
+  # exists.
+  def index_exists? index
+    uri = URI("http://#{@host}:#{@port_s}/#{index}")
+    req = Net::HTTP::Head.new(uri)
+
+    begin
+      resp = run(uri, req)
+      resp.is_a?(Net::HTTPSuccess) ? true : false
+    rescue StandardError => e
+      @logger.warn("ELASTICSEARCH") { "Failed to detect whether index #{index} exists. Assuming it doesn't." }
+      @logger.warn("ELASTICSEARCH") { e.full_message }
+      false
+    end
+  end
+
+  # Creates an index in Elasticsearch
+  #   - index: Index to be created
+  #   - mappings: Optional pre-defined document mappings for the index,
+  #     JSON object passed directly to Elasticsearch.
+  #   - settings: Optional JSON object passed directly to Elasticsearch
+  def create_index index, mappings = nil, settings = nil
+    uri = URI("http://#{@host}:#{@port_s}/#{index}")
+    req = Net::HTTP::Put.new(uri)
+    req_body = {
+      mappings: mappings,
+      settings: settings
+    }.to_json
+    req.body = req_body
+    resp = run(uri, req)
+
+    if resp.is_a? Net::HTTPSuccess
+      @logger.debug("ELASTICSEARCH") { "Successfully created index #{index}" }
+      resp
+    else
+      @logger.error("ELASTICSEARCH") { "Failed to create index #{index}.\nPUT #{uri}\nRequest: #{req_body}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      if resp.is_a? Net::HTTPClientError # 4xx status code
+        raise ArgumentError, "Failed to create index #{index}: #{req_body}"
+      else
+        raise "Failed to create index #{index}"
+      end
+    end
+  end
+
+  # Deletes an index from ElasticSearch
+  #   - index: Name of the index to be removed
+  #
+  # Returns true when the index existed and is succesfully deleted.
+  # Otherwise false.
+  # Throws an error if the index exists but fails to be deleted.
+  def delete_index index
+    uri = URI("http://#{@host}:#{@port_s}/#{index}")
+    req = Net::HTTP::Delete.new(uri)
+    resp = run(uri, req)
+
+    if resp.is_a? Net::HTTPNotFound
+      @logger.debug("ELASTICSEARCH") { "Index #{index} doesn't exist and cannot be deleted." }
+      false
+    elsif resp.is_a? Net::HTTPSuccess
+      @logger.debug("ELASTICSEARCH") { "Successfully deleted index #{index}" }
+      true
+    else
+      @logger.error("ELASTICSEARCH") { "Failed to delete index #{index}.\nDELETE #{uri}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      raise "Failed to delete index #{index}"
+    end
+  end
+
+  # Refreshes an ElasticSearch index, making documents available for
+  # search.
+  #   - index: Name of the index which will be refreshed.
+  #
+  # Returns whether the refresh succeeded
+  #
+  # When we store documents in ElasticSearch, they are not necessarily
+  # available immediately. It requires a refresh of the index. This
+  # operation happens once every second. When we build an index to
+  # query it immediately, we should ensure to refresh the index before
+  # querying.
+  def refresh_index index
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_refresh")
+    req = Net::HTTP::Post.new(uri)
+    resp = run(uri, req)
+
+    if resp.is_a? Net::HTTPSuccess
+      @logger.debug("ELASTICSEARCH") { "Successfully refreshed index #{index}" }
+      true
+    else
+      @logger.warn("ELASTICSEARCH") { "Failed to refresh index #{index}.\nPOST #{uri}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      false
+    end
+  end
+
+  # Clear a given index by deleting all documents in the Elasticsearch index
+  #   - index: Index name to clear
+  # Note: this operation does not delete the index in Elasticsearch
+  def clear_index index
+    if index_exists? index
+      resp = delete_documents_by_query index, { query: { match_all: {} } }
+      if resp.is_a? Net::HTTPSuccess
+        @logger.debug("ELASTICSEARCH") { "Successfully cleared index #{index}" }
+        resp
+      else
+        @logger.error("ELASTICSEARCH") { "Failed to clear index #{index}.\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+        raise "Failed to clear index #{index}"
+      end
+    end
+  end
+
+  # Gets a single document from an index by its ElasticSearch id.
+  # Returns nil if the document cannot be found.
+  #   - index: Index to retrieve the document from
+  #   - id: ElasticSearch ID of the document
+  def get_document index, id
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
+    req = Net::HTTP::Get.new(uri)
+    resp = run(uri, req)
+    if resp.is_a? Net::HTTPNotFound
+      @logger.debug("ELASTICSEARCH") { "Document #{id} not found in index #{index}" }
+      nil
+    elsif resp.is_a? Net::HTTPSuccess
+      JSON.parse resp.body
+    else
+      @logger.error("ELASTICSEARCH") { "Failed to get document #{id} from index #{index}.\nGET #{uri}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      raise "Failed to get document #{id} from index #{index}"
+    end
+  end
+
+
+  # Inserts a new document in an Elasticsearch index
+  #   - index: Index to store the document in.
+  #   - id: Elasticsearch identifier to store the document under.
+  #   - document: document contents to index (as a ruby json object)
+  # Returns the inserted document
+  # Raises an error on failure.
+  def insert_document index, id, document
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
+    req = Net::HTTP::Put.new(uri)
+    req_body = document.to_json
+    req.body = req_body
+    resp = run(uri, req)
+
+    if resp.is_a? Net::HTTPSuccess
+      @logger.debug("ELASTICSEARCH") { "Inserted document #{id} in index #{index}" }
+      JSON.parse resp.body
+    else
+      @logger.error("ELASTICSEARCH") { "Failed to insert document #{id} in index #{index}.\nPUT #{uri}\nRequest: #{req_body}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      raise "Failed to insert document #{id} in index #{index}"
+    end
+  end
+
+  # Partially updates an existing document in Elasticsearch index
+  #   - index: Index to update the document in
+  #   - id: ElasticSearch identifier of the document
+  #   - document: New document contents
+  # Returns the updated document or nil if the document cannot be found.
+  # Otherwise, raises an error.
+  def update_document index, id, document
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}/_update")
+    req = Net::HTTP::Post.new(uri)
+    req_body = { "doc": document }.to_json
+    req.body = req_body
+    resp = run(uri, req)
+
+    if resp.is_a? Net::HTTPNotFound
+      @logger.info("ELASTICSEARCH") { "Cannot update document #{id} in index #{index} because it doesn't exist" }
+      nil
+    elsif resp.is_a? Net::HTTPSuccess
+      @logger.debug("ELASTICSEARCH") { "Updated document #{id} in index #{index}" }
+      JSON.parse resp.body
+    else
+      @logger.error("ELASTICSEARCH") { "Failed to update document #{id} in index #{index}.\nPOST #{uri}\nRequest: #{req_body}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      raise "Failed to update document #{id} in index #{index}"
+    end
+  end
+
+  # Updates the document with the given id in the given index.
+  # Inserts the document if it doesn't exist yet
+  # - index: index to store document in
+  # - id: elastic identifier to store the document under
+  # - document: document contents (as a ruby json object)
+  def upsert_document index, id, document
+    @logger.debug("ELASTICSEARCH") { "Trying to update document with id #{id}" }
+    updated_document = update_document index, id, document
+    if updated_document.nil?
+      @logger.debug("ELASTICSEARCH") { "Document #{id} does not exist yet, trying to insert new document" }
+      insert_document index, id, document
+    else
+      updated_document
+    end
+  end
+
+  # Deletes a document from an Elasticsearch index
+  #   - index: Index to remove the document from
+  #   - id: ElasticSearch identifier of the document
+  # Returns true when the document existed and is succesfully deleted.
+  # Otherwise false.
+  # Throws an error if the document exists but fails to be deleted.
+  def delete_document index, id
+    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
+    req = Net::HTTP::Delete.new(uri)
+    resp = run(uri, req)
+
+    if resp.is_a? Net::HTTPNotFound
+      @logger.debug("ELASTICSEARCH") { "Document #{id} doesn't exist in index #{index} and cannot be deleted." }
+      false
+    elsif resp.is_a? Net::HTTPSuccess
+      @logger.debug("ELASTICSEARCH") { "Successfully deleted document #{id} in index #{index}" }
+      true
+    else
+      @logger.error("ELASTICSEARCH") { "Failed to delete document #{id} in index #{index}.\nDELETE #{uri}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      raise "Failed to delete document #{id} in index #{index}"
+    end
+  end
+
+
+  # Searches for documents in the given indexes
+  #   - indexes: Array of indexes to be searched
+  #   - query: Elasticsearch query JSON object in ruby format
+  def search_documents indexes:, query: nil
+    indexes_s = indexes.join(',')
+    uri = URI("http://#{@host}:#{@port_s}/#{indexes_s}/_search")
+    req_body = query.to_json
+    @logger.debug("SEARCH") { "Searching Elasticsearch index(es) #{indexes_s} with body #{req_body}" }
+    req = Net::HTTP::Post.new(uri)
+    req.body = req_body
+    resp = run(uri, req)
+
+    if resp.is_a? Net::HTTPSuccess
+      JSON.parse resp.body
+    else
+      @logger.error("SEARCH") { "Searching documents in index(es) #{indexes_s} failed.\nPOST #{uri}\nRequest: #{req_body}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      if resp.is_a? Net::HTTPClientError # 4xx status code
+        raise ArgumentError, "Invalid search query #{req_body}"
+      else
+        raise "Something went wrong while searching documents in index(es) #{indexes_s}"
+      end
+    end
+  end
+
+
+  # Counts search results for documents in the given indexex
+  #   - indexes: Array of indexes to be searched
+  #   - query: Elasticsearch query JSON object in ruby format
+  def count_documents indexes:, query: nil
+    indexes_s = indexes.join(',')
+    uri = URI("http://#{@host}:#{@port_s}/#{indexes_s}/_doc/_count")
+    req_body = query.to_json
+    @logger.debug("SEARCH") { "Count search results in index(es) #{indexes_s} for body #{req_body}" }
+    req = Net::HTTP::Get.new(uri)
+    req.body = req_body
+    resp = run(uri, req)
+
+    if resp.is_a? Net::HTTPSuccess
+      data = JSON.parse resp.body
+      data["count"]
+    else
+      @logger.error("SEARCH") { "Counting search results in index(es) #{indexes_s} failed.\nPOST #{uri}\nRequest: #{req_body}\nResponse: #{resp.code} #{resp.msg}\n#{resp.body}" }
+      if resp.is_a? Net::HTTPClientError # 4xx status code
+        raise ArgumentError, "Invalid search query #{req_body}"
+      else
+        raise "Something went wrong while counting search results in index(es) #{indexes_s}"
+      end
+    end
+  end
+
+
+  private
+
+  # Sends a raw request to Elasticsearch
   #   - uri: URI instance representing the elasticSearch host
   #   - req: The request object
+  #   - retries: Max number of retries
   #
-  # Responds with the body on success, or the failure value on
-  # failure.
+  # Returns the HTTP response.
+  #
+  # Note: the method only logs limited info on purpose.
+  # Additional logging about the error that occurred
+  # is the responsibility of the consumer.
   def run(uri, req, retries = 6)
-    req['content-type'] = 'application/json'
-
     def run_rescue(uri, req, retries, result = nil)
       if retries == 0
-        log.error "Failed to run request #{uri}\n result: #{result.inspect}"
-        log.debug "Request body for #{uri} was: #{req.body.to_s[0...1024]}"
-        if result.kind_of?(Exception)
+        if result.is_a? Exception
+          @logger.warn("ELASTICSEARCH") { "Failed to run request #{uri}. Max number of retries reached." }
           raise result
+        else
+          @logger.info("ELASTICSEARCH") { "Failed to run request #{uri}. Max number of retries reached." }
+          result
         end
-        result
       else
-        log.debug "Failed to run request #{uri} retrying (#{retries} left)"
+        @logger.info("ELASTICSEARCH") { "Failed to run request #{uri}. Request will be retried (#{retries} left)." }
         next_retries = retries - 1
         backoff = (6 - next_retries) ** 2
         sleep backoff
@@ -39,8 +330,10 @@ class Elastic
       end
     end
 
+    req["content-type"] = "application/json"
+
     res = Net::HTTP.start(uri.hostname, uri.port) do |http|
-      http.read_timeout=ENV["ELASTIC_READ_TIMEOUT"].to_i
+      http.read_timeout = ENV["ELASTIC_READ_TIMEOUT"].to_i
       begin
         http.request(req)
       rescue Exception => e
@@ -49,422 +342,35 @@ class Elastic
     end
 
     case res
-    when Net::HTTPSuccess, Net::HTTPRedirection
+    when Net::HTTPSuccess, Net::HTTPRedirection # response code 2xx or 3xx
       # Ruby doesn't use the encoding specified in HTTP headers (https://bugs.ruby-lang.org/issues/2567#note-3)
-      content_type = res['CONTENT-TYPE']
+      content_type = res["CONTENT-TYPE"]
       if res.body and content_type and content_type.downcase.include?("charset=utf-8")
-        res.body.force_encoding('UTF-8')
+        res.body.force_encoding("utf-8")
       end
-      log.debug "Succeeded to run #{req.method} request for #{uri}\n Request body: #{req.body.to_s[0...1024]}\n Response body: #{res.body.to_s[0...1024]}"
-      if req.method == "HEAD"
-        res
-      else
-        res.body
-      end
+      res
     when Net::HTTPTooManyRequests
       run_rescue(uri, req, retries, res)
     else
-      log.warn "#{req.method} request on #{uri} resulted in response: #{res}"
-      log.debug "Request body for #{uri} was: #{req.body.to_s[0...1024]}\n Response: #{res.inspect}"
+      @logger.info("ELASTICSEARCH") { "Failed to run request #{uri}" }
+      @logger.debug("ELASTICSEARCH") { "Request body (trimmed): #{req.body.to_s[0...1024]}" }
+      @logger.debug("ELASTICSEARCH") { "Response: #{res.inspect}" }
       res
     end
   end
 
-  # Checks mhether or not ElasticSearch is up
-  #
-  # Executes a health check and accepts either "green" or "yellow".
-  # Yields false on anything else.
-  def up
-    uri = URI("http://#{@host}:#{@port_s}/_cluster/health")
-    req = Net::HTTP::Get.new(uri)
-
-    begin
-      result = JSON.parse run(uri, req)
-      result["status"] == "yellow" or
-        result["status"] == "green"
-    rescue
-      false
-    end
-  end
-
-  # Checks whether or not the supplied index exists.
-  #
-  # Executes a HEAD request.  If that succeeds we can assume the index
-  # exists.
-  #
-  #   - index: string name of the index
-  def index_exists index
-    uri = URI("http://#{@host}:#{@port_s}/#{index}")
-    req = Net::HTTP::Head.new(uri)
-
-    begin
-      result = run(uri, req)
-      result.is_a?(Net::HTTPNotFound) || result.nil? ? false : true
-    rescue StandardError => error
-      log.warn "encountered an error while checking if index #{index} exists"
-      log.warn error
-      false
-    end
-  end
-
-  # Creates an index in the elasticSearch instance..
-  #
-  #   - index: Index to be created
-  #   - mappings: Optional pre-defined document mappings for the index,
-  #     JSON object passed directly to Elasticsearch.
-  #   - settings: Optional JSON object passed directly to Elasticsearch
-  def create_index index, mappings = nil, settings = nil
-    uri = URI("http://#{@host}:#{@port_s}/#{index}")
-    req = Net::HTTP::Put.new(uri)
-    req.body = {
-      mappings: mappings,
-      settings: settings
-    }.to_json
-
-    result = run(uri, req)
-    # TODO: check could be better, but on success run returns the body
-    if result.kind_of?(Net::HTTPResponse) and !result.kind_of?(Net::HTTPSuccess)
-      raise "failed to create index #{index}, response was #{result.code} #{result.msg}"
-    else
-      result
-    end
-  end
-
-  # Deletes an index from ElasticSearch
-  #
-  #   - index: Name of the index to be removed
-  #
-  # Throws an error if the index exists but could not be removed.
-  def delete_index index
-    uri = URI("http://#{@host}:#{@port_s}/#{index}")
-    req = Net::HTTP::Delete.new(uri)
-    begin
-      run(uri, req)
-      log.info "Deleted #{index}"
-      log.debug "Index #{index} exists: #{index_exists index}"
-    rescue
-      if !client.index_exists index
-        log.info "Index not deleted, does not exist: #{index}"
-      else
-        raise "Error deleting index: #{index}"
-      end
-    end
-  end
-
-  # Refreshes an ElasticSearch index, making documents available for
-  # search.
-  #
-  # When we store documents in ElasticSearch, they are not necessarily
-  # available immediately.  It requires a refresh of the index.  This
-  # operation happens once every second.  When we build an index to
-  # query it immediately, we should ensure to refresh the index before
-  # querying.
-  #
-  #   - index: Name of the index which will be refreshed.
-  def refresh_index index
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_refresh")
-    req = Net::HTTP::Post.new(uri)
-    run(uri, req)
-  end
-
-  # Gets a single document from an index, based on its ElasticSearch
-  # id.
-  #
-  #   - index: Index to retrieve the document from.
-  #   - id: ElasticSearch ID of the document.
-  def get_document index, id
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
-    req = Net::HTTP::Get.new(uri)
-    run(uri, req)
-  end
-
-  # Puts a new document in an index.
-  #
-  #   - index: Index to store the document in.
-  #   - id: ElasticSearch identifier to store the document under.
-  #   - document: Document contents (as a ruby json object) to be
-  #     stored.
-  def put_document index, id, document
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
-    req = Net::HTTP::Put.new(uri)
-    req.body = document.to_json
-    run(uri, req)
-  end
-
-
-  ## updates or insert the document if it doesn't exist yet
-  ##
-  # - index: Index to store document in
-  # - id: elastic identifier to store the document under
-  # - document: Document contents (as a ruby json object)
-  def upsert_document(index, id, document)
-    log.debug "Trying to update document with id #{id}"
-    result = update_document(index, id, document)
-    if (result.is_a?(Net::HTTPNotFound))
-      log.debug "Failed to update document, trying to put new document #{id}"
-      result = put_document(index, id, document)
-      log.debug "Succeeded in putting new document #{id}"
-    else
-      log.debug "Succeeded in updating document with id #{id}"
-    end
-    result
-  end
-
-  # Updates a document in ElasticSearch by id
-  #
-  #   - index: Index to update the document in
-  #   - id: ElasticSearch identifier of the document
-  #   - document: New document contents
-  #
-  # TODO: describe if this is a full replace, or if this updates the
-  # document partially.
-  def update_document index, id, document
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}/_update")
-    log.debug(uri)
-    req = Net::HTTP::Post.new(uri)
-    req.body = { "doc": document }.to_json
-    run(uri, req)
-  end
-
-  # Bulk updates a set of documents
-  #
-  #   - index: Index to update the documents in.
-  #   - data: An array of json/hashes, ordered according to
-  # https://www.elastic.co/guide/en/elasticsearch/reference/6.4/docs-bulk.html
-  def bulk_update_document index, data
-    Parallel.each( data.each_slice(4), in_threads: ENV['NUMBER_OF_THREADS'].to_i ) do |slice|
-      # Hardcoded for slice of 4 elements, of which we need to combine 2
-      enriched_slice = slice.map do |document|
-        { doc: document, serialization: document.to_json }
-      end
-
-      nested_slice = []
-
-      if enriched_slice.any? { |s| s[:serialization].length > 50_000_000 }
-        log.debug("Splitting bulk update document into separate requests because one document more than 50Mb")
-        enriched_slice.each_slice(2) do |tuple|
-          nested_slice << tuple
-        end
-      else
-        nested_slice = [enriched_slice]
-      end
-
-      nested_slice.each do |enriched_postable_slice|
-        begin
-          uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_bulk")
-          req = Net::HTTP::Post.new(uri)
-          body = ""
-          enriched_postable_slice.each do |enriched_document|
-            body += enriched_document[:serialization] + "\n"
-          end
-          req.body = body
-
-          req["Content-Type"] = "application/x-ndjson"
-
-          result = JSON.parse(run(uri, req))
-          if result["errors"]
-            log.warn "bulk post request to #{req.uri} has errors\n response: #{result.inspect}\n request body: #{req.body.to_s[0..2048]}"
-          end
-          result
-        rescue StandardError => e
-          log.warn( "Failed to upload #{enriched_postable_slice.length} documents" )
-
-          ids = enriched_postable_slice.map do |enriched_document|
-            enriched_document && enriched_document[:doc][:index] && enriched_document[:doc][:index][:_id]
-          end
-
-          log.warn( e )
-          log.warn( "Failed to upload documents #{ids.join(", ")} with total length #{body.length}" )
-          log.warn( "Failed documents #{ids.join(", ")} are not ginormous" ) if body.length < 100_000_000
-        end
-      end
-    end
-  end
-
-  # Deletes a document from ElasticSearch
-  #
-  #   - index: Index to remove the document from
-  #   - id: ElasticSearch identifier of the document
-  def delete_document index, id
-    uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
-    req = Net::HTTP::Delete.new(uri)
-    run(uri, req)
-  end
-
   # Deletes all documents which match a certain query
-  #
   #   - index: Index to delete the documents from
   #   - query: ElasticSearch query used for selecting documents
-  #   - conflicts_proceed: boolean indicating we should delete if
-  #     other operations are occurring on the same document or not.
+  #   - conflicts_proceed: boolean indicating whether to proceed deletion if
+  #     other operations are currently occurring on the same document or not.
   #
-  # TODO: Verify description of conflicts_proceed.
-  #
-  # TODO: Provide reference to query format.
-  def delete_by_query index, query, conflicts_proceed
+  # For the query formal, see https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-delete-by-query.html
+  def delete_documents_by_query index, query, conflicts_proceed: true
     conflicts = conflicts_proceed ? 'conflicts=proceed' : ''
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_delete_by_query?#{conflicts}")
-
     req = Net::HTTP::Post.new(uri)
     req.body = query.to_json
-    run(uri, req)
-  end
-
-  # Searches for documents in an index
-  #
-  #   - index: Index to be searched
-  #   - query_string: ElasticSearch query string in a URL-escaped
-  #     manner
-  #   - query: ElasticSearch query JSON object in ruby format (used
-  #     only when no query_string is supplied)
-  #   - sort: ElasticSearch sort string in URL-escaped manner (used
-  #     only when query_string is provided)
-  def search index:, query_string: nil, query: nil, sort: nil
-    if query_string
-      log.info "Searching elastic search for #{query_string} on #{index}"
-      uri = URI("http://#{@host}:#{@port_s}/#{index}/_search?q=#{query_string}&sort=#{sort}")
-      req = Net::HTTP::Post.new(uri)
-    else
-      log.debug "Searching elastic search index #{index} for body #{query}"
-      uri = URI("http://#{@host}:#{@port_s}/#{index}/_search")
-      req = Net::HTTP::Post.new(uri)
-      req.body = query.is_a?(String) ? query : query.to_json
-    end
-
-    run(uri, req)
-  end
-
-  # Uploads an attachment to the index to be processed by a specific
-  # pipeline and updates the full document.
-  #
-  #   - index: Index to which the attachment should be stored.
-  #   - id: id of the document to which the attachment will be stored.
-  #   - pipeline: Name of the pipeline which should run for the
-  #     attachment.
-  #   - document: JSON body representing the attachment.
-  #
-  # TODO: Describe the value of the pipeline and/or where to find
-  # reasonable values.
-  #
-  # TODO: Describe the format of the document's body.
-  def upload_attachment index, id, pipeline, document
-    document_for_reporting = document.clone
-    document_for_reporting["data"] = document_for_reporting["data"] ? "[...#{document_for_reporting["data"].length} characters long]" : "none"
-
-    es_uri = "http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}?pipeline=#{pipeline}"
-
-    log.debug("Uploading attachment through call: #{es_uri}")
-    log.debug("Uploading approximate body: #{document_for_reporting}")
-
-    uri = URI(es_uri)
-    req = Net::HTTP::Put.new(uri)
-    req.body = document.to_json
-    run(uri, req)
-  end
-
-  # Creates an attachment pipeline and configures it to operate on a
-  # specific field.
-  #
-  #   - pipeline: name of the new attachment pipeline.
-  #   - field: Field on which to operate.
-  #
-  # Creates a new attachment pipeline, scanning all characters of the
-  # supplied field (no character limit).
-  def create_attachment_pipeline pipeline, field
-    uri = URI("http://#{@host}:#{@port_s}/_ingest/pipeline/#{pipeline}")
-    req = Net::HTTP::Put.new(uri)
-    req.body = {
-      description: "Extract attachment information",
-      processors: [
-        {
-          attachment: {
-            field: field,
-            indexed_chars: -1,
-            on_failure: [
-              {
-                set: {
-                  field: "error",
-                  value: "field \"#{field}\" does not exist."
-                }
-              }
-            ]
-          }
-        },
-        {
-          remove: {
-            field: field
-          }
-        }
-      ]
-    }.to_json
-    run(uri, req)
-  end
-
-  # Creates a new attachment pipeline for arrays of attachments
-  def create_attachment_array_pipeline pipeline, field
-    uri = URI("http://#{@host}:#{@port_s}/_ingest/pipeline/#{pipeline}")
-    req = Net::HTTP::Put.new(uri)
-    req.body = {
-      description: "Extract attachment information from arrays",
-      processors: [
-        {
-          foreach: {
-            field: field,
-            processor: {
-              attachment: {
-                target_field: "_ingest._value.attachment",
-                field: "_ingest._value.data",
-                indexed_chars: -1
-              }
-            },
-            on_failure: [
-              {
-                set: {
-                  field: "error",
-                  value: "field \"#{field}\" does not exist."
-                }
-              }
-            ]
-          }
-        },
-        foreach: {
-          field: field,
-          processor: {
-            remove: {
-              field: "_ingest._value.data"
-            }
-          }
-        }
-      ]
-    }.to_json
-    run(uri,req)
-  end
-
-  # Executes a count query for a particular string
-  #
-  # Arguments behave similarly to Elastic#search
-  #
-  #   - index: Index on which to execute the count qurey.
-  #   - query_string: ElasticSearch query string in a URL-escaped
-  #     manner
-  #   - query: ElasticSearch query JSON object in ruby format (used
-  #     only when no query_string is supplied)
-  #   - sort: ElasticSearch sort string in URL-escaped manner (used
-  #     only when query_string is provided)
-  #
-  # TODO: why do we have a sort here?
-  def count index:, query_string: nil, query: nil, sort: nil
-    if query_string
-      log.debug "Counting query on #{index}, being #{query_string}"
-      uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count?q=#{query_string}&sort=#{sort}")
-      req = Net::HTTP::Get.new(uri)
-    else
-      log.debug "Counting query on #{index}, with body #{query}"
-      uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_count")
-      req = Net::HTTP::Get.new(uri)
-      req.body = query.to_json
-    end
-
     run(uri, req)
   end
 end

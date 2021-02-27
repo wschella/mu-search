@@ -1,102 +1,150 @@
-require 'connection_pool'
 module MuSearch
   module SPARQL
-    CLIENT_POOL = ConnectionPool.new(size: 100, timeout: 3) { ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT']) }
+    class ClientWrapper
+      def initialize(logger:, sparql_client:, options: )
+        @logger = logger
+        @sparql_client = sparql_client
+        @options = options
+      end
 
-    ##
-    # provides a client with sudo access
-    def self.sudo_client
-      SinatraTemplate::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], { headers: { 'mu-auth-sudo': 'true' } } )
+      def query query_string
+        @logger.debug("SPARQL") { "Executing query with #{@options.inspect}\n#{query_string}" }
+        @sparql_client.query query_string, @options
+      end
+
+      def update query_string
+        @logger.debug("SPARQL") { "Executing update with #{@options.inspect}\n#{query_string}" }
+        @sparql_client.update query_string, @options
+      end
     end
 
-    ##
-    # provides a client with access to the provided groups
-    def self.authorized_client(allowed_groups_object)
-      options = { headers: { 'mu-auth-allowed-groups': allowed_groups_object.to_json } }
-      ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'], options)
-    end
+    class ConnectionPool
+      ##
+      # default number of threads to use for indexing and update handling
+      DEFAULT_NUMBER_OF_THREADS = 2
 
-    def self.pooled_authorized_query(query_string, allowed_groups, retries = 6)
-      allowed_groups_object = allowed_groups.select { |group| group }
-      CLIENT_POOL.with do |client|
+      def initialize(logger:, number_of_threads:)
+        @logger = logger
+        number_of_threads = DEFAULT_NUMBER_OF_THREADS if number_of_threads <= 0
+        @sparql_connection_pool = ::ConnectionPool.new(size: number_of_threads, timeout: 3) do
+          ::SPARQL::Client.new(ENV['MU_SPARQL_ENDPOINT'])
+        end
+        @logger.info("SETUP") { "Setup SPARQL connection pool with #{@sparql_connection_pool.size} connections. #{@sparql_connection_pool.size} connections are available." }
+      end
+
+      def up?
         begin
-          log.debug "Authorized query with allowed groups object #{allowed_groups_object}"
-          log.debug query_string
-          result = client.query(query_string)
-          result
+          sudo_query "ASK { ?s ?p ?o }", 1
+        rescue StandardError => e
+          false
+        end
+      end
+
+      ##
+      # perform an update with access to all data
+      def sudo_query(query_string, retries = 6)
+        begin
+          with_sudo do |sudo_client|
+            sudo_client.query query_string
+          end
         rescue StandardError => e
           next_retries = retries - 1
           if next_retries == 0
             raise e
           else
-            log.debug e
-            log.warn "Could not execute authorized query (attempt #{6 - next_retries}): #{query_string} \n #{allowed_groups}"
+            @logger.warn("SPARQL") { "Could not execute sudo query (attempt #{6 - next_retries}): #{query_string}" }
             timeout = (6 - next_retries) ** 2
             sleep timeout
-            authorized_query query_string, allowed_groups, next_retries
+            sudo_query query_string, next_retries
           end
         end
       end
-    end
 
-    ##
-    # perform a query as if authenticated to access specific groups
-    def self.authorized_query(query_string, allowed_groups, retries = 6)
-      allowed_groups_object = allowed_groups.select { |group| group }
-      client = authorized_client(allowed_groups_object)
-      begin
-        log.debug "Authorized query with allowed groups object #{allowed_groups_object}"
-        log.debug query_string
-        result = client.query(query_string)
-        result
-      rescue StandardError => e
-        next_retries = retries - 1
-        if next_retries == 0
-          raise e
-        else
-          log.debug e
-          log.warn "Could not execute authorized query (attempt #{6 - next_retries}): #{query_string} \n #{allowed_groups}"
-          timeout = (6 - next_retries) ** 2
-          sleep timeout
-          authorized_query query_string, allowed_groups, next_retries
-        end
-      ensure
-        client.close
-      end
-    end
-
-
-    ##
-    # perform a query with access to all data
-    def self.direct_query(query_string, retries = 6)
-      begin
-        sudo_client.query query_string
-      rescue StandardError => e
-        next_retries = retries - 1
-        if next_retries == 0
-          raise e
-        else
-          log.warn "Could not execute raw query (attempt #{6 - next_retries}): #{query_string}"
-          timeout = (6 - next_retries) ** 2
-          sleep timeout
-          direct_query query_string, next_retries
+      ##
+      # perform an update with access to all data
+      def sudo_update(query_string, retries = 6)
+        begin
+          with_sudo do |sudo_client|
+            sudo_client.update query_string
+          end
+        rescue StandardError => e
+          next_retries = retries - 1
+          if next_retries == 0
+            raise e
+          else
+            @logger.warn("SPARQL") { "Could not execute sudo query (attempt #{6 - next_retries}): #{query_string}" }
+            timeout = (6 - next_retries) ** 2
+            sleep timeout
+            sudo_update query_string, next_retries
+          end
         end
       end
-    end
 
-    def self.predicate_string_term(property_path)
-      if property_path.start_with?("^")
-        "^#{sparql_escape_uri(property_path.slice(1,property_path.length))}"
-      else
-        sparql_escape_uri(property_path)
+      ##
+      # provides a client from the connection pool with the given access rights
+      def with_authorization allowed_groups, &block
+        sparql_options = {}
+
+        if allowed_groups && allowed_groups.length > 0
+          allowed_groups_s = allowed_groups.select { |group| group }.to_json
+          sparql_options = { headers: { 'mu-auth-allowed-groups': allowed_groups_s } }
+        end
+
+        with_options sparql_options, &block
+      end
+
+      ##
+      # provides a client from the connection pool with sudo access rights
+      def with_sudo &block
+        with_options({ headers: { 'mu-auth-sudo': 'true' } }, &block)
+      end
+
+
+      private
+
+      def with_options sparql_options
+        @sparql_connection_pool.with do |sparql_client|
+          @logger.debug("SPARQL") { "Claimed connection from pool. There are #{@sparql_connection_pool.available} connections left" }
+          client_wrapper = ClientWrapper.new(logger: @logger, sparql_client: sparql_client, options: sparql_options)
+          yield client_wrapper
+        end
       end
     end
 
-    def self.make_predicate_string(property_path)
-      if property_path.is_a? String
-        predicate_string_term(property_path)
+    # Converts the given predicate to an escaped predicate used in a SPARQL query.
+    #
+    # The string may start with a ^ sign to indicate inverse.
+    # If that exists, we need to interpolate the URI.
+    #
+    #   - predicate: Predicate to be escaped.
+    def self.predicate_string_term(predicate)
+      if predicate.start_with? "^"
+        "^#{sparql_escape_uri(predicate.slice(1,predicate.length))}"
       else
-        property_path.map { |pred| predicate_string_term pred }.join("/")
+        sparql_escape_uri(predicate)
+      end
+    end
+
+    # Converts the SPARQL predicate definition from the config into a
+    # triple path.
+    #
+    # The configuration in the configuration file may contain an inverse
+    # (using ^) and/or a list (using the array notation).  These need to
+    # be converted into query paths so we can correctly fetch the
+    # contents.
+    #
+    #   - predicate: Predicate definition as supplied in the config file.
+    #     Either a string or an array.
+    #
+    # TODO: I believe the construction with the query paths leads to
+    # incorrect invalidation when delta's arrive. Perhaps we should store
+    # the relevant URIs in the stored document so we can invalidate it
+    # correctly when new content arrives.
+    def self.make_predicate_string(predicate)
+      if predicate.is_a? String
+        predicate_string_term(predicate)
+      else
+        predicate.map { |pred| predicate_string_term pred }.join("/")
       end
     end
   end

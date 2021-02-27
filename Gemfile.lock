@@ -1,0 +1,38 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    concurrent-ruby (1.1.6)
+    connection_pool (2.2.3)
+    elasticsearch (6.8.1)
+      elasticsearch-api (= 6.8.1)
+      elasticsearch-transport (= 6.8.1)
+    elasticsearch-api (6.8.1)
+      multi_json
+    elasticsearch-transport (6.8.1)
+      faraday (>= 0.14, < 1)
+      multi_json
+    faraday (0.17.3)
+      multipart-post (>= 1.2, < 3)
+    ffi (1.13.1-java)
+    listen (3.2.1)
+      rb-fsevent (~> 0.10, >= 0.10.3)
+      rb-inotify (~> 0.9, >= 0.9.10)
+    multi_json (1.14.1)
+    multipart-post (2.1.1)
+    parallel (1.17.0)
+    rb-fsevent (0.10.4)
+    rb-inotify (0.10.1)
+      ffi (~> 1.0)
+
+PLATFORMS
+  java
+
+DEPENDENCIES
+  concurrent-ruby (~> 1.1)
+  connection_pool (~> 2.2)
+  elasticsearch (~> 6.1)
+  listen (~> 3.0)
+  parallel (~> 1.17.0)
+
+BUNDLED WITH
+   2.1.0
