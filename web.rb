@@ -46,7 +46,7 @@ end
 ##
 # Setup index manager based on configuration
 ##
-def setup_index_manager elasticsearch, tika, config
+def setup_index_manager elasticsearch, tika, sparql_connection_pool, config
   search_configuration = config.select do |key|
     [:type_definitions, :default_index_settings, :additive_indexes,
      :persist_indexes, :eager_indexing_groups, :number_of_threads,
@@ -56,22 +56,25 @@ def setup_index_manager elasticsearch, tika, config
     logger: SinatraTemplate::Utils.log,
     elasticsearch: elasticsearch,
     tika: tika,
+    sparql_connection_pool: sparql_connection_pool,
     search_configuration: search_configuration)
 end
 
 ##
 # Setup delta handling based on configuration
 ##
-def setup_delta_handling(index_manager, elasticsearch, tika, config)
+def setup_delta_handling(index_manager, elasticsearch, tika, sparql_connection_pool, config)
   if config[:automatic_index_updates]
     search_configuration = config.select do |key|
-      [:type_definitions, :number_of_threads, :update_wait_interval_minutes, :attachment_path_base].include? key
+      [:type_definitions, :number_of_threads, :update_wait_interval_minutes,
+       :attachment_path_base].include? key
     end
     handler = MuSearch::AutomaticUpdateHandler.new(
       logger: SinatraTemplate::Utils.log,
       index_manager: index_manager,
       elasticsearch: elasticsearch,
       tika: tika,
+      sparql_connection_pool: sparql_connection_pool,
       search_configuration: search_configuration)
   else
     search_configuration = config.select do |key|
@@ -84,8 +87,9 @@ def setup_delta_handling(index_manager, elasticsearch, tika, config)
   end
 
   delta_handler = MuSearch::DeltaHandler.new(
-    update_handler: handler,
     logger: SinatraTemplate::Utils.log,
+    sparql_connection_pool: sparql_connection_pool,
+    update_handler: handler,
     search_configuration: { type_definitions: config[:type_definitions] } )
   delta_handler
 end
@@ -100,23 +104,37 @@ configure do
   configuration = MuSearch::ConfigParser.parse('/config/config.json')
   set configuration
 
-  tika = Tika.new(host: 'tika', port: 9998, logger: SinatraTemplate::Utils.log)
-  elasticsearch = Elastic.new(host: 'elasticsearch', port: 9200, logger: SinatraTemplate::Utils.log)
+  tika = Tika.new(
+    host: 'tika',
+    port: 9998,
+    logger: SinatraTemplate::Utils.log
+  )
+
+  elasticsearch = Elastic.new(
+    host: 'elasticsearch',
+    port: 9200,
+    logger: SinatraTemplate::Utils.log
+  )
   set :elasticsearch, elasticsearch
+
+  sparql_connection_pool = MuSearch::SPARQL::ConnectionPool.new(
+    number_of_threads: configuration[:number_of_threads],
+    logger: SinatraTemplate::Utils.log
+  )
 
   while !elasticsearch.up?
     log.info("SETUP") { "...waiting for elasticsearch..." }
     sleep 1
   end
 
-  while !MuSearch::SPARQL.up? do
+  while !sparql_connection_pool.up?
     log.info("SETUP") { "...waiting for SPARQL endpoint..." }
     sleep 1
   end
 
-  index_manager = setup_index_manager elasticsearch, tika, configuration
+  index_manager = setup_index_manager elasticsearch, tika, sparql_connection_pool, configuration
   set :index_manager, index_manager
-  delta_handler = setup_delta_handling index_manager, elasticsearch, tika, configuration
+  delta_handler = setup_delta_handling index_manager, elasticsearch, tika, sparql_connection_pool, configuration
   set :delta_handler, delta_handler
 end
 

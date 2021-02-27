@@ -2,7 +2,7 @@ module MuSearch
   class DocumentBuilder
     def initialize( tika:, sparql_client:, attachment_path_base:, logger: )
       @tika = tika
-      @sparql_client = sparql_client
+      @sparql_client = sparql_client # authorized client from connection pool
       @attachment_path_base = attachment_path_base
       @cache_path_base = "/cache/"
       @logger = logger

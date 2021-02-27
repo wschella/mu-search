@@ -14,8 +14,9 @@ module MuSearch
     # creates a delta handler
     #
     # raises an error if an invalid search config is provided
-    def initialize(logger:, search_configuration:, update_handler: )
+    def initialize(logger:, sparql_connection_pool:, search_configuration:, update_handler: )
       @logger = logger
+      @sparql_connection_pool = sparql_connection_pool
       type_definitions = search_configuration[:type_definitions]
       @type_to_config_map = map_type_to_config(type_definitions)
       @property_to_config_map = map_property_to_config(type_definitions)
@@ -184,7 +185,7 @@ module MuSearch
       end
       sparql_query += "}"
 
-      MuSearch::SPARQL::sudo_query(sparql_query).map { |result| result["s"].to_s }
+      @sparql_connection_pool.sudo_query(sparql_query).map { |result| result["s"].to_s }
     end
 
     ##

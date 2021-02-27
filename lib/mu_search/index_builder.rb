@@ -4,10 +4,11 @@ require 'concurrent'
 module MuSearch
   class IndexBuilder
 
-    def initialize(logger:, elasticsearch:, tika:, search_index:, search_configuration: )
+    def initialize(logger:, elasticsearch:, tika:, sparql_connection_pool:, search_index:, search_configuration: )
       @logger = logger
       @elasticsearch = elasticsearch
       @tika = tika
+      @sparql_connection_pool = sparql_connection_pool
       @search_index = search_index
 
       @configuration = search_configuration
@@ -15,10 +16,6 @@ module MuSearch
       @batch_size = search_configuration[:batch_size]
       @max_batches = search_configuration[:max_batches]
       @attachment_path_base = search_configuration[:attachment_path_base]
-
-      @sparql_connection_pool = ConnectionPool.new(size: @number_of_threads, timeout: 3) do
-        MuSearch::SPARQL.authorized_client @search_index.allowed_groups
-      end
 
       type_def = @configuration[:type_definitions][search_index.type_name]
       if type_def["composite_types"] and type_def["composite_types"].length
@@ -56,14 +53,14 @@ module MuSearch
           @logger.info("INDEXING") { "Indexing batch #{i}/#{batches}" }
           failed_documents = []
 
-          @sparql_connection_pool.with do |sparql_client|
+          @sparql_connection_pool.with_authorization(@search_index.allowed_groups) do |sparql_client|
             document_builder = MuSearch::DocumentBuilder.new(
               tika: @tika,
               sparql_client: sparql_client,
               attachment_path_base: @attachment_path_base,
               logger: @logger
             )
-            document_uris = get_documents_for_batch rdf_type, i, sparql_client
+            document_uris = get_documents_for_batch rdf_type, i
             document_uris.each do |document_uri|
               @logger.debug("INDEXING") { "Indexing document #{document_uri} in batch #{i}" }
               document = document_builder.fetch_document_to_index(
@@ -113,19 +110,21 @@ module MuSearch
     end
 
     def count_documents(rdf_type)
-      @sparql_connection_pool.with do |client|
+      @sparql_connection_pool.with_authorization(@search_index.allowed_groups) do |client|
         result = client.query("SELECT (COUNT(?doc) as ?count) WHERE { ?doc a #{SinatraTemplate::Utils.sparql_escape_uri(rdf_type)} }")
         documents_count = result.first["count"].to_i
         documents_count
       end
     end
 
-    def get_documents_for_batch(rdf_type, batch_i, sparql_client)
+    def get_documents_for_batch(rdf_type, batch_i)
       offset = (batch_i - 1) * @batch_size
-      result = sparql_client.query("SELECT DISTINCT ?doc WHERE { ?doc a <#{rdf_type}>.  } LIMIT #{@batch_size} OFFSET #{offset}")
-      document_uris = result.map { |r| r[:doc].to_s }
-      @logger.debug("INDEXING") { "Selected documents for batch #{batch_i}: #{document_uris}" }
-      document_uris
+      @sparql_connection_pool.with_authorization(@search_index.allowed_groups) do |client|
+        result = client.query("SELECT DISTINCT ?doc WHERE { ?doc a <#{rdf_type}>.  } LIMIT #{@batch_size} OFFSET #{offset}")
+        document_uris = result.map { |r| r[:doc].to_s }
+        @logger.debug("INDEXING") { "Selected documents for batch #{batch_i}: #{document_uris}" }
+        document_uris
+      end
     end
   end
 end

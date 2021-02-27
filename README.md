@@ -961,6 +961,7 @@ The following scopes are known:
 * **SEARCH**: execution of search queries (default: `warn`)
 * **TIKA**: extraction and indexing of file content using Tika (default: `warn`)
 * **ELASTICSEARCH**: all communication with Elasticsearch (default: `error`)
+* **SPARQL**: all communication with the database (default: `warn`)
 * **AUTHORIZATION**: incoming access rights on requests (default: `warn`)
 * **DELTA**: handling of incoming delta's (default: `warn`)
 * **UPDATE_HANDLER**: processing of the updates triggered by delta's (default: `info`)
