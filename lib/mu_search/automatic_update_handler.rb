@@ -51,10 +51,10 @@ module MuSearch
                 attachment_path_base: @attachment_path_base,
                 logger: @logger
               )
+              properties = @type_definitions[index_type]["properties"]
+              document = document_builder.fetch_document_to_index(uri: document_id, properties: properties)
+              @elasticsearch.upsert_document index.name, document_id, document
             end
-            properties = @type_definitions[index_type]["properties"]
-            document = document_builder.fetch_document_to_index(uri: document_id, properties: properties)
-            @elasticsearch.upsert_document index.name, document_id, document
           else
             @logger.debug("UPDATE HANDLER") { "Document <#{document_id}> not accessible or already removed in triplestore for allowed groups #{allowed_groups}. Removing document from Elasticsearch index #{index.name} as well." }
             begin
