@@ -1,4 +1,8 @@
 # Changelog
+## v0.8.0-beta.3
+**Fixes**
+- Using connection pool for all SPARQL queries
+
 ## v0.8.0-beta.2
 **Fixes**
 - Error handling in case a file is not found for indexing
