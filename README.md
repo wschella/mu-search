@@ -841,6 +841,8 @@ Currently searching on multiple fields is only supported for the following flag:
 - `:phrase:`
 - `:phrase_prefix:`
 
+Multiple filter parameters are supported.
+
 Examples
 
 ```
@@ -849,6 +851,8 @@ GET /documents/search?filter[:common:description]=a+cat+named+Barney
 GET /documents/search?filter[:common,0.002:description]=a+cat+named+Barney
 
 GET /documents/search?filter[:common,0.002,2:description]=a+cat+named+Barney
+
+GET /documents/search?filter[:sqs:name]=Barney&[:has:address]=t
 ```
 
 ##### Sorting
