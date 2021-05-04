@@ -469,7 +469,7 @@ See also "How to specify a file's content as property".
 A search document can contain nested objects up to an arbitrary depth. For example for a person you can nest the address object as a property of the person search document.
 
 A nested object is defined by the following properties:
-- **via** : mapping of the RDF predicate that relates the resource with the nested object. May also be an inverse URI.
+- **via** : mapping of the RDF predicate that relates the resource with the nested object. May also be an inverse URI, or a list of predicate (a property path) as in non-nested properties
 - **rdf_type** : URI of the rdf:Class of the nested object
 - **properties** : mapping of RDF predicates to properties for the nested object
 
