@@ -95,7 +95,7 @@ SPARQL
     def build_nested_object( related_resources, nested_properties )
       related_resources.collect do |resource_uri|
         nested_document = fetch_document_to_index(uri: resource_uri, properties: nested_properties)
-        nested_document
+        nested_document.merge({uri: resource_uri})
       end
     end
 
