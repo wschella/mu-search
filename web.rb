@@ -188,6 +188,7 @@ get "/:path/search" do |path|
       filter: params["filter"],
       page: params["page"],
       sort: params["sort"],
+      highlight: params["highlight"],
       collapse_uuids: params["collapse_uuids"],
       search_configuration: search_configuration)
 

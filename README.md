@@ -872,6 +872,20 @@ GET /documents/search?filter[name]=fish&page[number]=2&page[size]=20
 
 The page number is zero-based.
 
+##### Highlighting
+
+Highlighting is specified using the `highlight[:fields:]` query parameter, where a comma separated list of fields you want highlighted should be provided.
+You can use `*` as field name to highlight all fields.
+
+No settings are currently supported.
+
+See also <https://www.elastic.co/guide/en/elasticsearch/reference/current/highlighting.html>.
+
+```
+GET /documents/search?filter[:sqs:]=fish&highlight[:fields:]=name,description
+GET /documents/search?filter[:sqs:]=fish&highlight[:fields:]=*
+```
+
 ##### Removing duplicate results
 When querying multiple indexes (with [additive indexes](#additive-indexes)), identical documents may be returned multiple times. Unique results can be assured using [Elasticsearch's search result collapsing](https://www.elastic.co/guide/en/elasticsearch/reference/7.9/collapse-search-results.html) on the `uuid` field. The search result collapsing can be toggled using the `collapse_uuids` query parameter:
 

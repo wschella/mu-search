@@ -5,13 +5,14 @@
 class ElasticQueryBuilder
   attr_reader :page_number, :page_size, :sort, :collapse_uuids
 
-  def initialize(logger:, type_definition:, filter:, page:, sort:, collapse_uuids:, search_configuration:)
+  def initialize(logger:, type_definition:, filter:, page:, sort:, highlight:, collapse_uuids:, search_configuration:)
     @logger = logger
     @type_def = type_definition
     @filter = filter
     @page_number = page && page["number"] ? page["number"].to_i : 0
     @page_size = page && page["size"] ? page["size"].to_i : 10
     @sort = sort
+    @highlight = highlight
     @collapse_uuids = true? collapse_uuids
     @configuration = search_configuration
   end
@@ -24,6 +25,7 @@ class ElasticQueryBuilder
     build_filter
       .build_sort
       .build_pagination
+      .build_highlight
       .build_collapse
       .build_source_fields
     @es_query
@@ -86,6 +88,20 @@ class ElasticQueryBuilder
   def build_pagination
     @es_query["from"] = @page_number * @page_size
     @es_query["size"] = @page_size
+    self
+  end
+
+  # Constructs elastic search highlight configuration.
+  # An object of the shape:
+  # { fields: { "field1": {}, "field2": {}, ...}}
+  # One can use "*" as a field name to highlight all fields.
+  # https://www.elastic.co/guide/en/elasticsearch/reference/current/highlighting.html
+  def build_highlight
+    if @highlight and !@filter.empty? and @highlight[":fields:"]
+      @es_query["highlight"] = {
+        fields:  @highlight[":fields:"].split(",").map{|field| [field, {}]}.to_h
+      }
+    end
     self
   end
 
