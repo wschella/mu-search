@@ -168,7 +168,7 @@ module MuSearch
         indexes_to_remove.each do |index|
           @logger.debug("INDEX MGMT") { "Remove index #{index.name}" }
           index.mutex.synchronize do
-            remove_index index
+            remove_index index allowed_groups
             index.status = :deleted
           end
         end
@@ -356,23 +356,10 @@ module MuSearch
 
       # Remove index from IndexManager
       if @indexes.has_key? type_name
-        @indexes[type_name].delete_if { |_, value| value.name == index.name }
+        @indexes[type_name].delete_if { |_, value| value.name == index_name }
 
         # Remove index from triplestore and Elasticsearch
         remove_index_by_name index_name
-      end
-    end
-
-    # Removes the given index from the triplestore, Elasticsearch and
-    # the in-memory indexes cache of the IndexManager.
-    # Does not yield an error if index doesn't exist
-    def remove_index index
-      # Remove index from IndexManager
-      if @indexes.has_key? index.type_name
-        @indexes[index.type_name].delete_if { |_, value| value.name == index.name }
-
-        # Remove index from triplestore and Elasticsearch
-        remove_index_by_name index.name
       end
     end
 
