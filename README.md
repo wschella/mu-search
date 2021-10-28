@@ -450,8 +450,10 @@ These objects are structured in the same way as the `attachment` objects resulti
       "on_path": "projects",
       ...
       "mappings" : {
-        "name" : { "type" : "text" },
-        "files.content" : { "type" : "text" }
+        "properties": {
+          "name" : { "type" : "text" },
+          "files.content" : { "type" : "text" }
+        }
       }
     },
     // other type definitions
@@ -502,8 +504,10 @@ In the example below the document's creator is nested in the `author` property o
                 }
             },
             "mappings": {
+              "properties": {
                 "title" : { "type" : "text" },
                 "author.fullname": { "type" : "text" }
+              }
             }
         }
     ]
@@ -642,8 +646,10 @@ In the mu-search configuration the Elasticsearch mappings can be passed via the 
       "on_path": "documents",
       ...
       "mappings" : {
-        "title" : { "type" : "text" },
-        "description" : { "type" : "text" }
+        "properties": {
+          "title" : { "type" : "text" },
+          "description" : { "type" : "text" }
+        }
       }
     },
     // other type definitions
