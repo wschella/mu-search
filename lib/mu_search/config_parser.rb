@@ -162,6 +162,15 @@ module MuSearch
           if undefined_types.length > 0
             errors << "composite type #{type["type"]} refers to type(s) #{undefined_types} which don't exist"
           end
+          if type["properties"].kind_of?(Array)
+            type["properties"]. do |prop, value|
+              unless prop.has_key?("name")
+                errors << "composite type #{type["type"]} has an invalid property: properties of a composite type should have a field 'name'"
+              end
+            end
+          else
+            errors << "composite type #{type["type"]}: properties should be an array"
+          end
         end
 
         if type.has_key?("mappings")
