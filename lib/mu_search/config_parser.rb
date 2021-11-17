@@ -163,7 +163,7 @@ module MuSearch
             errors << "composite type #{type["type"]} refers to type(s) #{undefined_types} which don't exist"
           end
           if type["properties"].kind_of?(Array)
-            type["properties"]. do |prop, value|
+            type["properties"].each do |prop, value|
               unless prop.has_key?("name")
                 errors << "composite type #{type["type"]} has an invalid property: properties of a composite type should have a field 'name'"
               end
