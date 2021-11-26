@@ -924,7 +924,7 @@ An invalidated index will be updated before executing a new search query on it.
 
 Note that the search index is only marked as invalid in memory. I.e the index is not removed from Elasticsearch nor the triplestore. Hence, on restart of mu-search, the index will be considered valid again.
 
-#### DELETE `/:type/delete`
+#### DELETE `/:type`
 Deletes the index(es) for the given `:type` in Elasticsearch and the triplestore. If the request is sent with authorization headers, only the authorized indexes are deleted. Otherwise, all indexes for the type are deleted.
 
 Type `_all` will delete all indexes.
