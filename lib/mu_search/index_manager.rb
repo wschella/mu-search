@@ -289,6 +289,7 @@ module MuSearch
           mappings["properties"] = {} if mappings["properties"].nil?
           # uuid must be configured as keyword to be able to collapse results
           mappings["properties"]["uuid"] = { type: "keyword" }
+          mappings["properties"]["uri"] = { type: "keyword" }
           # TODO deep merge custom and default settings
           settings = type_definition["settings"] || @configuration[:default_index_settings] || {}
           @elasticsearch.create_index index_name, mappings, settings
