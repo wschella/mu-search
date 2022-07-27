@@ -826,7 +826,7 @@ The following sections list the flags that are currently implemented:
 - `:prefix:` : [Prefix query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-prefix-query.html)
 - `:wildcard:` : [Wildcard query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-wildcard-query.html)
 - `:regexp:` : [Regexp query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-regexp-query.html)
-- `:fuzzy:` : [Fuzzy query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-fuzzy-query.html)
+- `:fuzzy:` : [Fuzzy query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-fuzzy-query.html) with [fuziness](https://www.elastic.co/guide/en/elasticsearch/reference/current/common-options.html#fuzziness) set to `"AUTO"` and allowing to match multiple fields.
 - `:gt:`,`lt:`, `:gte:`, `:lte:` : [Range query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-range-query.html)
 - `:lt,gt:`, `:lte,gte:`, `:lt,gte:`, `:lte,gt:` : Combined [range query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-range-query.html), range limits should be comma-separated such as: `GET /documents/search?filter[:lte,gte:importance]=3,7`
 - `:has:`: Filter on documents having any value for the supplied field. To enable the filter, it's value must be `t`. E.g. `filter[:has:translation]=t`.
@@ -840,12 +840,12 @@ The following sections list the flags that are currently implemented:
 - `:common:` [Common terms query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-common-terms-query.html). The flag takes additional options `cutoff_frequency` and `minimum_should_match` appended with commas such as `:common,{cutoff_frequence},{minimum_should_match}:{field}`. The `cutoff_frequency` can also be set application-wide in [the configuration file](#configuration-options).
 
 ###### Custom queries
-- `:fuzzy_match:` : [Fuzzy query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-fuzzy-query.html) with [fuziness](https://www.elastic.co/guide/en/elasticsearch/reference/current/common-options.html#fuzziness) set to `"AUTO"`.
 - `:fuzzy_phrase:` : A fuzzy phrase query based on [span_near](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-span-near-query.html) and [span_multi](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-span-multi-term-query.html). See also [this](https://stackoverflow.com/questions/38816955/elasticsearch-fuzzy-phrases) Stack Overflow issue or [the code](./framework/elastic_query_builder.rb).
 
 Currently searching on multiple fields is only supported for the following flag:
 - `:phrase:`
 - `:phrase_prefix:`
+- `:fuzzy:`
 
 Multiple filter parameters are supported.
 
