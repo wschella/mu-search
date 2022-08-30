@@ -275,7 +275,7 @@ class ElasticQueryBuilder
     modifier = nil
     fields_s = filter_key
 
-    match = /(?:\:)([^ ]+)(?::)([\w,.]*)/.match filter_key
+    match = /(?:\:)([^ ]+)(?::)([\w,.^*]*)/.match filter_key
     if match
       modifier = match[1]
       fields_s = match[2]
