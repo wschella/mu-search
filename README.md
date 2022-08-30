@@ -402,7 +402,7 @@ In the example below the documents index contains a property `topics` that maps 
 ```
 
 ##### File content property
-To make the content of a file searchable, it needs to be indexed as a property in a search index. Basic indexing of PDF, Word etc. files is provided using [Elasticsearch's Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html) and a local [Apache Tika](https://tika.apache.org/) instance. The plugin is already installed in the [mu-semtech/search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) image while the Tika server is running inside the mu-search container. A default ingest pipeline named `attachment` is created on startup of the mu-search service. Note that this is under development and liable to change.
+To make the content of a file searchable, it needs to be indexed as a property in a search index. Basic indexing of PDF, Word etc. files is provided using a local [Apache Tika](https://tika.apache.org/) instance. A default ingest pipeline named `attachment` is created on startup of the mu-search service. Note that this is under development and liable to change.
 
 Defining a property to index the content of a file requires the following keys:
 - **via** : mapping of the RDF predicate (path) that relates the resource with the file(s) to index. The file URI the predicate path leads to must have a URI starting with `share://` indicating the location of the file. E.g. `<share://path/to/your/file.pdf>`.
