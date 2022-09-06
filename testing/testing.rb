@@ -34,7 +34,7 @@ def sparql(allowed_groups, query)
 
   req['MU_AUTH_ALLOWED_GROUPS'] = allowed_groups_object.to_json
   req.body = query
-  
+
   res = Net::HTTP.start(uri.hostname, uri.port) {|http|
     http.request(req)
   }

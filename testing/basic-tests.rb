@@ -11,9 +11,9 @@ SPARQL
 
 automatic_updates false
 
-run_test(0) { 
+run_test(0) {
   res = elastic '/documents/search?filter[title]=giraffes', ['group1']
-  res["count"] 
+  res["count"]
 }
 
 sparql ['admin'], <<SPARQL
@@ -28,22 +28,22 @@ SPARQL
 
 sleep 1
 
-run_test(1) { 
+run_test(1) {
   res = elastic '/documents/search?filter[title]=giraffes', ['group1']
-  res["count"] 
+  res["count"]
 }
 
 sparql ['admin'], <<SPARQL
 DELETE WHERE {
- <document5> <http://purl.org/dc/elements/1.1/title> ?title 
+ <document5> <http://purl.org/dc/elements/1.1/title> ?title#{' '}
 }
 SPARQL
 
 sleep 1
 
-run_test(0) { 
+run_test(0) {
   res = elastic '/documents/search?filter[title]=giraffes', ['group1']
-  res["count"] 
+  res["count"]
 }
 
 #####
@@ -53,9 +53,9 @@ sleep 1
 
 automatic_updates true
 
-run_test(0) { 
+run_test(0) {
   res = elastic '/documents/search?filter[title]=giraffes', ['group1']
-  res["count"] 
+  res["count"]
 }
 
 sparql ['admin'], <<SPARQL
@@ -70,20 +70,20 @@ SPARQL
 
 sleep 1
 
-run_test(1) { 
+run_test(1) {
   res = elastic '/documents/search?filter[title]=giraffes', ['group1']
-  res["count"] 
+  res["count"]
 }
 
 sparql ['admin'], <<SPARQL
 DELETE WHERE {
- <document5> <http://purl.org/dc/elements/1.1/title> ?title 
+ <document5> <http://purl.org/dc/elements/1.1/title> ?title#{' '}
 }
 SPARQL
 
 sleep 1
 
-run_test(0) { 
+run_test(0) {
   res = elastic '/documents/search?filter[title]=giraffes', ['group1']
-  res["count"] 
+  res["count"]
 }
