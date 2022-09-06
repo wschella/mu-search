@@ -37,7 +37,7 @@ class Logger
   def scope_log_level(progname)
     @scope_levels = {} if @scope_levels.nil?
     if @scope_levels[progname].nil? # put value in scope_levels cache
-      scope = progname.to_s.upcase().gsub(/\s+/, "_")
+      scope = progname.to_s.upcase.gsub(/\s+/, "_")
       env_var = "LOG_SCOPE_#{scope}"
       @scope_levels[progname] = string_to_log_level ENV[env_var]
     end

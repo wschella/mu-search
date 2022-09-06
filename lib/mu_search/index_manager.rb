@@ -402,7 +402,7 @@ SPARQL
     #
     # TODO cleanup internal model used for storing indexes in triplestore
     def create_index_in_triplestore(type_name, index_name, allowed_groups, used_groups)
-      uuid = generate_uuid()
+      uuid = generate_uuid
       uri = "http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}" # TODO update base URI
 
       def groups_term(groups)

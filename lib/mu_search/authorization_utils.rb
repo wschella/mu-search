@@ -12,7 +12,7 @@ end
 #      ]
 #      will be serialized to "departmentlegaleurope#public"
 def serialize_authorization_groups(groups)
-  groups.map { |group| serialize_authorization_group group }.sort().join("#")
+  groups.map { |group| serialize_authorization_group group }.sort.join("#")
 end
 
 # Sorts a given list of authorization groups

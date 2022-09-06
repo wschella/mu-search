@@ -44,7 +44,7 @@ module MuSearch
       # FIFO queue of outstanding update actions, max. 1 per subject
       @queue = []
       # In memory cache of index types to update per subject
-      @subject_map = Hash.new { |hash, key| hash[key] = Set.new() }
+      @subject_map = Hash.new { |hash, key| hash[key] = Set.new }
 
       restore_queue_and_setup_persistence
       setup_runners
