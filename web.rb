@@ -90,7 +90,7 @@ def setup_delta_handling(index_manager, elasticsearch, tika, sparql_connection_p
     logger: SinatraTemplate::Utils.log,
     sparql_connection_pool: sparql_connection_pool,
     update_handler: handler,
-    search_configuration: { type_definitions: config[:type_definitions] } )
+    search_configuration: { type_definitions: config[:type_definitions] })
   delta_handler
 end
 
@@ -141,7 +141,6 @@ end
 ###
 # API ENDPOINTS
 ###
-
 
 # Processes an update from the delta system.
 # See MuSearch::DeltaHandler and MuSearch::UpdateHandler for more info
@@ -222,7 +221,6 @@ get "/:path/search" do |path|
     error(e.inspect, 500)
   end
 end
-
 
 # Execute a search query by passing a raw Elasticsearch Query DSL as request body
 #

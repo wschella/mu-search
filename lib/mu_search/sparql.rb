@@ -1,7 +1,7 @@
 module MuSearch
   module SPARQL
     class ClientWrapper
-      def initialize(logger:, sparql_client:, options: )
+      def initialize(logger:, sparql_client:, options:)
         @logger = logger
         @sparql_client = sparql_client
         @options = options
@@ -98,7 +98,6 @@ module MuSearch
       def with_sudo &block
         with_options({ headers: { 'mu-auth-sudo': 'true' } }, &block)
       end
-
 
       private
 

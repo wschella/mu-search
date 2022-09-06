@@ -4,7 +4,7 @@ require 'concurrent'
 module MuSearch
   class IndexBuilder
 
-    def initialize(logger:, elasticsearch:, tika:, sparql_connection_pool:, search_index:, search_configuration: )
+    def initialize(logger:, elasticsearch:, tika:, sparql_connection_pool:, search_index:, search_configuration:)
       @logger = logger
       @elasticsearch = elasticsearch
       @tika = tika
@@ -48,7 +48,7 @@ module MuSearch
         batches = batches + 1
         @logger.info("INDEXING") { "Number of batches: #{batches}" }
 
-        Parallel.each( 1..batches, in_threads: @number_of_threads ) do |i|
+        Parallel.each(1..batches, in_threads: @number_of_threads) do |i|
           batch_start_time = Time.now
           @logger.info("INDEXING") { "Indexing batch #{i}/#{batches}" }
           failed_documents = []
@@ -81,7 +81,6 @@ module MuSearch
         end
       end
     end
-
 
     private
 

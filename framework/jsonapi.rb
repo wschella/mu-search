@@ -36,7 +36,7 @@ def format_search_results type, count, page, size, results
       {
         type: type,
         id: uuid,
-        attributes: result["_source"].merge({ uri: result["_id"]})
+        attributes: result["_source"].merge({ uri: result["_id"] })
       }
     end,
     links: {
@@ -48,4 +48,3 @@ def format_search_results type, count, page, size, results
     }
   }
 end
-

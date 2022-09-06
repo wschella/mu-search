@@ -39,7 +39,7 @@ module MuSearch
         else
           search_configuration[:update_wait_interval_minutes]
         end
-      @min_wait_time =  wait_interval * 60 / 86400.0
+      @min_wait_time = wait_interval * 60 / 86400.0
 
       # FIFO queue of outstanding update actions, max. 1 per subject
       @queue = []
@@ -60,7 +60,7 @@ module MuSearch
         # Add subject to queue if an update for the same subject hasn't been scheduled before
         if !@subject_map.has_key? subject
           @logger.debug("UPDATE HANDLER") { "Add update for subject <#{subject}> to queue" }
-          @queue << { timestamp: DateTime.now, subject: subject, type: type}
+          @queue << { timestamp: DateTime.now, subject: subject, type: type }
         else
           @logger.debug("UPDATE HANDLER") { "Update for subject <#{subject}> already scheduled" }
         end
@@ -79,7 +79,7 @@ module MuSearch
     # add a delete to be handled
     # wrapper for add
     def add_delete(subject, index_type)
-     add(subject, index_type, :delete)
+      add(subject, index_type, :delete)
     end
 
     private
@@ -148,4 +148,3 @@ module MuSearch
     end
   end
 end
-

@@ -14,7 +14,7 @@ module MuSearch
     # creates a delta handler
     #
     # raises an error if an invalid search config is provided
-    def initialize(logger:, sparql_connection_pool:, search_configuration:, update_handler: )
+    def initialize(logger:, sparql_connection_pool:, search_configuration:, update_handler:)
       @logger = logger
       @sparql_connection_pool = sparql_connection_pool
       type_definitions = search_configuration[:type_definitions]
@@ -131,7 +131,7 @@ module MuSearch
             # we are not at the end of the path and the object is a literal
             @logger.debug("DELTA") { "Discarding path because object is not a URI, but #{object_type}" }
           else
-            subjects.concat( query_for_subjects_to_triple(triple, config, i, is_inverse, is_addition) )
+            subjects.concat(query_for_subjects_to_triple(triple, config, i, is_inverse, is_addition))
           end
         end
       end

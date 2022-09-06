@@ -125,7 +125,6 @@ module MuSearch
       indexes_to_invalidate
     end
 
-
     # Remove the indexes for the given type and allowed groups
     # If no type is passed, indexes for all types are removed
     # If no allowed_groups are passed, all indexes are removed regardless of access rights
@@ -176,7 +175,6 @@ module MuSearch
 
       indexes_to_remove
     end
-
 
     private
 
@@ -406,7 +404,7 @@ SPARQL
     # TODO cleanup internal model used for storing indexes in triplestore
     def create_index_in_triplestore type_name, index_name, allowed_groups, used_groups
       uuid = generate_uuid()
-      uri = "http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}"  # TODO update base URI
+      uri = "http://mu.semte.ch/authorization/elasticsearch/indexes/#{uuid}" # TODO update base URI
 
       def groups_term groups
         groups.map { |g| sparql_escape_string g.to_json }.join(",")
@@ -475,7 +473,7 @@ SPARQL
     def get_indexes_from_triplestore_by_type type_name
       indexes = {}
 
-      query_result = @sparql_connection_pool.sudo_query  <<SPARQL
+      query_result = @sparql_connection_pool.sudo_query <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         ?index a <http://mu.semte.ch/vocabularies/authorization/ElasticsearchIndex> ;
@@ -489,7 +487,7 @@ SPARQL
         uri = result["index"].to_s
         index_name = result["index_name"].to_s
 
-        allowed_groups_result = @sparql_connection_pool.sudo_query  <<SPARQL
+        allowed_groups_result = @sparql_connection_pool.sudo_query <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasAllowedGroup> ?group
@@ -498,7 +496,7 @@ SPARQL
 SPARQL
         allowed_groups = allowed_groups_result.map { |g| JSON.parse g["group"].to_s }
 
-        used_groups_result = @sparql_connection_pool.sudo_query  <<SPARQL
+        used_groups_result = @sparql_connection_pool.sudo_query <<SPARQL
   SELECT * WHERE {
     GRAPH <http://mu.semte.ch/authorization> {
         <#{uri}> <http://mu.semte.ch/vocabularies/authorization/hasUsedGroup> ?group

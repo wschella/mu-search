@@ -6,7 +6,6 @@ DELETE WHERE {
 }
 SPARQL
 
-
 #####
 # With Index Invalidation
 
@@ -46,8 +45,6 @@ run_test(0) {
   res = elastic '/documents/search?filter[title]=giraffes', ['group1']
   res["count"] 
 }
-
-
 
 #####
 # With Automatic Updates

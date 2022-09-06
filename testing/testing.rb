@@ -56,7 +56,6 @@ def run_test value
   end
 end
 
-
 def automatic_updates val
   uri = URI(ELASTIC + '/settings/automatic_updates')
   req = val ? req = Net::HTTP::Post.new(uri) : req = Net::HTTP::Delete.new(uri)
@@ -65,7 +64,6 @@ def automatic_updates val
     http.request(req)
   }
 end
-
 
 def persist_indexes val
   uri = URI(ELASTIC + '/settings/persist_indexes')

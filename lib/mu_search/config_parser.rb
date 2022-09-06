@@ -110,7 +110,7 @@ module MuSearch
 
     def self.validate_config(json_config)
       errors = []
-      if  ! json_config.has_key?("persist_indexes") || ! json_config["persist_indexes"]
+      if ! json_config.has_key?("persist_indexes") || ! json_config["persist_indexes"]
         SinatraTemplate::Utils.log.warn("CONFIG_PARSER") { "persist_indexes is disabled, indexes will be removed from elastic on restart!" }
       end
       if json_config.has_key?("eager_indexing_groups")

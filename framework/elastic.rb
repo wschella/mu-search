@@ -160,7 +160,6 @@ class Elastic
     end
   end
 
-
   # Inserts a new document in an Elasticsearch index
   #   - index: Index to store the document in.
   #   - id: Elasticsearch identifier to store the document under.
@@ -247,7 +246,6 @@ class Elastic
     end
   end
 
-
   # Searches for documents in the given indexes
   #   - indexes: Array of indexes to be searched
   #   - query: Elasticsearch query JSON object in ruby format
@@ -271,7 +269,6 @@ class Elastic
       end
     end
   end
-
 
   # Counts search results for documents in the given indexex
   #   - indexes: Array of indexes to be searched
@@ -297,7 +294,6 @@ class Elastic
       end
     end
   end
-
 
   private
 

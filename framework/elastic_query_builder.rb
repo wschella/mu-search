@@ -127,7 +127,6 @@ class ElasticQueryBuilder
       }
   end
 
-
   private
 
   # Mapping of filter params to the Elasticseach Query DSL

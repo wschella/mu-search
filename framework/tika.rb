@@ -55,7 +55,6 @@ class Tika
     end
   end
 
-
   private
 
   # Determine the mimetype of the given file name and content using Tika
