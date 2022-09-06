@@ -102,7 +102,7 @@ module MuSearch
               end
               if !change.nil?
                 large_queue = 500
-                if @queue.length > large_queue and large_queue % @number_of_threads == 0
+                if (@queue.length > large_queue) && (large_queue % @number_of_threads == 0)
                   # log only once per nb_of_threads
                   @logger.warn("UPDATE HANDLER") { "Large number of updates (#{@queue.length}) in queue" }
                 end

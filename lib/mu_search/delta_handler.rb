@@ -127,7 +127,7 @@ module MuSearch
       config[:rdf_properties].each_with_index do |property, i|
         if [predicate, "^#{predicate}"].include?(property)
           is_inverse = property.start_with? "^"
-          if i < nb_of_hops - 1 and !is_inverse and object_type != "uri"
+          if (i < nb_of_hops - 1) && !is_inverse && (object_type != "uri")
             # we are not at the end of the path and the object is a literal
             @logger.debug("DELTA") { "Discarding path because object is not a URI, but #{object_type}" }
           else
@@ -209,7 +209,7 @@ module MuSearch
       property_map = Hash.new{ |hash, key| hash[key] = Set.new } # has a set as default value for each key
       type_definitions.reject{ |type, config| config.has_key?("composite_tyes")}.each do |type, config|
         config["properties"].each do |key, value|
-          value = value["via"] if value.kind_of?(Hash) and !value["via"].nil?
+          value = value["via"] if value.kind_of?(Hash) && !value["via"].nil?
           if value.kind_of?(Array)
             value.each do |property|
               property_map[property] << { type_name: type, rdf_type: config["rdf_type"], rdf_properties: value }

@@ -42,7 +42,7 @@ class ElasticQueryBuilder
   # Constructs an Elasticsearch query
   # based on the filter parameters and type definition
   def build_filter
-    if @filter and !@filter.empty?
+    if @filter && !@filter.empty?
       filters = @filter.map { |key, value| construct_es_query_term key, value }
       if filters.length == 1
         @es_query["query"] = filters.first

@@ -341,7 +341,7 @@ class Elastic
     when Net::HTTPSuccess, Net::HTTPRedirection # response code 2xx or 3xx
       # Ruby doesn't use the encoding specified in HTTP headers (https://bugs.ruby-lang.org/issues/2567#note-3)
       content_type = res["CONTENT-TYPE"]
-      if res.body and content_type and content_type.downcase.include?("charset=utf-8")
+      if res.body && content_type && content_type.downcase.include?("charset=utf-8")
         res.body.force_encoding("utf-8")
       end
       res

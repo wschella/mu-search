@@ -18,7 +18,7 @@ module MuSearch
       @attachment_path_base = search_configuration[:attachment_path_base]
 
       type_def = @configuration[:type_definitions][search_index.type_name]
-      if type_def["composite_types"] and type_def["composite_types"].length
+      if type_def["composite_types"] && type_def["composite_types"].length
         @index_definitions = expand_composite_type_definition type_def
       else
         @index_definitions = [type_def]
@@ -40,7 +40,7 @@ module MuSearch
         number_of_documents = count_documents(rdf_type)
         @logger.info("INDEXING") { "Found #{number_of_documents} documents to index of type #{rdf_type} with allowed groups #{@search_index.allowed_groups}" }
         batches =
-          if @max_batches and @max_batches != 0
+          if @max_batches && (@max_batches != 0)
             [@max_batches, number_of_documents/@batch_size].min
           else
             number_of_documents/@batch_size
