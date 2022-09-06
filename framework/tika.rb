@@ -100,7 +100,7 @@ class Tika
       else
         @logger.info("TIKA") { "Failed to run request #{uri}. Request will be retried (#{retries} left)." }
         next_retries = retries - 1
-        backoff = (6 - next_retries) ** 2
+        backoff = (6 - next_retries)**2
         sleep backoff
         run(uri, req, next_retries)
       end

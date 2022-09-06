@@ -53,7 +53,7 @@ module MuSearch
             raise e
           else
             @logger.warn("SPARQL") { "Could not execute sudo query (attempt #{6 - next_retries}): #{query_string}" }
-            timeout = (6 - next_retries) ** 2
+            timeout = (6 - next_retries)**2
             sleep timeout
             sudo_query query_string, next_retries
           end
@@ -73,7 +73,7 @@ module MuSearch
             raise e
           else
             @logger.warn("SPARQL") { "Could not execute sudo query (attempt #{6 - next_retries}): #{query_string}" }
-            timeout = (6 - next_retries) ** 2
+            timeout = (6 - next_retries)**2
             sleep timeout
             sudo_update query_string, next_retries
           end

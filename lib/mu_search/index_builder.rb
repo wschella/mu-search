@@ -41,9 +41,9 @@ module MuSearch
         @logger.info("INDEXING") { "Found #{number_of_documents} documents to index of type #{rdf_type} with allowed groups #{@search_index.allowed_groups}" }
         batches =
           if @max_batches && (@max_batches != 0)
-            [@max_batches, number_of_documents/@batch_size].min
+            [@max_batches, number_of_documents / @batch_size].min
           else
-            number_of_documents/@batch_size
+            number_of_documents / @batch_size
           end
         batches = batches + 1
         @logger.info("INDEXING") { "Number of batches: #{batches}" }

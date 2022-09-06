@@ -10,12 +10,12 @@
 # section of the document.  In a perfect world, combined with some
 # context around it.
 def format_search_results(type, count, page, size, results)
-  last_page = count/size
-  next_page = [page+1, last_page].min
-  prev_page = [page-1, 0].max
+  last_page = count / size
+  next_page = [page + 1, last_page].min
+  prev_page = [page - 1, 0].max
 
   query_string = request.query_string.gsub(/&?page\[(number|size)\]=[0-9]+/, '')
-  uri =  request.path + '?' + query_string
+  uri = request.path + '?' + query_string
 
   def join(*elements)
     elements.reduce('') { |cumm, e| e == '' ? cumm : (cumm == '' ? e : cumm + '&' + e) }

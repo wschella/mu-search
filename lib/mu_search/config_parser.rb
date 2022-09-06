@@ -44,7 +44,7 @@ module MuSearch
       # the following settings can only be configured via the json file
       config[:default_index_settings] = json_config["default_settings"] || {}
       if json_config["eager_indexing_groups"]
-        config[:eager_indexing_groups]  = json_config["eager_indexing_groups"]
+        config[:eager_indexing_groups] = json_config["eager_indexing_groups"]
       end
 
       config[:type_definitions] = Hash[
