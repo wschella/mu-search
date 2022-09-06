@@ -46,7 +46,7 @@ end
 ##
 # Setup index manager based on configuration
 ##
-def setup_index_manager elasticsearch, tika, sparql_connection_pool, config
+def setup_index_manager(elasticsearch, tika, sparql_connection_pool, config)
   search_configuration = config.select do |key|
     [:type_definitions, :default_index_settings, :additive_indexes,
      :persist_indexes, :eager_indexing_groups, :number_of_threads,

@@ -35,7 +35,7 @@ class Elastic
   #
   # Executes a HEAD request. If that succeeds we can assume the index
   # exists.
-  def index_exists? index
+  def index_exists?(index)
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Head.new(uri)
 
@@ -54,7 +54,7 @@ class Elastic
   #   - mappings: Optional pre-defined document mappings for the index,
   #     JSON object passed directly to Elasticsearch.
   #   - settings: Optional JSON object passed directly to Elasticsearch
-  def create_index index, mappings = nil, settings = nil
+  def create_index(index, mappings = nil, settings = nil)
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Put.new(uri)
     req_body = {
@@ -83,7 +83,7 @@ class Elastic
   # Returns true when the index existed and is succesfully deleted.
   # Otherwise false.
   # Throws an error if the index exists but fails to be deleted.
-  def delete_index index
+  def delete_index(index)
     uri = URI("http://#{@host}:#{@port_s}/#{index}")
     req = Net::HTTP::Delete.new(uri)
     resp = run(uri, req)
@@ -111,7 +111,7 @@ class Elastic
   # operation happens once every second. When we build an index to
   # query it immediately, we should ensure to refresh the index before
   # querying.
-  def refresh_index index
+  def refresh_index(index)
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_refresh")
     req = Net::HTTP::Post.new(uri)
     resp = run(uri, req)
@@ -128,7 +128,7 @@ class Elastic
   # Clear a given index by deleting all documents in the Elasticsearch index
   #   - index: Index name to clear
   # Note: this operation does not delete the index in Elasticsearch
-  def clear_index index
+  def clear_index(index)
     if index_exists? index
       resp = delete_documents_by_query index, { query: { match_all: {} } }
       if resp.is_a? Net::HTTPSuccess
@@ -145,7 +145,7 @@ class Elastic
   # Returns nil if the document cannot be found.
   #   - index: Index to retrieve the document from
   #   - id: ElasticSearch ID of the document
-  def get_document index, id
+  def get_document(index, id)
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
     req = Net::HTTP::Get.new(uri)
     resp = run(uri, req)
@@ -166,7 +166,7 @@ class Elastic
   #   - document: document contents to index (as a ruby json object)
   # Returns the inserted document
   # Raises an error on failure.
-  def insert_document index, id, document
+  def insert_document(index, id, document)
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
     req = Net::HTTP::Put.new(uri)
     req_body = document.to_json
@@ -188,7 +188,7 @@ class Elastic
   #   - document: New document contents
   # Returns the updated document or nil if the document cannot be found.
   # Otherwise, raises an error.
-  def update_document index, id, document
+  def update_document(index, id, document)
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}/_update")
     req = Net::HTTP::Post.new(uri)
     req_body = { "doc": document }.to_json
@@ -212,7 +212,7 @@ class Elastic
   # - index: index to store document in
   # - id: elastic identifier to store the document under
   # - document: document contents (as a ruby json object)
-  def upsert_document index, id, document
+  def upsert_document(index, id, document)
     @logger.debug("ELASTICSEARCH") { "Trying to update document with id #{id}" }
     updated_document = update_document index, id, document
     if updated_document.nil?
@@ -229,7 +229,7 @@ class Elastic
   # Returns true when the document existed and is succesfully deleted.
   # Otherwise false.
   # Throws an error if the document exists but fails to be deleted.
-  def delete_document index, id
+  def delete_document(index, id)
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/#{CGI::escape(id)}")
     req = Net::HTTP::Delete.new(uri)
     resp = run(uri, req)
@@ -249,7 +249,7 @@ class Elastic
   # Searches for documents in the given indexes
   #   - indexes: Array of indexes to be searched
   #   - query: Elasticsearch query JSON object in ruby format
-  def search_documents indexes:, query: nil
+  def search_documents(indexes:, query: nil)
     indexes_s = indexes.join(',')
     uri = URI("http://#{@host}:#{@port_s}/#{indexes_s}/_search")
     req_body = query.to_json
@@ -273,7 +273,7 @@ class Elastic
   # Counts search results for documents in the given indexex
   #   - indexes: Array of indexes to be searched
   #   - query: Elasticsearch query JSON object in ruby format
-  def count_documents indexes:, query: nil
+  def count_documents(indexes:, query: nil)
     indexes_s = indexes.join(',')
     uri = URI("http://#{@host}:#{@port_s}/#{indexes_s}/_doc/_count")
     req_body = query.to_json
@@ -362,7 +362,7 @@ class Elastic
   #     other operations are currently occurring on the same document or not.
   #
   # For the query formal, see https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-delete-by-query.html
-  def delete_documents_by_query index, query, conflicts_proceed: true
+  def delete_documents_by_query(index, query, conflicts_proceed: true)
     conflicts = conflicts_proceed ? 'conflicts=proceed' : ''
     uri = URI("http://#{@host}:#{@port_s}/#{index}/_doc/_delete_by_query?#{conflicts}")
     req = Net::HTTP::Post.new(uri)

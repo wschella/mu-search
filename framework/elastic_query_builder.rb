@@ -118,7 +118,7 @@ class ElasticQueryBuilder
     self
   end
 
-  def filter_file_fields p
+  def filter_file_fields(p)
       file_fields = p.select do |key, val|
         val.is_a?(Hash) && val["attachment_pipeline"]
       end
@@ -133,7 +133,7 @@ class ElasticQueryBuilder
   # See https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
   # - filter_key: key of the filter param (e.g. :fuzzy:title,description)
   # - value: value of the filter param
-  def construct_es_query_term filter_key, value
+  def construct_es_query_term(filter_key, value)
     flag, fields = split_filter filter_key
 
     case flag
@@ -270,7 +270,7 @@ class ElasticQueryBuilder
   #      ":fuzzy:title,description" => ["fuzzy", ["title", "description"]]
   #
   # Returns a tuple of the modifier and fields
-  def split_filter filter_key
+  def split_filter(filter_key)
     modifier = nil
     fields_s = filter_key
 
@@ -289,7 +289,7 @@ class ElasticQueryBuilder
   # Raises an error if fields contains multiple elements.
   # - name: name of the filter, only used for error output
   # - fields: the parsed fields
-  def ensure_single_field_for name, fields
+  def ensure_single_field_for(name, fields)
     if fields && fields.length == 1
       yield fields.first
     else
@@ -297,7 +297,7 @@ class ElasticQueryBuilder
     end
   end
 
-  def true? obj
+  def true?(obj)
     !obj.nil? &&
       (["true", "t"].include?(obj.to_s.downcase) || obj.to_s == "1")
   end

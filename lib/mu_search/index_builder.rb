@@ -89,7 +89,7 @@ module MuSearch
     # with the properties resolved based on the properties mapping of the composite type.
     #
     # See the README for an example of a composite type configuration.
-    def expand_composite_type_definition composite_type_def
+    def expand_composite_type_definition(composite_type_def)
       simple_types = composite_type_def["composite_types"]
       simple_types.map do |simple_type|
         simple_type_def = @configuration[:type_definitions][simple_type]
