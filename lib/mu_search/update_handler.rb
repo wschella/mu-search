@@ -89,7 +89,7 @@ module MuSearch
       @runners = (0...@number_of_threads).map do |i|
         Thread.new(abort_on_exception: true) do
           @logger.debug("UPDATE HANDLER") { "Runner #{i} ready for duty" }
-          while true do
+          loop do
             change = subject = index_types = type = nil
             begin
               @mutex.synchronize do
@@ -129,7 +129,7 @@ module MuSearch
       end
 
       @persister = Thread.new(abort_on_exception: true) do
-        while true
+        loop do
           sleep 300
           @mutex.synchronize do
             @logger.info("UPDATE HANDLER") { "Persisting update queue to disk (length: #{@queue.length})" }
