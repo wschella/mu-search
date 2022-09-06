@@ -122,12 +122,12 @@ configure do
     logger: SinatraTemplate::Utils.log
   )
 
-  while !elasticsearch.up?
+  until elasticsearch.up?
     log.info("SETUP") { "...waiting for elasticsearch..." }
     sleep 1
   end
 
-  while !sparql_connection_pool.up?
+  until sparql_connection_pool.up?
     log.info("SETUP") { "...waiting for SPARQL endpoint..." }
     sleep 1
   end
