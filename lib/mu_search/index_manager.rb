@@ -46,7 +46,7 @@ module MuSearch
               end
               indexes_to_update += additive_indexes
               @logger.debug("INDEX MGMT") do
-                index_names_s = additive_indexes.map { |index| index.name }.join(", ")
+                index_names_s = additive_indexes.map(&:name).join(", ")
                 "Fetched #{additive_indexes.length} additive indexes for type '#{type_name}' and allowed_groups #{allowed_groups}: #{index_names_s}"
               end
             else
@@ -112,7 +112,7 @@ module MuSearch
         @logger.info("INDEX MGMT") do
           type_s = type_name.nil? ? "all types" : "type '#{type_name}'"
           allowed_groups_s = allowed_groups.nil? ? "all groups" : "allowed_groups #{allowed_groups}"
-          index_names_s = indexes_to_invalidate.map { |index| index.name }.join(", ")
+          index_names_s = indexes_to_invalidate.map(&:name).join(", ")
           "Found #{indexes_to_invalidate.length} indexes to invalidate for #{type_s} and #{allowed_groups_s}: #{index_names_s}"
         end
 
@@ -161,7 +161,7 @@ module MuSearch
         @logger.info("INDEX MGMT") do
           type_s = type_name.nil? ? "all types" : "type '#{type_name}'"
           allowed_groups_s = allowed_groups.nil? ? "all groups" : "allowed_groups #{allowed_groups}"
-          index_names_s = indexes_to_remove.map { |index| index.name }.join(", ")
+          index_names_s = indexes_to_remove.map(&:name).join(", ")
           "Found #{indexes_to_remove.length} indexes to remove for #{type_s} and #{allowed_groups_s}: #{index_names_s}"
         end
 
@@ -389,7 +389,7 @@ SELECT ?name WHERE {
     }
   }
 SPARQL
-      index_names = result.map { |r| r.name }
+      index_names = result.map(&:name)
       index_names.each do |index_name|
         remove_index_by_name index_name
         @logger.info("INDEX MGMT") { "Remove persisted index #{index_name} in triplestore and Elasticsearch" }
@@ -463,7 +463,7 @@ SELECT ?index WHERE {
     }
   } LIMIT 1
 SPARQL
-      result.map { |r| r.index }.first
+      result.map(&:index).first
     end
 
     # Gets indexes for the given type name from the triplestore

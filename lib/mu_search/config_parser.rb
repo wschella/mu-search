@@ -64,7 +64,7 @@ module MuSearch
 
     def self.parse_string_array(*possible_values)
       as_type(*possible_values) do |val|
-        val.each { |s| s.to_s }
+        val.each(&:to_s)
       end
     end
 
