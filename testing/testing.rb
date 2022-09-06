@@ -10,7 +10,7 @@ def elastic(path, allowed_groups, test = nil)
   allowed_groups_object = allowed_groups.map { |group| { value: group } }
   req['MU_AUTH_ALLOWED_GROUPS'] = allowed_groups_object.to_json
 
-  res = Net::HTTP.start(uri.hostname, uri.port) {|http|
+  res = Net::HTTP.start(uri.hostname, uri.port) { |http|
     http.request(req)
   }
 
@@ -35,7 +35,7 @@ def sparql(allowed_groups, query)
   req['MU_AUTH_ALLOWED_GROUPS'] = allowed_groups_object.to_json
   req.body = query
 
-  res = Net::HTTP.start(uri.hostname, uri.port) {|http|
+  res = Net::HTTP.start(uri.hostname, uri.port) { |http|
     http.request(req)
   }
 
@@ -60,7 +60,7 @@ def automatic_updates(val)
   uri = URI(ELASTIC + '/settings/automatic_updates')
   req = val ? req = Net::HTTP::Post.new(uri) : req = Net::HTTP::Delete.new(uri)
 
-  res = Net::HTTP.start(uri.hostname, uri.port) {|http|
+  res = Net::HTTP.start(uri.hostname, uri.port) { |http|
     http.request(req)
   }
 end
@@ -69,7 +69,7 @@ def persist_indexes(val)
   uri = URI(ELASTIC + '/settings/persist_indexes')
   req = val ? req = Net::HTTP::Post.new(uri) : req = Net::HTTP::Delete.new(uri)
 
-  res = Net::HTTP.start(uri.hostname, uri.port) {|http|
+  res = Net::HTTP.start(uri.hostname, uri.port) { |http|
     http.request(req)
   }
 end

@@ -118,7 +118,7 @@ module MuSearch
     #   - predicate: Predicate to be escaped.
     def self.predicate_string_term(predicate)
       if predicate.start_with? "^"
-        "^#{sparql_escape_uri(predicate.slice(1,predicate.length))}"
+        "^#{sparql_escape_uri(predicate.slice(1, predicate.length))}"
       else
         sparql_escape_uri(predicate)
       end

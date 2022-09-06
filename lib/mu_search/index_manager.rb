@@ -6,7 +6,6 @@ module MuSearch
   # - triplestore
   ###
   class IndexManager
-
     attr_reader :indexes
     def initialize(logger:, elasticsearch:, tika:, sparql_connection_pool:, search_configuration:)
       @logger = logger
@@ -522,10 +521,9 @@ SPARQL
     def generate_index_name(type_name, sorted_allowed_groups, sorted_used_groups)
       groups = sorted_allowed_groups.map do |group|
         # order keys of each group object alphabetically to ensure unique json serialization
-        Hash[ group.sort_by { |key, _| key } ].to_json
+        Hash[group.sort_by { |key, _| key }].to_json
       end
       Digest::MD5.hexdigest (type_name + "-" + groups.join("-"))
     end
-
   end
 end

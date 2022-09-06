@@ -9,7 +9,6 @@ module MuSearch
   # NOTE: in theory the handler has a pretty good idea what has changed
   #       it may be possible to have finer grained updates on es documents than we currently have
   class DeltaHandler
-
     ##
     # creates a delta handler
     #
@@ -83,9 +82,9 @@ module MuSearch
     # Returns a set of impacted search configs.
     # Each config contains keys :type_name, :rdf_type, :rdf_properties
     def applicable_index_configurations_for_triple(triple)
-      predicate = triple["predicate"][ "value"]
+      predicate = triple["predicate"]["value"]
       if predicate == RDF.type.to_s
-        rdf_type = triple["object"][ "value"]
+        rdf_type = triple["object"]["value"]
         @type_to_config_map[rdf_type]
       else
         @property_to_config_map[predicate] + @property_to_config_map["^#{predicate}"]
@@ -103,7 +102,7 @@ module MuSearch
     def find_root_subjects_for_triple(triple, config, is_addition = true)
       # NOTE: current logic assumes rdf:type is never part of the property path
       if triple["predicate"]["value"] == RDF.type.to_s
-        [ triple["subject"]["value"] ]
+        [triple["subject"]["value"]]
       else
         find_subjects_for_property(triple, config, is_addition)
       end
@@ -193,10 +192,10 @@ module MuSearch
     # TODO add correct handling for composite_types
     # TOOD add correct handling for nested_types
     def map_type_to_config(type_definitions)
-      type_map = Hash.new{ |hash, key| hash[key] = Set.new } # has a set as default value for each key
-      type_definitions.reject{ |type, config| config.has_key?("composite_tyes")}.each do |type, config|
+      type_map = Hash.new { |hash, key| hash[key] = Set.new } # has a set as default value for each key
+      type_definitions.reject { |type, config| config.has_key?("composite_tyes") }.each do |type, config|
         rdf_type = config["rdf_type"]
-        type_map[rdf_type] << { type_name: type, rdf_type: rdf_type, rdf_properties: [ RDF.type.to_s ] }
+        type_map[rdf_type] << { type_name: type, rdf_type: rdf_type, rdf_properties: [RDF.type.to_s] }
       end
       type_map
     end
@@ -206,8 +205,8 @@ module MuSearch
     # TODO add correct handling for composite_types
     # TOOD add correct handling for nested_types
     def map_property_to_config(type_definitions)
-      property_map = Hash.new{ |hash, key| hash[key] = Set.new } # has a set as default value for each key
-      type_definitions.reject{ |type, config| config.has_key?("composite_tyes")}.each do |type, config|
+      property_map = Hash.new { |hash, key| hash[key] = Set.new } # has a set as default value for each key
+      type_definitions.reject { |type, config| config.has_key?("composite_tyes") }.each do |type, config|
         config["properties"].each do |key, value|
           value = value["via"] if value.kind_of?(Hash) && !value["via"].nil?
           if value.kind_of?(Array)
@@ -215,7 +214,7 @@ module MuSearch
               property_map[property] << { type_name: type, rdf_type: config["rdf_type"], rdf_properties: value }
             end
           else
-            property_map[value] << { type_name: type, rdf_type: config["rdf_type"], rdf_properties: [ value ] }
+            property_map[value] << { type_name: type, rdf_type: config["rdf_type"], rdf_properties: [value] }
           end
         end
       end

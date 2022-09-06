@@ -130,5 +130,4 @@ class Tika
       res
     end
   end
-
 end

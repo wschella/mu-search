@@ -5,7 +5,6 @@ module MuSearch
   # the invalidating update handler is a service that executes updates or deletes on indexes.
   # it will mark an index as invalid for any change that has happened on it
   class InvalidatingUpdateHandler < MuSearch::UpdateHandler
-
     ##
     # creates an invalidating update handler
     def initialize(search_configuration:, **args)

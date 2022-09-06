@@ -3,7 +3,6 @@ require 'concurrent'
 
 module MuSearch
   class IndexBuilder
-
     def initialize(logger:, elasticsearch:, tika:, sparql_connection_pool:, search_index:, search_configuration:)
       @logger = logger
       @elasticsearch = elasticsearch

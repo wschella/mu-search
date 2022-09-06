@@ -32,7 +32,7 @@ end
 # Note: the list of variables in an authorization group
 #       is already ordered and should not be sorted alphabetically
 def sort_authorization_groups(groups)
-  groups.sort_by{ |group| serialize_authorization_group group }
+  groups.sort_by { |group| serialize_authorization_group group }
 end
 
 # Get the allowed groups from an incoming HTTP request.

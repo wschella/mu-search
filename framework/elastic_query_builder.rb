@@ -301,5 +301,4 @@ class ElasticQueryBuilder
     !obj.nil? &&
       (["true", "t"].include?(obj.to_s.downcase) || obj.to_s == "1")
   end
-
 end
