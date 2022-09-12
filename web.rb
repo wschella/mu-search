@@ -46,7 +46,7 @@ end
 ##
 # Setup index manager based on configuration
 ##
-def setup_index_manager elasticsearch, tika, sparql_connection_pool, config
+def setup_index_manager(elasticsearch, tika, sparql_connection_pool, config)
   search_configuration = config.select do |key|
     [:type_definitions, :default_index_settings, :additive_indexes,
      :persist_indexes, :eager_indexing_groups, :number_of_threads,
@@ -90,7 +90,7 @@ def setup_delta_handling(index_manager, elasticsearch, tika, sparql_connection_p
     logger: SinatraTemplate::Utils.log,
     sparql_connection_pool: sparql_connection_pool,
     update_handler: handler,
-    search_configuration: { type_definitions: config[:type_definitions] } )
+    search_configuration: { type_definitions: config[:type_definitions] })
   delta_handler
 end
 
@@ -122,12 +122,12 @@ configure do
     logger: SinatraTemplate::Utils.log
   )
 
-  while !elasticsearch.up?
+  until elasticsearch.up?
     log.info("SETUP") { "...waiting for elasticsearch..." }
     sleep 1
   end
 
-  while !sparql_connection_pool.up?
+  until sparql_connection_pool.up?
     log.info("SETUP") { "...waiting for SPARQL endpoint..." }
     sleep 1
   end
@@ -141,7 +141,6 @@ end
 ###
 # API ENDPOINTS
 ###
-
 
 # Processes an update from the delta system.
 # See MuSearch::DeltaHandler and MuSearch::UpdateHandler for more info
@@ -222,7 +221,6 @@ get "/:path/search" do |path|
     error(e.inspect, 500)
   end
 end
-
 
 # Execute a search query by passing a raw Elasticsearch Query DSL as request body
 #

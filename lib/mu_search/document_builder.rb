@@ -1,6 +1,6 @@
 module MuSearch
   class DocumentBuilder
-    def initialize( tika:, sparql_client:, attachment_path_base:, logger: )
+    def initialize(tika:, sparql_client:, attachment_path_base:, logger:)
       @tika = tika
       @sparql_client = sparql_client # authorized client from connection pool
       @attachment_path_base = attachment_path_base
@@ -16,7 +16,7 @@ module MuSearch
     # This is your one-stop shop to fetch all info to index a document.
     #   - uri: URI of the resource to fetch
     #   - properties: Array of properties as configured in the search config
-    def fetch_document_to_index( uri: nil, properties: nil )
+    def fetch_document_to_index(uri: nil, properties: nil)
       # we include uuid because it may be used for folding
       properties["uuid"] = ["http://mu.semte.ch/vocabularies/core/uuid"] unless properties.has_key?("uuid")
 
@@ -41,7 +41,6 @@ module MuSearch
       Hash[key_value_tuples]
     end
 
-
     private
 
     # Selects the value(s) for the given property of a resource
@@ -49,7 +48,7 @@ module MuSearch
     #   - uri: URI of the resource as a string
     #   - property_key: name of the variable to bind the result to
     #   - property_predicate: predicate (path) of the property to fetch
-    def get_property_values( uri, property_key, property_predicate )
+    def get_property_values(uri, property_key, property_predicate)
       predicate = property_predicate.is_a?(Hash) ? property_predicate["via"] : property_predicate
       predicate_s = MuSearch::SPARQL.make_predicate_string predicate
       prop_key_s = property_key.gsub(/[^a-zA-Z1-9]/, "")
@@ -64,7 +63,7 @@ SPARQL
 
     # Get the array of values to index for a given SPARQL result set of simple values.
     # Values are constructed based on the literal datatype.
-    def build_simple_property( values )
+    def build_simple_property(values)
       values.collect do |value|
         case value
         when RDF::Literal::Integer
@@ -92,10 +91,10 @@ SPARQL
     # Get the array of objects to be indexed for a given SPARQL result set
     # of related resources configured to be indexed as nested object.
     # The properties to be indexed for the nested object are passed as an argument.
-    def build_nested_object( related_resources, nested_properties )
+    def build_nested_object(related_resources, nested_properties)
       related_resources.collect do |resource_uri|
         nested_document = fetch_document_to_index(uri: resource_uri, properties: nested_properties)
-        nested_document.merge({uri: resource_uri})
+        nested_document.merge({ uri: resource_uri })
       end
     end
 
@@ -104,7 +103,7 @@ SPARQL
     # The file object to index currently contains the following properties:
     # - content: text content of the file
     # This list may be extended with additional metadata in the future.
-    def build_file_field( file_uris )
+    def build_file_field(file_uris)
       file_uris.collect do |file_uri|
         file_path = File.join(@attachment_path_base, file_uri.to_s.sub("share://", ""))
         if File.exists? file_path
@@ -129,7 +128,7 @@ SPARQL
     # Otherwise, returns nil.
     #
     # Entries are cached using the file hash as key.
-    def extract_text_content( file_path )
+    def extract_text_content(file_path)
       begin
         file = File.open(file_path, "rb")
         blob = file.read
@@ -166,13 +165,12 @@ SPARQL
       end
     end
 
-
     # Utility function to denumerate the given array value.
     # I.e.
     # - returns nil if the given array is empty
     # - returns a single value if the given array only contains one element
     # - returns the array value if the given array contains mulitple elements
-    def denumerate( value )
+    def denumerate(value)
       case value.length
       when 0 then nil
       when 1 then value.first
