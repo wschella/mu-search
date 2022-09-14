@@ -1,4 +1,16 @@
 # Changelog
+## v0.8.0-beta.4
+**Features**
+- Allow to specify wildcards and per-field boosts in fields parameter
+- multi match support for fuzzy filter
+- Basic config validation on startup
+- include URI of nested objects in the document
+
+**Fixes**
+- No longer throw an error in the delta handler when composite types are used (composite types are still not handled though)
+- improved, but far from perfect composite type support
+
+
 ## v0.8.0-beta.3
 **Fixes**
 - Using connection pool for all SPARQL queries
