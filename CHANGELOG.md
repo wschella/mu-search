@@ -1,4 +1,5 @@
 # Changelog
+## v0.8.0
 ## v0.8.0-beta.4
 **Features**
 - Allow to specify wildcards and per-field boosts in fields parameter
