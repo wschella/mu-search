@@ -11,7 +11,7 @@ class Tika
   # Returns the text content as string on success
   # Returns nil on failure due to 'known' errors (eg. encrypted files)
   # Raises an exception on unexpected errors
-  def extract_text file_path, blob
+  def extract_text(file_path, blob)
     mime_type = determine_mime_type file_path, blob
 
     uri = URI("http://#{@host}:#{@port_s}/tika")
@@ -37,7 +37,7 @@ class Tika
   # Returns the metadata as JSON on success
   # Returns nil on failure due to 'known' errors (eg. encrypted files)
   # Raises an exception on unexpected errors
-  def extract_metadata file_path, blob
+  def extract_metadata(file_path, blob)
     uri = URI("http://#{@host}:#{@port_s}/meta")
     req = Net::HTTP::Put.new(uri)
     req["Accept"] = "application/json"
@@ -55,14 +55,13 @@ class Tika
     end
   end
 
-
   private
 
   # Determine the mimetype of the given file name and content using Tika
   #
   # Returns a string indicating the mimetype on success.
   # Returns nil on error
-  def determine_mime_type file_path, blob
+  def determine_mime_type(file_path, blob)
     uri = URI("http://#{@host}:#{@port_s}/detect/stream")
     req = Net::HTTP::Put.new(uri)
     req["Content-Disposition"] = "attachment; filename=#{File.basename(file_path)}"
@@ -101,7 +100,7 @@ class Tika
       else
         @logger.info("TIKA") { "Failed to run request #{uri}. Request will be retried (#{retries} left)." }
         next_retries = retries - 1
-        backoff = (6 - next_retries) ** 2
+        backoff = (6 - next_retries)**2
         sleep backoff
         run(uri, req, next_retries)
       end
@@ -119,7 +118,7 @@ class Tika
     when Net::HTTPSuccess, Net::HTTPRedirection # response code 2xx or 3xx
       # Ruby doesn't use the encoding specified in HTTP headers (https://bugs.ruby-lang.org/issues/2567#note-3)
       content_type = res["CONTENT-TYPE"]
-      if res.body and content_type and content_type.downcase.include?("charset=utf-8")
+      if res.body && content_type && content_type.downcase.include?("charset=utf-8")
         res.body.force_encoding("utf-8")
       end
       res
@@ -131,5 +130,4 @@ class Tika
       res
     end
   end
-
 end

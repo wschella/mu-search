@@ -1,0 +1,83 @@
+---
+kind: pipeline
+type: docker
+name: push-latest
+steps:
+- name: build-and-push
+  image: plugins/docker
+  settings:
+    repo: ${DRONE_REPO_NAMESPACE/mu-semtech/semtech}/${DRONE_REPO_NAME%-service}
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+trigger:
+  branch:
+  - master
+  event:
+    exclude:
+    - pull_request
+---
+kind: pipeline
+type: docker
+name: push-feature-build
+steps:
+- name: push-feature-build
+  image: plugins/docker
+  settings:
+    repo: ${DRONE_REPO_NAMESPACE/mu-semtech/semtech}/${DRONE_REPO_NAME%-service}
+    tags: ${DRONE_BRANCH/\//-}
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+    purge: true
+trigger:
+  branch:
+    - feature/*
+  event:
+    exclude:
+      - pull_request
+---
+kind: pipeline
+type: docker
+name: push-release
+steps:
+- name: build-and-push-tag
+  image: plugins/docker
+  settings:
+    repo: ${DRONE_REPO_NAMESPACE/mu-semtech/semtech}/${DRONE_REPO_NAME%-service}
+    tags: ${DRONE_TAG##v} # strips v from the tag
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+trigger:
+  event:
+  - tag
+---
+kind: pipeline
+type: docker
+name: dry-run
+steps:
+- name: dry-run
+  image: plugins/docker
+  settings:
+    repo: ${DRONE_REPO_NAMESPACE/mu-semtech/semtech}/${DRONE_REPO_NAME%-service}
+    dry_run: true
+trigger:
+  event:
+  - pull_request
+---
+kind: secret
+name: docker_username
+data: fn4Cfa9M7ToXADqbUZS/FKDOEA3ZnKEWYPETZVOG2zSGi2Gc+yxY
+---
+kind: secret
+name: docker_password
+data: MrYmhUHYIVy0NuXvHp5OxmOazGiIxZn2roA5p6OTi3cMhx8t1FxINHsRpt2slF0n9F2AM2ejUOe9LDDlWNw7qw==
+---
+kind: signature
+hmac: ba9ec75217725c94bf360ad3253db5bf5fb9e01f5cb3c9b14358b268aceba72d
+
+...

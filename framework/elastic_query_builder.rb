@@ -44,7 +44,7 @@ class ElasticQueryBuilder
   # Constructs an Elasticsearch query
   # based on the filter parameters and type definition
   def build_filter
-    if @filter and !@filter.empty?
+    if @filter && !@filter.empty?
       filters = @filter.map { |key, value| construct_es_query_term key, value }
       if filters.length == 1
         @es_query["query"] = filters.first
@@ -125,15 +125,23 @@ class ElasticQueryBuilder
   # TODO correctly handle nested objects
   # TODO correctly handle composite types
   def build_source_fields
-    file_fields = @type_def["properties"].select do |key, val|
-      val.is_a?(Hash) && val["attachment_pipeline"]
+    props = @type_def["properties"]
+    if props.is_a?(Array)
+      props.each { |p| filter_file_fields p }
+    elsif props.is_a?(Hash)
+      filter_file_fields props
     end
-    @es_query["_source"] = {
-      excludes: file_fields.keys
-    }
     self
   end
 
+  def filter_file_fields(p)
+      file_fields = p.select do |key, val|
+        val.is_a?(Hash) && val["attachment_pipeline"]
+      end
+      @es_query["_source"] = {
+        excludes: file_fields.keys
+      }
+  end
 
   private
 
@@ -141,7 +149,7 @@ class ElasticQueryBuilder
   # See https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
   # - filter_key: key of the filter param (e.g. :fuzzy:title,description)
   # - value: value of the filter param
-  def construct_es_query_term filter_key, value
+  def construct_es_query_term(filter_key, value)
     flag, fields = split_filter filter_key
 
     case flag
@@ -150,7 +158,14 @@ class ElasticQueryBuilder
       {
         multi_match: { query: value, type: flag, fields: multi_match_fields }.compact
       }
-    when "term", "fuzzy", "prefix", "wildcard", "regexp"
+    when "fuzzy"
+      # Using `nil` instead of `*.*` to match all fields when no fields are specified, because `nil` will only match
+      # all possible fields while `*.*` will match all (also conflicting, i.e. non keyword or text fields) fields.
+      multi_match_fields = fields == ["_all"] ? nil : fields
+      {
+        multi_match: { query: value, fields: multi_match_fields, fuzziness: "AUTO" }.compact
+      }
+    when "term", "prefix", "wildcard", "regexp"
       ensure_single_field_for flag, fields do |field|
         {
           flag => { field => value }
@@ -160,14 +175,6 @@ class ElasticQueryBuilder
       ensure_single_field_for flag, fields do |field|
         {
           terms: { field => value.split(",") }
-        }
-      end
-    when "fuzzy_match"
-      ensure_single_field_for flag, fields do |field|
-        {
-          fuzzy: {
-            field => { value: value, fuzziness: "AUTO" }
-          }
         }
       end
     when "fuzzy_phrase"
@@ -279,11 +286,11 @@ class ElasticQueryBuilder
   #      ":fuzzy:title,description" => ["fuzzy", ["title", "description"]]
   #
   # Returns a tuple of the modifier and fields
-  def split_filter filter_key
+  def split_filter(filter_key)
     modifier = nil
     fields_s = filter_key
 
-    match = /(?:\:)([^ ]+)(?::)([\w,.]*)/.match filter_key
+    match = /(?:\:)([^ ]+)(?::)([\w,.^*]*)/.match filter_key
     if match
       modifier = match[1]
       fields_s = match[2]
@@ -298,7 +305,7 @@ class ElasticQueryBuilder
   # Raises an error if fields contains multiple elements.
   # - name: name of the filter, only used for error output
   # - fields: the parsed fields
-  def ensure_single_field_for name, fields
+  def ensure_single_field_for(name, fields)
     if fields && fields.length == 1
       yield fields.first
     else
@@ -306,9 +313,8 @@ class ElasticQueryBuilder
     end
   end
 
-  def true? obj
+  def true?(obj)
     !obj.nil? &&
       (["true", "t"].include?(obj.to_s.downcase) || obj.to_s == "1")
   end
-
 end

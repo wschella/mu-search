@@ -1,7 +1,7 @@
 # Returns a string representation for an authorization group
 # E.g. { "name": "department", "variables": ["legal", "europe"] }
 #      will be serialized to "departmentlegaleurope"
-def serialize_authorization_group group
+def serialize_authorization_group(group)
   group["name"] + group["variables"].join("")
 end
 
@@ -11,8 +11,8 @@ end
 #        { "name": "department", "variables": ["legal", "europe"] }
 #      ]
 #      will be serialized to "departmentlegaleurope#public"
-def serialize_authorization_groups groups
-  groups.map { |group| serialize_authorization_group group }.sort().join("#")
+def serialize_authorization_groups(groups)
+  groups.map { |group| serialize_authorization_group group }.sort.join("#")
 end
 
 # Sorts a given list of authorization groups
@@ -31,8 +31,8 @@ end
 #      ]
 # Note: the list of variables in an authorization group
 #       is already ordered and should not be sorted alphabetically
-def sort_authorization_groups groups
-  groups.sort_by{ |group| serialize_authorization_group group }
+def sort_authorization_groups(groups)
+  groups.sort_by { |group| serialize_authorization_group group }
 end
 
 # Get the allowed groups from an incoming HTTP request.

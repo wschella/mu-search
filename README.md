@@ -15,7 +15,7 @@ Next, add the mu-search and accompanying elasticsearch service to `docker-compos
 ```yml
 services:
   search:
-    image: semtech/mu-search:0.8.0-beta.3
+    image: semtech/mu-search:0.8.0
     links:
       - db:database
     volumes:
@@ -230,7 +230,7 @@ Next, add the following mounted volumes to the mu-search service in `docker-comp
 ```yml
 services:
   search:
-    image: semtech/mu-search:0.8.0-beta.3
+    image: semtech/mu-search:0.8.0
     volumes:
       - ./config/search:/config
       - ./data/files:/data
@@ -402,7 +402,7 @@ In the example below the documents index contains a property `topics` that maps 
 ```
 
 ##### File content property
-To make the content of a file searchable, it needs to be indexed as a property in a search index. Basic indexing of PDF, Word etc. files is provided using [Elasticsearch's Ingest Attachment Processor Plugin](https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-attachment.html) and a local [Apache Tika](https://tika.apache.org/) instance. The plugin is already installed in the [mu-semtech/search-elastic-backend](https://github.com/mu-semtech/mu-search-elastic-backend) image while the Tika server is running inside the mu-search container. A default ingest pipeline named `attachment` is created on startup of the mu-search service. Note that this is under development and liable to change.
+To make the content of a file searchable, it needs to be indexed as a property in a search index. Basic indexing of PDF, Word etc. files is provided using a local [Apache Tika](https://tika.apache.org/) instance. A default ingest pipeline named `attachment` is created on startup of the mu-search service. Note that this is under development and liable to change.
 
 Defining a property to index the content of a file requires the following keys:
 - **via** : mapping of the RDF predicate (path) that relates the resource with the file(s) to index. The file URI the predicate path leads to must have a URI starting with `share://` indicating the location of the file. E.g. `<share://path/to/your/file.pdf>`.
@@ -450,8 +450,10 @@ These objects are structured in the same way as the `attachment` objects resulti
       "on_path": "projects",
       ...
       "mappings" : {
-        "name" : { "type" : "text" },
-        "files.content" : { "type" : "text" }
+        "properties": {
+          "name" : { "type" : "text" },
+          "files.content" : { "type" : "text" }
+        }
       }
     },
     // other type definitions
@@ -469,7 +471,7 @@ See also "How to specify a file's content as property".
 A search document can contain nested objects up to an arbitrary depth. For example for a person you can nest the address object as a property of the person search document.
 
 A nested object is defined by the following properties:
-- **via** : mapping of the RDF predicate that relates the resource with the nested object. May also be an inverse URI.
+- **via** : mapping of the RDF predicate that relates the resource with the nested object. May also be an inverse URI, or a list of predicate (a property path) as in non-nested properties
 - **rdf_type** : URI of the rdf:Class of the nested object
 - **properties** : mapping of RDF predicates to properties for the nested object
 
@@ -502,8 +504,10 @@ In the example below the document's creator is nested in the `author` property o
                 }
             },
             "mappings": {
+              "properties": {
                 "title" : { "type" : "text" },
                 "author.fullname": { "type" : "text" }
+              }
             }
         }
     ]
@@ -642,8 +646,10 @@ In the mu-search configuration the Elasticsearch mappings can be passed via the 
       "on_path": "documents",
       ...
       "mappings" : {
-        "title" : { "type" : "text" },
-        "description" : { "type" : "text" }
+        "properties": {
+          "title" : { "type" : "text" },
+          "description" : { "type" : "text" }
+        }
       }
     },
     // other type definitions
@@ -820,7 +826,7 @@ The following sections list the flags that are currently implemented:
 - `:prefix:` : [Prefix query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-prefix-query.html)
 - `:wildcard:` : [Wildcard query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-wildcard-query.html)
 - `:regexp:` : [Regexp query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-regexp-query.html)
-- `:fuzzy:` : [Fuzzy query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-fuzzy-query.html)
+- `:fuzzy:` : [Fuzzy query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-fuzzy-query.html) with [fuziness](https://www.elastic.co/guide/en/elasticsearch/reference/current/common-options.html#fuzziness) set to `"AUTO"` and allowing to match multiple fields.
 - `:gt:`,`lt:`, `:gte:`, `:lte:` : [Range query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-range-query.html)
 - `:lt,gt:`, `:lte,gte:`, `:lt,gte:`, `:lte,gt:` : Combined [range query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-range-query.html), range limits should be comma-separated such as: `GET /documents/search?filter[:lte,gte:importance]=3,7`
 - `:has:`: Filter on documents having any value for the supplied field. To enable the filter, it's value must be `t`. E.g. `filter[:has:translation]=t`.
@@ -830,12 +836,18 @@ The following sections list the flags that are currently implemented:
 - `:phrase:` : [Match phrase query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase.html)
 - `:phrase_prefix:` : [Match phrase prefix query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase-prefix.html)
 - `:query:` : [Query string query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-query-string-query.html)
-
+- `:sqs:` : [Simple query string query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-simple-query-string-query.html)
 - `:common:` [Common terms query](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-common-terms-query.html). The flag takes additional options `cutoff_frequency` and `minimum_should_match` appended with commas such as `:common,{cutoff_frequence},{minimum_should_match}:{field}`. The `cutoff_frequency` can also be set application-wide in [the configuration file](#configuration-options).
+
+###### Custom queries
+- `:fuzzy_phrase:` : A fuzzy phrase query based on [span_near](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-span-near-query.html) and [span_multi](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-span-multi-term-query.html). See also [this](https://stackoverflow.com/questions/38816955/elasticsearch-fuzzy-phrases) Stack Overflow issue or [the code](./framework/elastic_query_builder.rb).
 
 Currently searching on multiple fields is only supported for the following flag:
 - `:phrase:`
 - `:phrase_prefix:`
+- `:fuzzy:`
+
+Multiple filter parameters are supported.
 
 Examples
 
@@ -845,6 +857,8 @@ GET /documents/search?filter[:common:description]=a+cat+named+Barney
 GET /documents/search?filter[:common,0.002:description]=a+cat+named+Barney
 
 GET /documents/search?filter[:common,0.002,2:description]=a+cat+named+Barney
+
+GET /documents/search?filter[:sqs:name]=Barney&[:has:address]=t
 ```
 
 ##### Sorting
@@ -924,7 +938,7 @@ An invalidated index will be updated before executing a new search query on it.
 
 Note that the search index is only marked as invalid in memory. I.e the index is not removed from Elasticsearch nor the triplestore. Hence, on restart of mu-search, the index will be considered valid again.
 
-#### DELETE `/:type/delete`
+#### DELETE `/:type`
 Deletes the index(es) for the given `:type` in Elasticsearch and the triplestore. If the request is sent with authorization headers, only the authorized indexes are deleted. Otherwise, all indexes for the type are deleted.
 
 Type `_all` will delete all indexes.

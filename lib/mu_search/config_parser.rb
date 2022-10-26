@@ -39,10 +39,12 @@ module MuSearch
         config[name.to_sym] = value unless value.nil?
       end
 
+      self.validate_config(json_config)
+
       # the following settings can only be configured via the json file
       config[:default_index_settings] = json_config["default_settings"] || {}
       if json_config["eager_indexing_groups"]
-        config[:eager_indexing_groups]  = json_config["eager_indexing_groups"]
+        config[:eager_indexing_groups] = json_config["eager_indexing_groups"]
       end
 
       config[:type_definitions] = Hash[
@@ -50,11 +52,6 @@ module MuSearch
           [type_def["type"], type_def]
         end
       ]
-
-      # TODO add validation on the configuration
-      # - does each type definition contain the required fields?
-      # - are the paths and type names unique?
-      # - ...
 
       config
     end
@@ -67,7 +64,7 @@ module MuSearch
 
     def self.parse_string_array(*possible_values)
       as_type(*possible_values) do |val|
-        val.each { |s| s.to_s }
+        val.each(&:to_s)
       end
     end
 
@@ -86,7 +83,7 @@ module MuSearch
     def self.parse_boolean(*possible_values)
       as_type(*possible_values) do |val|
         if val.kind_of?(String) && ! val.strip.empty?
-          ["true","True","TRUE"].include?(val)
+          ["true", "True", "TRUE"].include?(val)
         else
           val
         end
@@ -111,5 +108,98 @@ module MuSearch
       end
     end
 
+    def self.validate_config(json_config)
+      errors = []
+      if ! json_config.has_key?("persist_indexes") || ! json_config["persist_indexes"]
+        SinatraTemplate::Utils.log.warn("CONFIG_PARSER") { "persist_indexes is disabled, indexes will be removed from elastic on restart!" }
+      end
+      if json_config.has_key?("eager_indexing_groups")
+        errors = errors.concat(self.validate_eager_indexing_groups(json_config["eager_indexing_groups"]))
+      end
+      if json_config.has_key?("types")
+        errors = errors.concat(self.validate_type_definitions(json_config["types"]))
+      else
+        errors << "no type definitions specified, expected field 'types' not found"
+      end
+      if errors.length > 0
+        SinatraTemplate::Utils.log.error("CONFIG_PARSER") { errors.join("\n") }
+        raise "invalid config"
+      end
+    end
+
+    ##
+    # basic validations of typedefinitions
+    #
+    def self.validate_type_definitions(type_definitions)
+      errors = []
+
+      types = type_definitions.map { |t| t["type"] }
+      double_keys = types.select { |e| types.count(e) > 1 } # not very performant, but should be small array anyway
+      if double_keys.length > 0
+        errors << "the following types are defined more than once: #{double_keys}"
+      end
+
+      paths = type_definitions.map { |t| t["on_path"] }
+      double_keys = paths.select { |e| paths.count(e) > 1 }
+      if double_keys.length > 0
+        errors << "the following paths are defined more than once: #{double_keys}"
+      end
+
+      required_keys = ["type", "properties", "on_path"]
+      type_definitions.each do |type|
+        required_keys.each do |key|
+          unless type.has_key?(key)
+            errors << "invalid type definition for #{type["type"]}, missing key #{key}"
+          end
+        end
+        unless type.has_key?("rdf_type") || type.has_key?("composite_types")
+          errors << "type definition for #{type["type"]} must specify rdf_type or composite_types"
+        end
+
+        if type.has_key?("composite_types")
+          SinatraTemplate::Utils.log.warn("CONFIG_PARSER") { "#{type["type"]} is a composite type, support for composite types is experimental!" }
+          undefined_types = type["composite_types"].select { |type| ! types.include?(type) }
+          if undefined_types.length > 0
+            errors << "composite type #{type["type"]} refers to type(s) #{undefined_types} which don't exist"
+          end
+          if type["properties"].kind_of?(Array)
+            type["properties"].each do |prop, value|
+              unless prop.has_key?("name")
+                errors << "composite type #{type["type"]} has an invalid property: properties of a composite type should have a field 'name'"
+              end
+            end
+          else
+            errors << "composite type #{type["type"]}: properties should be an array"
+          end
+        end
+
+        if type.has_key?("mappings")
+          unless type["mappings"].has_key?("properties")
+            errors << "type definition for #{type["type"]} has an index specific mapping, but the mapping does not have the properties field."
+          end
+        else
+          SinatraTemplate::Utils.log.warn("CONFIG_PARSER") { "field mappings not set for type #{type["type"]}, you may want to add an index specific mapping." }
+        end
+      end
+      errors
+    end
+
+    ##
+    # do some basic config validation to make debugging a faulty eager_indexing config easier
+    #
+    def self.validate_eager_indexing_groups(groups)
+      errors = []
+      groups.each do |group|
+        unless group.kind_of?(Array)
+          errors << "invalid eager indexing groups, each group should be an array. #{group.inspect} is not"
+        end
+        group.each do |access_right|
+          unless access_right["name"] && access_right["variables"] && access_right["variables"].kind_of?(Array)
+            errors << "invalid eager indexing group: #{group.inspect}."
+          end
+        end
+      end
+      errors
+    end
   end
 end

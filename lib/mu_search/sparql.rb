@@ -1,18 +1,18 @@
 module MuSearch
   module SPARQL
     class ClientWrapper
-      def initialize(logger:, sparql_client:, options: )
+      def initialize(logger:, sparql_client:, options:)
         @logger = logger
         @sparql_client = sparql_client
         @options = options
       end
 
-      def query query_string
+      def query(query_string)
         @logger.debug("SPARQL") { "Executing query with #{@options.inspect}\n#{query_string}" }
         @sparql_client.query query_string, @options
       end
 
-      def update query_string
+      def update(query_string)
         @logger.debug("SPARQL") { "Executing update with #{@options.inspect}\n#{query_string}" }
         @sparql_client.update query_string, @options
       end
@@ -53,7 +53,7 @@ module MuSearch
             raise e
           else
             @logger.warn("SPARQL") { "Could not execute sudo query (attempt #{6 - next_retries}): #{query_string}" }
-            timeout = (6 - next_retries) ** 2
+            timeout = (6 - next_retries)**2
             sleep timeout
             sudo_query query_string, next_retries
           end
@@ -73,7 +73,7 @@ module MuSearch
             raise e
           else
             @logger.warn("SPARQL") { "Could not execute sudo query (attempt #{6 - next_retries}): #{query_string}" }
-            timeout = (6 - next_retries) ** 2
+            timeout = (6 - next_retries)**2
             sleep timeout
             sudo_update query_string, next_retries
           end
@@ -82,7 +82,7 @@ module MuSearch
 
       ##
       # provides a client from the connection pool with the given access rights
-      def with_authorization allowed_groups, &block
+      def with_authorization(allowed_groups, &block)
         sparql_options = {}
 
         if allowed_groups && allowed_groups.length > 0
@@ -95,14 +95,13 @@ module MuSearch
 
       ##
       # provides a client from the connection pool with sudo access rights
-      def with_sudo &block
+      def with_sudo(&block)
         with_options({ headers: { 'mu-auth-sudo': 'true' } }, &block)
       end
 
-
       private
 
-      def with_options sparql_options
+      def with_options(sparql_options)
         @sparql_connection_pool.with do |sparql_client|
           @logger.debug("SPARQL") { "Claimed connection from pool. There are #{@sparql_connection_pool.available} connections left" }
           client_wrapper = ClientWrapper.new(logger: @logger, sparql_client: sparql_client, options: sparql_options)
@@ -119,7 +118,7 @@ module MuSearch
     #   - predicate: Predicate to be escaped.
     def self.predicate_string_term(predicate)
       if predicate.start_with? "^"
-        "^#{sparql_escape_uri(predicate.slice(1,predicate.length))}"
+        "^#{sparql_escape_uri(predicate.slice(1, predicate.length))}"
       else
         sparql_escape_uri(predicate)
       end

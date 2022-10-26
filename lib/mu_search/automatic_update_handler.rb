@@ -9,7 +9,6 @@ module MuSearch
   # and if so remove it from the index
   # this handler takes the configured allowed_groups of an index into account
   class AutomaticUpdateHandler < MuSearch::UpdateHandler
-
     ##
     # creates an automatic update handler
     def initialize(elasticsearch:, tika:, sparql_connection_pool:, search_configuration:, **args)
